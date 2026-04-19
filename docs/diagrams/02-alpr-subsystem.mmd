@@ -1,0 +1,34 @@
+---
+title: ALPR Subsystem — Plate Detection and OCR Pipeline
+---
+flowchart TD
+    A[Camera frame captured\n1080p+ RGB] --> B[Preprocess:\nresize, normalize\nOpenCV CUDA]
+
+    B --> C[YOLOv9 Plate Detection\nTensorRT engine\nsm_120 / sm_89]
+
+    C --> D{Plate detected?\nconf >= threshold}
+    D -- No --> E[Return: NO_PLATE\nconf=0.0]
+    D -- Yes, 1+ plates --> F[For each detected plate]
+
+    F --> G[Crop plate ROI\nfrom original frame]
+    G --> H[Perspective rectification\n- deskew tilted plates -\nOpenCV warpPerspective]
+    H --> I[Enhance:\nCLAHE contrast\nGaussian denoise\nOpenCV CUDA]
+
+    I --> J[PaddleOCR\nTensorRT engine\ncharacter recognition]
+
+    J --> K[Raw OCR text]
+    K --> L[Normalize plate string:\n- Strip spaces/hyphens\n- Uppercase\n- Kenyan format validation\n  KAA 000A / KDG 000A]
+
+    L --> M{Valid Kenyan\nplate format?}
+    M -- Yes --> N[Return: plate_text\n+ detection_conf\n+ ocr_conf\n+ plate_image_crop]
+    M -- No --> O[Return: INVALID_FORMAT\nraw_text + conf\nfor manual review]
+
+    E --> P[Result to\nDecision Fusion]
+    N --> P
+    O --> P
+
+    style C fill:#4a9eff,color:#fff
+    style J fill:#4a9eff,color:#fff
+    style N fill:#16a34a,color:#fff
+    style E fill:#dc2626,color:#fff
+    style O fill:#f59e0b,color:#fff

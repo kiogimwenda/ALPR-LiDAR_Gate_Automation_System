@@ -1,0 +1,52 @@
+---
+title: System-Level Flow — Vehicle Entry Authorization
+---
+flowchart TD
+    A[Vehicle approaches gate] --> B[LiDAR detects presence\nin trigger zone]
+    B --> C{Vehicle detected?}
+    C -- No --> B
+    C -- Yes --> D[Arm system:\ncapture frame + point cloud]
+
+    D --> E[ALPR Subsystem]
+    D --> F[LiDAR Subsystem]
+
+    E --> G[Plate number +\nconfidence score]
+    F --> H[Vehicle class +\nconfidence score]
+
+    G --> I[Decision Fusion Engine]
+    H --> I
+
+    I --> J{Check authorization}
+    J --> K[Allowlist lookup]
+    J --> L[Blocklist lookup]
+    J --> M[Time-window check]
+    J --> N[Override check\n- guard / dashboard -]
+
+    K --> O{Verdict}
+    L --> O
+    M --> O
+    N --> O
+
+    O -- AUTHORIZED --> P[Open gate]
+    O -- DENIED --> Q[Deny entry\nlog reason]
+    O -- LOW CONFIDENCE --> R[Alert guard\nvia dashboard]
+
+    P --> S[Gate opens]
+    S --> T[Hold open:\nLiDAR monitors\nvehicle passing]
+    T --> U{Vehicle cleared\ngate zone?}
+    U -- No --> T
+    U -- Yes --> V[Close gate]
+
+    Q --> W[Log event to SQLite\nwith plate image + timestamp]
+    V --> W
+    R --> W
+    W --> X[Push event to dashboard\nvia WebSocket]
+    X --> Y[Return to idle]
+    Y --> B
+
+    style E fill:#4a9eff,color:#fff
+    style F fill:#22c55e,color:#fff
+    style I fill:#f59e0b,color:#fff
+    style P fill:#16a34a,color:#fff
+    style Q fill:#dc2626,color:#fff
+    style R fill:#f59e0b,color:#fff

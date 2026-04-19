@@ -1,0 +1,44 @@
+---
+title: OTA Update Flow — Signed, Atomic, Rollback-Capable
+---
+flowchart TD
+    A[Update server:\nnew firmware/binary\nsigned manifest] --> B[PCB/Server polls\nupdate endpoint\nHTTPS GET /manifest.json]
+
+    B --> C{New version\navailable?}
+    C -- No --> D[Sleep interval\ncheck again later]
+    C -- Yes --> E[Download update bundle\nHTTPS GET /updates/v{x.y.z}.tar.zst]
+
+    E --> F[Verify ed25519 signature\nagainst embedded public key]
+    F --> G{Signature valid?}
+    G -- No --> H[REJECT update\nlog: invalid signature\nalert dashboard]
+    G -- Yes --> I[Verify SHA-256\nchecksum of payload]
+
+    I --> J{Checksum match?}
+    J -- No --> K[REJECT update\nlog: corrupted download\nretry once]
+    J -- Yes --> L[Extract to staging\npartition / directory]
+
+    L --> M[Run pre-update checks:\n- disk space sufficient\n- battery/power stable\n- no active gate operation]
+
+    M --> N{Pre-checks pass?}
+    N -- No --> O[Defer update\nretry after conditions met]
+    N -- Yes --> P[Atomic swap:\nrename current -> rollback\nrename staging -> current]
+
+    P --> Q[Update bootloader /\nsystemd unit to point\nto new version]
+
+    Q --> R[Reboot service\nor full device reboot]
+
+    R --> S[New version starts\nruns self-test]
+    S --> T{Self-test pass?}
+    T -- Yes --> U[Mark update SUCCESS\ndelete rollback image\nreport to dashboard]
+    T -- No --> V[ROLLBACK:\nrestore rollback image\nreboot into previous version]
+
+    V --> W[Report rollback\nto dashboard + update server]
+    H --> X[Return to\nnormal operation]
+    U --> X
+    W --> X
+
+    style F fill:#4a9eff,color:#fff
+    style P fill:#f59e0b,color:#fff
+    style U fill:#16a34a,color:#fff
+    style V fill:#dc2626,color:#fff
+    style H fill:#dc2626,color:#fff

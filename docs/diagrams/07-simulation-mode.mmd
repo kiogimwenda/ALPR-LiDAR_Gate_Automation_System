@@ -1,0 +1,56 @@
+---
+title: Simulation Mode Data Flow
+---
+flowchart TD
+    subgraph Sources["Data Sources"]
+        A[Replay Mode:\nrecorded plate images\n+ LiDAR point clouds\nfrom .pcap/.pcd files]
+        B[Synthetic Mode:\ngenerated Kenyan plates\n+ procedural 3D\nvehicle point clouds]
+        C[HIL Mode:\nreal camera + LiDAR\nhardware connected\nvia USB passthrough]
+    end
+
+    subgraph HAL["Hardware Abstraction Layer"]
+        D[Camera HAL Interface]
+        E[LiDAR HAL Interface]
+        F[Gate Relay HAL Interface]
+    end
+
+    A --> D
+    A --> E
+    B --> D
+    B --> E
+    C --> D
+    C --> E
+
+    D --> G[ALPR Pipeline\nsame code path\nas production]
+    E --> H[LiDAR Pipeline\nsame code path\nas production]
+
+    G --> I[Decision Fusion\nsame code path]
+    H --> I
+
+    I --> J[Gate Command]
+    J --> F
+
+    F --> K{Mode?}
+    K -- Simulation --> L[Virtual gate:\nlog state transitions\nno physical actuation]
+    K -- HIL --> M[Real gate relay:\nactual motor control]
+    K -- Replay --> L
+
+    L --> N[Dashboard:\nshows simulated events\nwith SIM badge]
+    M --> N
+
+    subgraph Validation["Test Validation"]
+        O[Compare decisions\nagainst ground truth\nlabels if available]
+        P[Measure latency\nper pipeline stage]
+        Q[Generate accuracy\nreport: precision,\nrecall, F1]
+    end
+
+    L --> O
+    L --> P
+    O --> Q
+
+    style A fill:#4a9eff,color:#fff
+    style B fill:#22c55e,color:#fff
+    style C fill:#f59e0b,color:#fff
+    style G fill:#4a9eff,color:#fff
+    style H fill:#22c55e,color:#fff
+    style I fill:#f59e0b,color:#fff
