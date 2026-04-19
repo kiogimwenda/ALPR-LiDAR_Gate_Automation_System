@@ -1,0 +1,50 @@
+# Build
+build/
+cmake-build-*/
+.cache/
+out/
+*.o *.a *.so *.dylib *.dll *.exe
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.user
+
+# Compiled models and weights (use Git LFS or fetch scripts)
+*.engine
+*.plan
+models/**/*.onnx
+models/weights/
+models/downloads/
+
+# Data
+simulation/datasets/
+*.mkv *.mp4 *.avi
+*.pcap *.pcd *.bag
+*.log
+
+# SQLite
+*.db *.db-journal *.sqlite *.sqlite3
+
+# Secrets — never commit
+.env .env.*
+secrets/
+*.pem *.key
+!**/*.pub
+ota-signing.key
+ssh_host_keys/
+
+# Node / dashboard frontend
+node_modules/
+dist/
+.next/
+
+# Python (used by export scripts only)
+__pycache__/
+*.pyc
+.venv/ venv/
+
+# OS cruft
+.DS_Store Thumbs.db
