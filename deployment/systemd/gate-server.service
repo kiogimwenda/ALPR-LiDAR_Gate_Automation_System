@@ -1,0 +1,2 @@
+# gate-server.service — systemd unit for the GPU inference server.
+# Placeholder — hardened unit file created during deployment phase.

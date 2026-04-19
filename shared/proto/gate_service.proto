@@ -1,0 +1,4 @@
+// gate_service.proto — RPC schema for PCB <-> GPU server communication.
+// Defines: InferenceRequest, InferenceResponse, GateCommand, Telemetry.
+syntax = "proto3";
+package gate;
