@@ -1,0 +1,78 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get update -qq && sudo apt-get install -y clang-format
+
+      - name: Check formatting
+        run: |
+          find server/ firmware/ shared/ dashboard/backend/ \
+            -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cu' \
+            2>/dev/null | head -500 | \
+          xargs -r clang-format --dry-run --Werror 2>&1 || {
+            echo "::error::Code formatting issues found. Run: clang-format -i <files>"
+            exit 1
+          }
+          echo "All files formatted correctly (or no source files found yet)."
+
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang-tidy cmake ninja-build pkg-config \
+            libsqlite3-dev
+
+      - name: Configure (for compile_commands.json)
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DENABLE_GPU=OFF 2>/dev/null || echo "CMake configure not yet available — skipping tidy."
+
+      - name: Run clang-tidy
+        run: |
+          if [ -f build/compile_commands.json ]; then
+            find server/ firmware/ shared/ dashboard/backend/ \
+              -name '*.cpp' -o -name '*.hpp' 2>/dev/null | head -500 | \
+            xargs -r clang-tidy -p build --warnings-as-errors='*' || exit 1
+          else
+            echo "No compile_commands.json — skipping clang-tidy until CMake is configured."
+          fi
+
+  cppcheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          SRC_DIRS=""
+          for d in server/src firmware/src shared/include dashboard/backend/src; do
+            [ -d "$d" ] && SRC_DIRS="$SRC_DIRS $d"
+          done
+          if [ -n "$SRC_DIRS" ]; then
+            cppcheck --enable=warning,performance,portability \
+              --error-exitcode=1 --inline-suppr \
+              --suppress=missingInclude \
+              $SRC_DIRS
+          else
+            echo "No source directories found yet — skipping cppcheck."
+          fi

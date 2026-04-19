@@ -1,0 +1,57 @@
+name: Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc-13, gcc-14, clang-17, clang-18]
+        build_type: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build ccache pkg-config \
+            libsqlite3-dev
+          # Install specific compiler
+          case "${{ matrix.compiler }}" in
+            gcc-13)  sudo apt-get install -y gcc-13 g++-13 ;;
+            gcc-14)  sudo apt-get install -y gcc-14 g++-14 ;;
+            clang-17) sudo apt-get install -y clang-17 ;;
+            clang-18) sudo apt-get install -y clang-18 ;;
+          esac
+
+      - name: Configure CMake
+        run: |
+          case "${{ matrix.compiler }}" in
+            gcc-13)   export CC=gcc-13 CXX=g++-13 ;;
+            gcc-14)   export CC=gcc-14 CXX=g++-14 ;;
+            clang-17) export CC=clang-17 CXX=clang++-17 ;;
+            clang-18) export CC=clang-18 CXX=clang++-18 ;;
+          esac
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
+            -DENABLE_GPU=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test (if tests exist)
+        run: |
+          if ctest --test-dir build --no-tests=ignore -N 2>/dev/null | grep -q "Total Tests:"; then
+            ctest --test-dir build --no-tests=ignore --output-on-failure
+          else
+            echo "No tests registered yet — skipping."
+          fi
