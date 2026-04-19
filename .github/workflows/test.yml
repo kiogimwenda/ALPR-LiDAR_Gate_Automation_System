@@ -1,0 +1,54 @@
+name: Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-sanitizers:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [asan, ubsan]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake ninja-build gcc-14 g++-14 pkg-config \
+            libsqlite3-dev
+
+      - name: Configure with sanitizers
+        run: |
+          SANITIZER_FLAGS=""
+          case "${{ matrix.sanitizer }}" in
+            asan)  SANITIZER_FLAGS="-fsanitize=address -fno-omit-frame-pointer" ;;
+            ubsan) SANITIZER_FLAGS="-fsanitize=undefined -fno-omit-frame-pointer" ;;
+          esac
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=gcc-14 \
+            -DCMAKE_CXX_COMPILER=g++-14 \
+            -DCMAKE_C_FLAGS="$SANITIZER_FLAGS" \
+            -DCMAKE_CXX_FLAGS="$SANITIZER_FLAGS" \
+            -DCMAKE_EXE_LINKER_FLAGS="$SANITIZER_FLAGS" \
+            -DENABLE_GPU=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          if ctest --test-dir build --no-tests=ignore -N 2>/dev/null | grep -q "Total Tests:"; then
+            ctest --test-dir build --no-tests=ignore --output-on-failure
+          else
+            echo "No tests registered yet — will run once tests are added."
+          fi
