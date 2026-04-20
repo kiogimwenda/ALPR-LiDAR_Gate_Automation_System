@@ -1,0 +1,45 @@
+---
+title: Decision Fusion and Authorization
+---
+flowchart TD
+    A[ALPR Result:\nplate_text, det_conf, ocr_conf] --> C[Fusion Engine]
+    B[LiDAR Result:\nvehicle_class, class_conf,\nposition, velocity] --> C
+
+    C --> D[Compute combined\nconfidence score:\nw1*alpr_conf + w2*lidar_conf]
+
+    D --> E{Combined conf\n>= min_threshold?}
+    E -- No --> F[VERDICT: LOW_CONFIDENCE\nalert guard via dashboard]
+
+    E -- Yes --> G[Blocklist check:\nis plate in blocklist?]
+    G -- Yes --> H[VERDICT: DENIED\nreason: blocklisted]
+    G -- No --> I[Allowlist check:\nis plate in allowlist?]
+
+    I -- No --> J[VERDICT: DENIED\nreason: not on allowlist]
+    I -- Yes --> K[Time-window check:\nis current time within\nplate's allowed window?]
+
+    K -- Outside window --> L[VERDICT: DENIED\nreason: outside time window]
+    K -- Within window --> M[Override check:\nany pending force-open\nor force-close?]
+
+    M -- Force-close active --> N[VERDICT: DENIED\nreason: force-close override]
+    M -- Force-open active --> O[VERDICT: AUTHORIZED\nreason: force-open override]
+    M -- No override --> P[VERDICT: AUTHORIZED\nreason: plate + class match]
+
+    F --> Q[Log decision:\ntimestamp, plate, class,\nconfidences, verdict, reason]
+    H --> Q
+    J --> Q
+    L --> Q
+    N --> Q
+    O --> Q
+    P --> Q
+
+    Q --> R[Send verdict to\ngate state machine]
+    Q --> S[Push event to\ndashboard WebSocket]
+
+    style C fill:#f59e0b,color:#fff
+    style P fill:#16a34a,color:#fff
+    style O fill:#16a34a,color:#fff
+    style H fill:#dc2626,color:#fff
+    style J fill:#dc2626,color:#fff
+    style L fill:#dc2626,color:#fff
+    style N fill:#dc2626,color:#fff
+    style F fill:#f59e0b,color:#fff

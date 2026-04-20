@@ -1,0 +1,6 @@
+{
+  "name": "gate-automation-dashboard",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Real-time gate monitoring dashboard"
+}

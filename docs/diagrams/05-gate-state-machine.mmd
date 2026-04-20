@@ -1,0 +1,68 @@
+---
+title: Gate Control State Machine
+---
+stateDiagram-v2
+    [*] --> Idle
+
+    Idle --> Armed : vehicle_detected\n(LiDAR trigger)
+    Armed --> Opening : verdict=AUTHORIZED
+    Armed --> Idle : verdict=DENIED\nor timeout(30s)
+
+    Opening --> OpenHold : gate_fully_open\n(limit switch)
+    Opening --> Obstruction : obstacle_detected\n(safety sensor)
+
+    OpenHold --> Closing : vehicle_cleared\n(LiDAR confirms)\n+ hold_delay expired
+    OpenHold --> Obstruction : obstacle_detected
+
+    Closing --> Idle : gate_fully_closed\n(limit switch)
+    Closing --> Obstruction : obstacle_detected
+    Closing --> OpenHold : vehicle_re_entered\n(LiDAR detects)
+
+    Obstruction --> Opening : obstacle_cleared\n(retry open)
+    Obstruction --> Fault : obstruction_timeout\n(>60s unresolved)
+
+    Fault --> Idle : manual_reset\n(dashboard or\nphysical button)
+
+    state ManualOverride {
+        [*] --> ForceOpen
+        [*] --> ForceClose
+        [*] --> Disarm
+    }
+
+    Idle --> ManualOverride : guard_override\n(dashboard command)
+    Armed --> ManualOverride : guard_override
+    OpenHold --> ManualOverride : guard_override
+    Closing --> ManualOverride : guard_override
+    ManualOverride --> Idle : override_released
+
+    note right of Idle
+        Gate is closed and locked.
+        LiDAR continuously scans
+        for approaching vehicles.
+    end note
+
+    note right of Obstruction
+        Safety-critical state.
+        Gate motor stopped.
+        Alarm raised on dashboard.
+        Buzzer activated at gate.
+    end note
+
+    note right of Fault
+        Requires human intervention.
+        Gate motor disabled.
+        All events logged.
+    end note
+
+    note left of Opening
+        Motor direction: OPEN
+        For sliding: motor forward
+        For dual-leaf: both wings open
+        Safety sensors active
+    end note
+
+    note left of Closing
+        Motor direction: CLOSE
+        Auto-reverse on obstacle
+        LiDAR monitors gate zone
+    end note

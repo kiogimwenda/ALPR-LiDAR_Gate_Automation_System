@@ -1,0 +1,16 @@
+{
+  "name": "gate-automation",
+  "version": "0.0.1",
+  "description": "ALPR + LiDAR Automated Vehicle Gate Control System",
+  "dependencies": [
+    "grpc",
+    "protobuf",
+    "drogon",
+    "catch2",
+    "nlohmann-json",
+    "spdlog",
+    "fmt",
+    "sqlite3",
+    "cli11"
+  ]
+}

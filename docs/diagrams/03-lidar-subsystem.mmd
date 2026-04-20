@@ -1,0 +1,33 @@
+---
+title: LiDAR Subsystem — Vehicle Detection and Classification
+---
+flowchart TD
+    A[3D point cloud captured\nfrom LiDAR sensor] --> B[Preprocess:\ndownsample via voxel grid\nROI crop to gate zone]
+
+    B --> C[Ground plane removal\nRANSAC or height threshold]
+    C --> D[Cluster extraction\nEuclidean clustering\nor DBSCAN]
+
+    D --> E{Cluster found\nin trigger zone?}
+    E -- No --> F[Return: NO_VEHICLE\nconf=0.0]
+    E -- Yes --> G[Extract cluster\nbounding box + centroid]
+
+    G --> H[Feature extraction:\n- height, width, length\n- point density\n- silhouette profile\n- aspect ratios]
+
+    H --> I{Classification method}
+    I -- Neural --> J[PointNet-lite or\nfeature-based MLP\nTensorRT engine]
+    I -- Heuristic --> K[Rule-based classifier:\ndimension thresholds\nfor car/SUV/truck]
+
+    J --> L[Vehicle class +\nconfidence score]
+    K --> L
+
+    L --> M[Compute vehicle\nposition and velocity\nin gate coordinate frame]
+
+    M --> N[Return:\nvehicle_class\n+ class_conf\n+ position\n+ velocity\n+ bounding_box]
+
+    F --> O[Result to\nDecision Fusion]
+    N --> O
+
+    style J fill:#22c55e,color:#fff
+    style K fill:#22c55e,color:#fff
+    style N fill:#16a34a,color:#fff
+    style F fill:#dc2626,color:#fff
