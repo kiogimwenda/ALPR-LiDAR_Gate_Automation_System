@@ -89,7 +89,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ⏳ Next |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ✅ Complete |
 | 4.3 | Server RPC + fusion engine | ⏳ Pending |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
@@ -100,7 +100,155 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.2.5: ONNX → TensorRT engine tooling
+## Latest accomplishment — Phase 4.2.6: Catch2 inference unit tests
+
+> **Completed 2026-04-25.** Tests in
+> [`tests/inference/cpu_algorithms_test.cpp`](tests/inference/cpu_algorithms_test.cpp).
+> Algorithm extraction in
+> [`server/inference/include/inference/detail/cpu_algorithms.hpp`](server/inference/include/inference/detail/cpu_algorithms.hpp)
+> and [`server/inference/src/detail/cpu_algorithms.cpp`](server/inference/src/detail/cpu_algorithms.cpp).
+
+### What I built
+
+Eleven Catch2 v3 unit tests over the host-side inference algorithms — the
+parts that don't need a GPU and therefore don't need TensorRT. They run in
+under 0.3 s on a development workstation and exercise the same code path
+the production server runs through, because the tests link against the
+production `gate_inference` static library.
+
+| Artifact | Purpose |
+|---|---|
+| `server/inference/include/inference/detail/cpu_algorithms.hpp` | New `gate::inference::detail` namespace exposing the four pure-CPU primitives — `letterbox`, `unmap_letterbox_box`, `ctc_greedy_decode`, `expand_box_with_margin` — as free functions over `cv::Mat` / `std::span<const float>`. |
+| `server/inference/src/detail/cpu_algorithms.cpp` | Implementation of those four functions, lifted out of the existing class methods. |
+| `server/inference/src/{yolo_plate_detector,paddle_ocr_recognizer,alpr_pipeline}.cpp` | Refactored to delegate to the new free functions, eliminating duplicate implementations. |
+| `tests/inference/cpu_algorithms_test.cpp` | 11 Catch2 test cases covering letterbox geometry, CTC blank/repeat collapse, confidence-mean math, and crop-with-margin clamping. |
+| `tests/inference/CMakeLists.txt` | Builds `test_inference_cpu_algorithms`; gated on `TARGET gate_inference` so a CPU-only or proto-only build skips the inference tests cleanly. |
+| `tests/CMakeLists.txt` (updated) | Same `if(TARGET …)` gate now applied to `proto/` so a tests-only build with `BUILD_PROTO=OFF` doesn't try to compile against `gate_proto`. |
+| Root `CMakeLists.txt` (updated) | Reordered to process `server/` before `tests/`, so the `if(TARGET gate_inference)` gate sees the freshly-declared library. |
+
+### Technical detail
+
+#### Why a refactor was the right move
+
+The pre-test code carried three copies of essentially the same algorithms,
+each baked into a private member function:
+
+- `YoloPlateDetector::letterbox_` had its own letterbox math.
+- `YoloPlateDetector::detect()` did box-unmapping inline at the call site.
+- `AlprPipeline::expand_and_clamp_` had its own crop expansion + clamp.
+- `PaddleOcrRecognizer::ctc_decode_` had its own CTC decoder.
+
+Testing any of them required either a `friend` declaration (an
+implementation-detail leak that lives in the public header), a synthetic
+TensorRT engine (slow, fragile across TRT versions), or constructing a
+full backend instance (impossible without an engine file). None of those
+are good answers. Lifting the algorithms into a `detail` namespace is the
+*least* invasive option that makes them testable: the public headers don't
+change, every backend now calls a single canonical implementation, and the
+tests exercise that implementation directly without booting CUDA.
+
+The classes still own the orchestration — buffer sizing, device transfer,
+TensorRT enqueue/sync, ownership lifetimes. Only the pure-CPU bits moved.
+
+#### What the tests actually cover
+
+Eleven cases across three algorithms:
+
+**Letterbox (`[letterbox]` tag)** — 4 tests:
+
+1. *Horizontal source pads top and bottom.* A 200×100 source into a
+   320×320 canvas. Verifies the chosen scale is the smaller axis ratio
+   (1.6), the resulting padding is zero on the X axis and 80 px on the Y
+   axis, the padding pixel matches the requested fill (114, 114, 114),
+   and the centered image content is intact.
+2. *Vertical source pads left and right.* The mirror case — a 100×200
+   source into the same canvas, verifying scale and pads swap roles.
+3. *Center box round-trips through scale and pad.* Constructs a known
+   `LetterboxParams`, picks a canvas-pixel box in the image band, and
+   confirms `unmap_letterbox_box` returns the source-pixel rectangle
+   that letterbox would map back to. This is the contract the YOLO
+   detector depends on.
+4. *Clamps to source extents and drops degenerate.* Two sub-cases —
+   a box that overhangs the canvas's image band clamps to the source
+   bottom; a box entirely inside the top padding strip is degenerate
+   after clamping and the function returns a zero-area rect.
+
+**CTC greedy decode (`[ctc]` tag)** — 4 tests, each with a synthetic
+argmax-probability tensor built by a test helper:
+
+1. *Skips blanks and collapses repeats.* The sequence
+   `blank, A, A, blank, B, B, C, blank` with peak prob 0.9 decodes to
+   `"ABC"` with mean confidence 0.9. This is the canonical CTC
+   correctness check.
+2. *All blanks.* Every step is the blank token. Output is empty text
+   and confidence exactly 0 (not NaN — important because downstream
+   policy code compares against thresholds).
+3. *Confidence is mean, not sum.* Three unique chars with peak prob
+   0.5 yields mean 0.5, not 1.5. Catches a regression where the
+   accumulator gets returned without dividing.
+4. *Out-of-range class indices.* If the argmax picks a class beyond
+   the dictionary, the kept-count still increments but the text
+   doesn't grow — confirms the bounds check on `dictionary_[best - 1]`.
+
+**Crop with margin (`[crop]` tag)** — 3 tests:
+
+1. *10 % margin grows symmetrically.* A 100×50 box at (100, 100) with
+   margin 0.1 grows to (90, 95) origin and (120, 60) extent.
+2. *Clamps to frame on every edge.* A box near (0, 0) with a 50 %
+   margin can't go negative; both `x` and `y` clamp to 0 and the
+   right/bottom stay inside the frame.
+3. *Degenerate result reports empty.* A 2×2 box with `min_extent=4`
+   returns a 0-area rect, signalling the pipeline to drop this
+   detection rather than feed an empty crop to OCR.
+
+#### CMake gating model
+
+The Catch2 inference tests live in `tests/inference/`. They link against
+`gate_inference`, which only exists when the build is configured with
+`BUILD_SERVER=ON` and a working CUDA + TensorRT toolchain. Forcing the
+test target to always build would make the CI matrix
+(`-DENABLE_GPU=OFF`) fail on a missing target.
+
+The fix is a per-target gate in `tests/CMakeLists.txt`:
+
+```cmake
+if(TARGET gate_inference)
+    add_subdirectory(inference)
+endif()
+```
+
+This needs root `CMakeLists.txt` to process `server/` *before* `tests/`,
+so the target is declared by the time the gate is checked. Same gate now
+applies to `proto/` so a test-only build with `BUILD_PROTO=OFF` doesn't
+try to compile against `gate_proto`. CI happily skips both subdirs and
+runs only what it has dependencies for; local development builds get the
+full test suite without changing flags.
+
+#### Verified run
+
+```
+Test project /tmp/gate-build-inference
+   1: letterbox: vertical source pads left and right ........... Passed
+   2: letterbox: horizontal source pads top and bottom ......... Passed
+   3: expand_box_with_margin: 10% margin grows symmetrically ... Passed
+   4: ctc_greedy_decode: all blanks → empty + zero conf ........ Passed
+   5: expand_box_with_margin: clamps to frame on every edge .... Passed
+   6: unmap_letterbox_box: clamps + drops degenerate ........... Passed
+   7: ctc_greedy_decode: skips blanks and collapses repeats .... Passed
+   8: unmap_letterbox_box: center box round-trips .............. Passed
+   9: ctc_greedy_decode: confidence is mean of kept probs ...... Passed
+  10: expand_box_with_margin: degenerate reported as empty ..... Passed
+  11: ctc_greedy_decode: out-of-range class indices dropped .... Passed
+
+100% tests passed, 0 tests failed out of 11
+```
+
+Total runtime under 0.3 s on the dev box. The tests are fast enough to be
+part of every local rebuild, not just CI gating.
+
+---
+
+## Previous milestone — Phase 4.2.5: ONNX → TensorRT engine tooling
 
 > **Completed 2026-04-25.** Scripts in
 > [`scripts/export-models/`](scripts/export-models/) — `convert_onnx_to_trt.py`,

@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <spdlog/spdlog.h>
 
+#include "inference/detail/cpu_algorithms.hpp"
+
 namespace gate::inference {
 
 AlprPipeline::AlprPipeline(YoloPlateDetector&& det, PaddleOcrRecognizer&& rec, Config cfg)
@@ -21,24 +23,7 @@ AlprPipeline AlprPipeline::load(Config cfg, nvinfer1::ILogger& logger) {
 }
 
 cv::Rect AlprPipeline::expand_and_clamp_(const cv::Rect2f& box, const cv::Size& frame_size) const {
-    const float dx = box.width * cfg_.crop_margin;
-    const float dy = box.height * cfg_.crop_margin;
-
-    float x1 = box.x - dx;
-    float y1 = box.y - dy;
-    float x2 = box.x + box.width + dx;
-    float y2 = box.y + box.height + dy;
-
-    x1 = std::clamp(x1, 0.0f, static_cast<float>(frame_size.width));
-    y1 = std::clamp(y1, 0.0f, static_cast<float>(frame_size.height));
-    x2 = std::clamp(x2, 0.0f, static_cast<float>(frame_size.width));
-    y2 = std::clamp(y2, 0.0f, static_cast<float>(frame_size.height));
-
-    const int xi = static_cast<int>(std::floor(x1));
-    const int yi = static_cast<int>(std::floor(y1));
-    const int wi = static_cast<int>(std::ceil(x2 - x1));
-    const int hi = static_cast<int>(std::ceil(y2 - y1));
-    return cv::Rect(xi, yi, std::max(1, wi), std::max(1, hi));
+    return detail::expand_box_with_margin(box, frame_size, cfg_.crop_margin, /*min_extent=*/1);
 }
 
 std::vector<PlateReading> AlprPipeline::process(const cv::Mat& frame_bgr) {

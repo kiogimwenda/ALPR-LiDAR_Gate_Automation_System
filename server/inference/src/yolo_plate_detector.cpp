@@ -7,6 +7,8 @@
 #include <opencv2/imgproc.hpp>
 #include <spdlog/spdlog.h>
 
+#include "inference/detail/cpu_algorithms.hpp"
+
 namespace gate::inference {
 
 namespace {
@@ -73,28 +75,8 @@ YoloPlateDetector YoloPlateDetector::load(Config cfg, nvinfer1::ILogger& logger)
 
 YoloPlateDetector::LetterboxParams YoloPlateDetector::letterbox_(const cv::Mat& src,
                                                                  cv::Mat& dst) const {
-    const float src_w = static_cast<float>(src.cols);
-    const float src_h = static_cast<float>(src.rows);
-    const float dst_w = static_cast<float>(cfg_.input_width);
-    const float dst_h = static_cast<float>(cfg_.input_height);
-
-    // Pick the smaller scale so the resized image fits inside the canvas.
-    const float scale = std::min(dst_w / src_w, dst_h / src_h);
-    const int new_w = static_cast<int>(std::round(src_w * scale));
-    const int new_h = static_cast<int>(std::round(src_h * scale));
-
-    cv::Mat resized;
-    cv::resize(src, resized, cv::Size(new_w, new_h), 0, 0, cv::INTER_LINEAR);
-
-    // Center the resized image inside the canvas; pad with neutral gray
-    // (114, 114, 114) — the YOLOv9 / Ultralytics convention.
-    const int pad_x = (cfg_.input_width - new_w) / 2;
-    const int pad_y = (cfg_.input_height - new_h) / 2;
-    dst.create(cfg_.input_height, cfg_.input_width, src.type());
-    dst.setTo(cv::Scalar(114, 114, 114));
-    resized.copyTo(dst(cv::Rect(pad_x, pad_y, new_w, new_h)));
-
-    return {scale, static_cast<float>(pad_x), static_cast<float>(pad_y)};
+    const auto p = detail::letterbox(src, cfg_.input_width, cfg_.input_height, dst);
+    return {p.scale, p.pad_x, p.pad_y};
 }
 
 std::vector<PlateDetection> YoloPlateDetector::detect(const cv::Mat& bgr) {
@@ -153,16 +135,15 @@ std::vector<PlateDetection> YoloPlateDetector::detect(const cv::Mat& bgr) {
         const float x2_in = boxes_host_[i * 4 + 2];
         const float y2_in = boxes_host_[i * 4 + 3];
 
-        // Undo letterbox: subtract pad, divide by scale, clamp to image.
-        const float x1 = std::max(0.0f, (x1_in - lb.pad_x) / lb.scale);
-        const float y1 = std::max(0.0f, (y1_in - lb.pad_y) / lb.scale);
-        const float x2 = std::min(static_cast<float>(bgr.cols), (x2_in - lb.pad_x) / lb.scale);
-        const float y2 = std::min(static_cast<float>(bgr.rows), (y2_in - lb.pad_y) / lb.scale);
-        if (x2 <= x1 || y2 <= y1)
+        const auto unmapped = detail::unmap_letterbox_box(
+            x1_in, y1_in, x2_in, y2_in, detail::LetterboxParams{lb.scale, lb.pad_x, lb.pad_y},
+            bgr.cols, bgr.rows);
+        if (unmapped.width <= 0.0f || unmapped.height <= 0.0f) {
             continue;  // degenerate after clamping
+        }
 
         PlateDetection d;
-        d.box = cv::Rect2f(x1, y1, x2 - x1, y2 - y1);
+        d.box = unmapped;
         d.confidence = score;
         d.class_id = classes_host_[i];
         dets.push_back(d);

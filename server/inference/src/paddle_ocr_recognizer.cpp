@@ -7,6 +7,8 @@
 #include <opencv2/imgproc.hpp>
 #include <spdlog/spdlog.h>
 
+#include "inference/detail/cpu_algorithms.hpp"
+
 namespace gate::inference {
 
 namespace {
@@ -130,41 +132,13 @@ void PaddleOcrRecognizer::preprocess_(const cv::Mat& src, float* dst_chw) const 
 }
 
 RecognizedPlate PaddleOcrRecognizer::ctc_decode_(const float* logits) const {
-    std::string text;
-    text.reserve(static_cast<std::size_t>(seq_len_));
-    double conf_sum = 0.0;
-    int kept = 0;
-    int prev_idx = -1;
-
-    for (int t = 0; t < seq_len_; ++t) {
-        const float* row = logits + t * num_classes_;
-
-        // argmax along class dim
-        int best_idx = 0;
-        float best_prob = row[0];
-        for (int c = 1; c < num_classes_; ++c) {
-            if (row[c] > best_prob) {
-                best_prob = row[c];
-                best_idx = c;
-            }
-        }
-
-        // CTC: skip blank (index 0) and skip immediate repeats.
-        if (best_idx == 0 || best_idx == prev_idx) {
-            prev_idx = best_idx;
-            continue;
-        }
-
-        // best_idx 1..num_classes_-1 maps to dictionary_[best_idx - 1].
-        text += dictionary_[static_cast<std::size_t>(best_idx - 1)];
-        conf_sum += best_prob;
-        ++kept;
-        prev_idx = best_idx;
-    }
-
+    const auto result = detail::ctc_greedy_decode(
+        std::span<const float>{
+            logits, static_cast<std::size_t>(seq_len_) * static_cast<std::size_t>(num_classes_)},
+        seq_len_, num_classes_, dictionary_);
     RecognizedPlate r;
-    r.text = std::move(text);
-    r.confidence = (kept > 0) ? static_cast<float>(conf_sum / kept) : 0.0f;
+    r.text = std::move(result.text);
+    r.confidence = result.mean_confidence;
     return r;
 }
 

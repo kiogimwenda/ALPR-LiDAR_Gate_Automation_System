@@ -39,18 +39,6 @@ if(BUILD_PROTO)
     endif()
 endif()
 
-if(BUILD_TESTS)
-    find_package(Catch2 3 CONFIG QUIET)
-    if(Catch2_FOUND)
-        enable_testing()
-        add_subdirectory(tests)
-    else()
-        message(STATUS
-            "Skipping tests/: Catch2 v3 not found via find_package(CONFIG). "
-            "Configure with the vcpkg toolchain to build the C++ test suite.")
-    endif()
-endif()
-
 if(BUILD_SERVER)
     if(NOT ENABLE_GPU)
         message(FATAL_ERROR "BUILD_SERVER=ON requires ENABLE_GPU=ON (CUDA/TensorRT).")
@@ -62,6 +50,20 @@ if(BUILD_SERVER)
         message(STATUS
             "Skipping server/: spdlog not found via find_package(CONFIG). "
             "Configure with the vcpkg toolchain to build the inference + RPC server.")
+    endif()
+endif()
+
+# Tests come last so any optional production targets (gate_proto, gate_inference)
+# are already declared when tests/CMakeLists.txt evaluates `if(TARGET …)` gates.
+if(BUILD_TESTS)
+    find_package(Catch2 3 CONFIG QUIET)
+    if(Catch2_FOUND)
+        enable_testing()
+        add_subdirectory(tests)
+    else()
+        message(STATUS
+            "Skipping tests/: Catch2 v3 not found via find_package(CONFIG). "
+            "Configure with the vcpkg toolchain to build the C++ test suite.")
     endif()
 endif()
 
