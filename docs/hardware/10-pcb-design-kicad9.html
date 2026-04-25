@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gate Automation Field PCB — KiCad 9.0 Design Guide</title>
+<style>
+@page {
+  size: A4;
+  margin: 20mm 18mm 25mm 18mm;
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #666; }
+}
+body {
+  font-family: "Segoe UI", "Noto Sans", Arial, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #1a1a1a;
+  max-width: 100%;
+}
+h1 { font-size: 22pt; color: #0f172a; border-bottom: 3px solid #2563eb; padding-bottom: 8px; margin-top: 0; }
+h2 { font-size: 16pt; color: #1e40af; border-bottom: 1.5px solid #93c5fd; padding-bottom: 4px; margin-top: 28px; page-break-after: avoid; }
+h3 { font-size: 13pt; color: #1e3a5f; margin-top: 20px; page-break-after: avoid; }
+h4 { font-size: 11pt; color: #374151; margin-top: 14px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 9.5pt; page-break-inside: avoid; }
+th, td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
+th { background: #eff6ff; font-weight: 600; }
+tr:nth-child(even) { background: #f9fafb; }
+code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 9.5pt; }
+pre { background: #1e293b; color: #e2e8f0; padding: 12px 14px; border-radius: 6px; font-size: 9pt; overflow-x: auto; line-height: 1.4; page-break-inside: avoid; }
+pre code { background: none; color: inherit; padding: 0; }
+.note { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 14px; margin: 14px 0; border-radius: 4px; font-size: 10pt; }
+.warning { background: #fee2e2; border-left: 4px solid #dc2626; padding: 10px 14px; margin: 14px 0; border-radius: 4px; font-size: 10pt; }
+.tip { background: #dcfce7; border-left: 4px solid #16a34a; padding: 10px 14px; margin: 14px 0; border-radius: 4px; font-size: 10pt; }
+.cover { text-align: center; padding: 60px 0 40px 0; page-break-after: always; }
+.cover h1 { font-size: 28pt; border: none; }
+.cover .subtitle { font-size: 14pt; color: #475569; margin-top: 12px; }
+.cover .meta { font-size: 11pt; color: #64748b; margin-top: 40px; line-height: 2; }
+.toc { page-break-after: always; }
+.toc ul { list-style: none; padding-left: 0; }
+.toc ul li { padding: 4px 0; border-bottom: 1px dotted #e5e7eb; }
+.toc ul ul { padding-left: 20px; }
+.toc ul ul li { border-bottom: none; font-size: 10pt; }
+.pinout { font-family: monospace; font-size: 8.5pt; line-height: 1.3; white-space: pre; background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 4px; }
+.schematic-block { border: 2px solid #2563eb; border-radius: 8px; padding: 14px; margin: 16px 0; background: #f0f9ff; page-break-inside: avoid; }
+.footprint-card { border: 1px solid #d1d5db; border-radius: 6px; padding: 12px; margin: 10px 0; background: #fff; page-break-inside: avoid; }
+.step-num { display: inline-block; width: 28px; height: 28px; background: #2563eb; color: #fff; border-radius: 50%; text-align: center; line-height: 28px; font-weight: 700; font-size: 12pt; margin-right: 8px; }
+ol.steps > li { margin-bottom: 14px; }
+.clearfix::after { content: ""; display: table; clear: both; }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="cover">
+<h1>Gate Automation Field PCB</h1>
+<p class="subtitle">Complete KiCad 9.0 Design Guide<br>From Blank Project to Manufacturing-Ready Gerbers</p>
+<p class="meta">
+<strong>Project:</strong> ALPR + LiDAR Automated Vehicle Gate Control System<br>
+<strong>Board:</strong> Field Controller PCB v1.0<br>
+<strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
+<strong>KiCad Version:</strong> 9.0<br>
+<strong>Date:</strong> April 2026<br>
+<strong>Author:</strong> Gate Automation Project
+</p>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc">
+<h2>Table of Contents</h2>
+<ul>
+<li><strong>1.</strong> Introduction &amp; Board Overview</li>
+<li><strong>2.</strong> Prerequisites &amp; KiCad 9.0 Installation</li>
+<li><strong>3.</strong> Project Setup</li>
+<li><strong>4.</strong> Component Library &amp; Footprint Selection</li>
+  <ul>
+  <li>4.1 ESP32-S3-WROOM-1 Module</li>
+  <li>4.2 W5500 Ethernet Controller + RJ45 Jack</li>
+  <li>4.3 Power Regulation (12V→5V→3.3V)</li>
+  <li>4.4 USB-C Connector</li>
+  <li>4.5 Relay Driver Stage (4-Channel)</li>
+  <li>4.6 RS-485 Transceiver</li>
+  <li>4.7 Input Protection (Limit Switches &amp; Safety Beam)</li>
+  <li>4.8 Status LEDs</li>
+  <li>4.9 Crystal, Decoupling, ESD Protection</li>
+  <li>4.10 Connectors &amp; Terminals</li>
+  </ul>
+<li><strong>5.</strong> Schematic Capture — Step by Step</li>
+  <ul>
+  <li>5.1 Power Supply Section</li>
+  <li>5.2 ESP32-S3 Module Section</li>
+  <li>5.3 W5500 Ethernet Section</li>
+  <li>5.4 Relay Output Section</li>
+  <li>5.5 Input Protection Section</li>
+  <li>5.6 RS-485 Section</li>
+  <li>5.7 USB-C Section</li>
+  <li>5.8 LED &amp; Indicator Section</li>
+  </ul>
+<li><strong>6.</strong> Design Rules &amp; Constraints</li>
+<li><strong>7.</strong> PCB Layout — Step by Step</li>
+  <ul>
+  <li>7.1 Board Outline &amp; Mounting Holes</li>
+  <li>7.2 Component Placement Strategy</li>
+  <li>7.3 Power Plane Design</li>
+  <li>7.4 Signal Routing</li>
+  <li>7.5 Antenna Keepout Zone</li>
+  <li>7.6 Thermal Relief &amp; Copper Fills</li>
+  </ul>
+<li><strong>8.</strong> Design Rule Check (DRC)</li>
+<li><strong>9.</strong> Manufacturing Output (Gerbers, Drill, BOM, CPL)</li>
+<li><strong>10.</strong> Ordering from JLCPCB / PCBWay</li>
+<li><strong>11.</strong> Assembly &amp; Testing Checklist</li>
+<li><strong>Appendix A:</strong> Complete Schematic Net List</li>
+<li><strong>Appendix B:</strong> Full BOM with LCSC Part Numbers</li>
+<li><strong>Appendix C:</strong> PCB Layer Stackup</li>
+</ul>
+</div>
+
+<!-- CHAPTER 1 -->
+<h2>1. Introduction &amp; Board Overview</h2>
+
+<p>This guide walks you through designing a custom PCB for the gate automation field controller using KiCad 9.0. The board replaces the breadboard prototype and integrates all gate-side electronics into a single, production-ready, 4-layer PCB sized to fit inside a standard IP65 enclosure.</p>
+
+<h3>1.1 What This Board Does</h3>
+<ul>
+<li>Runs the ESP32-S3-WROOM-1-N16R8 module as the main controller</li>
+<li>Provides wired Ethernet (W5500 + RJ45) for communication with the GPU server</li>
+<li>Drives up to 4 relay outputs (gate motor trigger, leaf 2, spare 1, spare 2)</li>
+<li>Reads 3 digital inputs (limit switch OPEN, limit switch CLOSED, safety beam)</li>
+<li>Includes RS-485 transceiver for future CENTURION motor direct-drive</li>
+<li>Accepts 12V DC input, regulates to 5V and 3.3V on-board</li>
+<li>USB-C port for firmware upload and debug console</li>
+<li>Status LEDs for power, network link, authorization, and fault</li>
+</ul>
+
+<h3>1.2 Board Specifications</h3>
+<table>
+<tr><th>Parameter</th><th>Value</th></tr>
+<tr><td>Board dimensions</td><td>100 mm × 80 mm (fits in 200×150×100 mm enclosure)</td></tr>
+<tr><td>Layer count</td><td>4 layers (Signal – GND – Power – Signal)</td></tr>
+<tr><td>Copper weight</td><td>1 oz (35 µm) outer, 1 oz inner</td></tr>
+<tr><td>Board thickness</td><td>1.6 mm (standard FR-4)</td></tr>
+<tr><td>Min trace/space</td><td>0.2 mm / 0.2 mm (8 mil / 8 mil)</td></tr>
+<tr><td>Min via drill</td><td>0.3 mm (12 mil)</td></tr>
+<tr><td>Surface finish</td><td>HASL (lead-free) or ENIG</td></tr>
+<tr><td>Solder mask</td><td>Green (both sides)</td></tr>
+<tr><td>Silkscreen</td><td>White (both sides)</td></tr>
+<tr><td>Mounting holes</td><td>4× M3 (3.2 mm diameter), corner-mounted</td></tr>
+<tr><td>Operating temperature</td><td>-10°C to +60°C (outdoor enclosure)</td></tr>
+</table>
+
+<h3>1.3 Design Philosophy</h3>
+<ul>
+<li><strong>Reliability first:</strong> Generous trace widths, proper decoupling, TVS protection on all external I/O</li>
+<li><strong>Hand-solderable:</strong> No components smaller than 0603 (1608 metric). QFP/QFN packages have 0.5mm+ pitch</li>
+<li><strong>Testable:</strong> Test points on all power rails and critical signals</li>
+<li><strong>Expandable:</strong> Two spare relay channels + unpopulated headers for future use</li>
+</ul>
+
+<!-- CHAPTER 2 -->
+<h2>2. Prerequisites &amp; KiCad 9.0 Installation</h2>
+
+<h3>2.1 Install KiCad 9.0</h3>
+
+<h4>On Ubuntu/Debian (including WSL2):</h4>
+<pre><code># Add the KiCad 9.0 PPA
+sudo add-apt-repository ppa:kicad/kicad-9.0-releases
+sudo apt update
+sudo apt install kicad kicad-libraries kicad-doc
+
+# Verify version
+kicad-cli version
+# Should output: 9.0.x</code></pre>
+
+<h4>On Windows (recommended for GUI work):</h4>
+<pre><code># Download from https://www.kicad.org/download/windows/
+# Install KiCad 9.0.x (64-bit)
+# Include all libraries during installation</code></pre>
+
+<div class="tip"><strong>Tip:</strong> If developing on WSL2 but want the KiCad GUI, install KiCad natively on Windows and keep the project files in a Windows-accessible path (e.g., <code>\\wsl$\Debian\home\deby\projects\gate-automation\hardware\pcb\</code>).</div>
+
+<h3>2.2 Required Libraries</h3>
+<p>KiCad 9.0 ships with comprehensive libraries. All components in this design use <strong>official KiCad libraries</strong> — no custom libraries needed. The following library sets are used:</p>
+<table>
+<tr><th>Library</th><th>Type</th><th>Used For</th></tr>
+<tr><td>Connector_PinSocket</td><td>Symbol + Footprint</td><td>ESP32-S3 module castellated pads</td></tr>
+<tr><td>RF_Module</td><td>Symbol</td><td>ESP32-S3-WROOM-1 symbol</td></tr>
+<tr><td>Interface_Ethernet</td><td>Symbol</td><td>W5500 controller</td></tr>
+<tr><td>Connector_RJ</td><td>Footprint</td><td>RJ45 jack with magnetics</td></tr>
+<tr><td>Regulator_Switching</td><td>Symbol</td><td>Buck converters</td></tr>
+<tr><td>Relay</td><td>Symbol + Footprint</td><td>Signal relays</td></tr>
+<tr><td>Interface_UART</td><td>Symbol</td><td>MAX485 RS-485 transceiver</td></tr>
+<tr><td>Connector_USB</td><td>Symbol + Footprint</td><td>USB-C receptacle</td></tr>
+<tr><td>Device</td><td>Symbol</td><td>Resistors, capacitors, LEDs, diodes</td></tr>
+<tr><td>Diode</td><td>Symbol</td><td>TVS diodes, Schottky</td></tr>
+</table>
+
+<!-- CHAPTER 3 -->
+<h2>3. Project Setup</h2>
+
+<h3>3.1 Create the KiCad Project</h3>
+<ol class="steps">
+<li>Open KiCad 9.0</li>
+<li>Click <strong>File → New Project</strong></li>
+<li>Navigate to: <code>/home/deby/projects/gate-automation/hardware/pcb/</code></li>
+<li>Name the project: <code>gate-field-controller</code></li>
+<li>KiCad creates:
+<pre><code>hardware/pcb/
+├── gate-field-controller.kicad_pro   (project file)
+├── gate-field-controller.kicad_sch   (schematic)
+└── gate-field-controller.kicad_pcb   (PCB layout)</code></pre>
+</li>
+</ol>
+
+<h3>3.2 Project Settings</h3>
+<p>Open <strong>File → Project Settings</strong> and configure:</p>
+<table>
+<tr><th>Setting</th><th>Value</th></tr>
+<tr><td>Project name</td><td>gate-field-controller</td></tr>
+<tr><td>Company</td><td>Gate Automation Project</td></tr>
+<tr><td>Revision</td><td>1.0</td></tr>
+<tr><td>Date</td><td>2026-04-21</td></tr>
+</table>
+
+<h3>3.3 Schematic Sheet Settings</h3>
+<p>Open the Schematic Editor. Go to <strong>File → Page Settings</strong>:</p>
+<ul>
+<li>Paper size: <strong>A3</strong> (gives enough room for all subsystems on one sheet, or use hierarchical sheets)</li>
+<li>Title: <code>Gate Field Controller v1.0</code></li>
+<li>For complex designs, use <strong>hierarchical sheets</strong>: one sheet per subsystem (power, MCU, Ethernet, relays, I/O, RS-485)</li>
+</ul>
+
+<h3>3.4 Recommended Hierarchical Sheet Structure</h3>
+<pre><code>Root Sheet: gate-field-controller.kicad_sch
+├── power_supply.kicad_sch       (12V input, 5V buck, 3.3V LDO)
+├── mcu_esp32s3.kicad_sch        (ESP32-S3 module, USB-C, reset/boot)
+├── ethernet_w5500.kicad_sch     (W5500, crystal, magnetics, RJ45)
+├── relay_outputs.kicad_sch      (4× relay drivers + flyback diodes)
+├── sensor_inputs.kicad_sch      (limit switches, safety beam, TVS)
+└── rs485_leds.kicad_sch         (MAX485 transceiver, status LEDs)</code></pre>
+
+<p>To create a hierarchical sheet in KiCad 9.0:</p>
+<ol>
+<li>In the root schematic, click <strong>Place → Hierarchical Sheet</strong></li>
+<li>Draw a rectangle, name it (e.g., "Power Supply")</li>
+<li>Set the file name (e.g., <code>power_supply.kicad_sch</code>)</li>
+<li>Double-click the sheet to open and edit it</li>
+<li>Add hierarchical pins for connections between sheets</li>
+</ol>
+
+<!-- CHAPTER 4 -->
+<h2>4. Component Library &amp; Footprint Selection</h2>
+
+<p>Below is every component used on this PCB with the exact KiCad symbol, the selected footprint, and the justification for each choice.</p>
+
+<h3>4.1 ESP32-S3-WROOM-1-N16R8 Module</h3>
+
+<div class="footprint-card">
+<h4>Symbol &amp; Footprint</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>KiCad Symbol</td><td><code>RF_Module:ESP32-S3-WROOM-1</code></td></tr>
+<tr><td>Footprint</td><td><code>RF_Module:ESP32-S3-WROOM-1</code></td></tr>
+<tr><td>Package</td><td>18mm × 25.5mm × 3.2mm, castellated pads (edge-mount)</td></tr>
+<tr><td>Pad pitch</td><td>1.27 mm</td></tr>
+<tr><td>GND pad</td><td>Large center pad on bottom (must connect to GND plane)</td></tr>
+</table>
+
+<h4>Why This Footprint</h4>
+<ul>
+<li>The module is soldered directly to the PCB via castellated half-hole pads — no pin headers needed</li>
+<li>Much more compact and reliable than mounting a DevKit board</li>
+<li>The center GND pad provides excellent thermal and electrical grounding</li>
+<li>KiCad 9.0's official footprint matches Espressif's recommended land pattern exactly</li>
+</ul>
+
+<h4>Critical Layout Rules</h4>
+<ul>
+<li><strong>Antenna keepout:</strong> No copper (no traces, no ground fill, no vias) within 15 mm of the antenna end of the module. The antenna is at the end opposite the castellated pads.</li>
+<li><strong>Ground plane:</strong> Connect the center pad to the GND plane with at least 9 thermal-relief vias (0.3 mm drill, 0.6 mm pad)</li>
+<li><strong>Board edge:</strong> The antenna end should extend to or overhang the board edge for best RF performance. If WiFi/BLE is needed, place the module at a board corner.</li>
+</ul>
+</div>
+
+<h3>4.2 W5500 Ethernet Controller + RJ45</h3>
+
+<div class="footprint-card">
+<h4>W5500 IC</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>KiCad Symbol</td><td><code>Interface_Ethernet:W5500</code></td></tr>
+<tr><td>Footprint</td><td><code>Package_QFP:LQFP-48_7x7mm_P0.5mm</code></td></tr>
+<tr><td>Package</td><td>LQFP-48, 7×7 mm, 0.5 mm pitch</td></tr>
+<tr><td>Manufacturer P/N</td><td>W5500 (WIZnet)</td></tr>
+<tr><td>LCSC P/N</td><td>C32843</td></tr>
+</table>
+
+<h4>25 MHz Crystal (for W5500)</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>KiCad Symbol</td><td><code>Device:Crystal</code></td></tr>
+<tr><td>Footprint</td><td><code>Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm</code></td></tr>
+<tr><td>Value</td><td>25 MHz, 20 pF load, ±20 ppm</td></tr>
+<tr><td>LCSC P/N</td><td>C32346</td></tr>
+</table>
+
+<h4>RJ45 Jack with Integrated Magnetics</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>KiCad Symbol</td><td><code>Connector:RJ45_Shielded_Magjack</code> (or use <code>Connector_RJ:8P8C_Shielded</code>)</td></tr>
+<tr><td>Footprint</td><td><code>Connector_RJ:RJ45_Amphenol_ARJM11C7</code></td></tr>
+<tr><td>Part</td><td>HR911105A (or Amphenol ARJM11C7-114-AB-EW2) — single-port, with integrated magnetics + LEDs</td></tr>
+<tr><td>LCSC P/N</td><td>C12074 (HR911105A)</td></tr>
+</table>
+
+<h4>Why These Footprints</h4>
+<ul>
+<li><strong>LQFP-48:</strong> Hand-solderable with a fine-tip iron or hot air. Exposed pads are accessible for inspection. 7×7mm is compact but not punishing.</li>
+<li><strong>3215 crystal:</strong> The 3.2×1.5mm SMD form factor is the sweet spot — small enough to place close to the W5500 (critical for signal integrity) but large enough to hand-solder.</li>
+<li><strong>HR911105A:</strong> The most common integrated magjack in the market. Has built-in Bob Smith termination, center-tap capacitors, and link/activity LEDs. Eliminates the need for discrete transformers, which saves PCB area and reduces EMI issues. Single-piece solution.</li>
+</ul>
+
+<h4>Supporting Passives for W5500</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>C_dec (×6)</td><td>100 nF, 25V, X7R</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Decoupling on each VCC pin</td></tr>
+<tr><td>C_bulk (×1)</td><td>10 µF, 16V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Bulk decoupling near VCC</td></tr>
+<tr><td>R_bias</td><td>12.4 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>RSVD pin bias resistor</td></tr>
+<tr><td>C_crystal (×2)</td><td>20 pF, C0G</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Crystal load capacitors</td></tr>
+<tr><td>R_LED (×2)</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>RJ45 LED current limit</td></tr>
+<tr><td>Ferrite bead</td><td>600Ω@100MHz, 500mA</td><td><code>Inductor_SMD:L_0805_2012Metric</code></td><td>AVDD filter</td></tr>
+</table>
+</div>
+
+<h3>4.3 Power Regulation</h3>
+
+<div class="footprint-card">
+<h4>12V Input Protection</h4>
+<table>
+<tr><th>Component</th><th>Selection</th><th>Footprint</th></tr>
+<tr><td>Reverse polarity MOSFET</td><td>SI2301 (P-ch, SOT-23) or Schottky SS34</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td></tr>
+<tr><td>Input TVS diode</td><td>SMBJ15A (15V standoff, 600W)</td><td><code>Diode_SMD:D_SMB</code></td></tr>
+<tr><td>Input capacitor</td><td>100 µF, 25V, electrolytic</td><td><code>Capacitor_SMD:CP_Elec_8x10.5</code></td></tr>
+<tr><td>Polyfuse</td><td>MF-MSMF200 (2A hold, 4A trip)</td><td><code>Fuse:Fuse_1206_3216Metric</code></td></tr>
+</table>
+
+<h4>5V Buck Converter (12V → 5V)</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>IC</td><td>TPS5430 (Texas Instruments) — 3A, 5.5–36V input</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Regulator_Switching:TPS5430DDA</code></td></tr>
+<tr><td>Footprint</td><td><code>Package_SO:HSOP-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x2.41mm</code></td></tr>
+<tr><td>LCSC P/N</td><td>C9865</td></tr>
+<tr><td>Output</td><td>5.0V, 3A continuous</td></tr>
+<tr><td>Efficiency</td><td>~90% at 500mA load</td></tr>
+</table>
+
+<h4>TPS5430 External Components</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>L1 (inductor)</td><td>33 µH, 3A sat, shielded</td><td><code>Inductor_SMD:L_Bourns_SRN8040</code></td><td>Buck output inductor</td></tr>
+<tr><td>D1 (Schottky)</td><td>SS34 (3A, 40V)</td><td><code>Diode_SMD:D_SMA</code></td><td>Catch diode</td></tr>
+<tr><td>C_in</td><td>22 µF, 25V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Input filter</td></tr>
+<tr><td>C_out (×2)</td><td>47 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Output filter</td></tr>
+<tr><td>C_boot</td><td>100 nF, 16V</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Bootstrap capacitor</td></tr>
+<tr><td>R_top</td><td>43 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider top</td></tr>
+<tr><td>R_bot</td><td>10 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider bottom (Vout = 1.221 × (1 + 43k/10k) ≈ 5.0V)</td></tr>
+<tr><td>C_comp</td><td>3.3 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Compensation</td></tr>
+<tr><td>R_comp</td><td>15 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Compensation</td></tr>
+</table>
+
+<h4>3.3V LDO (5V → 3.3V)</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>IC</td><td>AMS1117-3.3 (1A LDO, SOT-223)</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Regulator_Linear:AMS1117-3.3</code></td></tr>
+<tr><td>Footprint</td><td><code>Package_TO_SOT_SMD:SOT-223-3_TabPin2</code></td></tr>
+<tr><td>LCSC P/N</td><td>C6186</td></tr>
+</table>
+
+<h4>AMS1117 External Components</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>C_in</td><td>10 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Input filter</td></tr>
+<tr><td>C_out</td><td>22 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Output stability (tantalum also OK)</td></tr>
+</table>
+
+<h4>Why These Regulators</h4>
+<ul>
+<li><strong>TPS5430:</strong> Well-proven 3A buck with excellent documentation. SOIC-8 is easy to hand-solder. 90%+ efficiency means minimal heat at our ~500mA typical load. The wide input range (up to 36V) protects against automotive-style voltage spikes on the 12V line.</li>
+<li><strong>AMS1117-3.3:</strong> Ubiquitous, cheap (KES 5–10), adequate for the ~300mA the ESP32-S3 + W5500 draw on 3.3V. The SOT-223 package has a large tab for heat dissipation. Dropout is only 1.2V, well within our 5V→3.3V margin.</li>
+</ul>
+</div>
+
+<h3>4.4 USB-C Connector</h3>
+
+<div class="footprint-card">
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>Connector type</td><td>USB-C 2.0 receptacle (16-pin, USB 2.0 only)</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Connector:USB_C_Receptacle_USB2.0</code></td></tr>
+<tr><td>Footprint</td><td><code>Connector_USB:USB_C_Receptacle_GCT_USB4105</code></td></tr>
+<tr><td>Part</td><td>GCT USB4105-GF-A (mid-mount, 16-pin, USB 2.0)</td></tr>
+<tr><td>LCSC P/N</td><td>C2688138 (or Korean Hroparts TYPE-C-31-M-12)</td></tr>
+</table>
+
+<h4>USB-C Circuit</h4>
+<ul>
+<li>CC1 and CC2 pins: Each pulled down to GND via <strong>5.1 kΩ</strong> resistor (signals "device" role to host)</li>
+<li>VBUS: Connected through a Schottky diode (SS14) to prevent back-feeding when external 12V is also connected</li>
+<li>D+ and D-: Connected to ESP32-S3's USB pins (IO19=D-, IO20=D+) via 22Ω series resistors</li>
+<li>Shield: Connected to GND through a 1 MΩ resistor + 4.7 nF cap (RC filter for EMI)</li>
+</ul>
+
+<h4>Why This Footprint</h4>
+<ul>
+<li>The GCT USB4105 is the most popular USB-C 2.0 receptacle in JLCPCB's parts library</li>
+<li>Mid-mount style: the connector body is level with the board surface — flush mounting in an enclosure</li>
+<li>16-pin (not 24-pin) because we only need USB 2.0 data — simpler routing, fewer pads</li>
+<li>Through-hole anchor tabs provide mechanical strength for the cable insertion force</li>
+</ul>
+</div>
+
+<h3>4.5 Relay Driver Stage (4-Channel)</h3>
+
+<div class="footprint-card">
+<h4>Relay Selection</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>Relay</td><td>Songle SRD-05VDC-SL-C (SPDT, 5V coil, 10A/250VAC contacts)</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Relay:SANYOU_SRD_Series_Form_C</code></td></tr>
+<tr><td>Footprint</td><td><code>Relay_THT:Relay_SPDT_SANYOU_SRD_Series_Form_C</code></td></tr>
+<tr><td>Quantity</td><td>4 (REL1: Leaf 1 trigger, REL2: Leaf 2 trigger, REL3: Spare, REL4: Spare)</td></tr>
+<tr><td>LCSC P/N</td><td>C35449</td></tr>
+</table>
+
+<h4>Relay Driver Circuit (per channel)</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>Q1 (NPN transistor)</td><td>SS8050 (SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>Relay coil driver (Ic > 90mA)</td></tr>
+<tr><td>R_base</td><td>1 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Base current limiting (3.3V - 0.7V)/1kΩ = 2.6mA → hFE×2.6mA > 90mA ✓</td></tr>
+<tr><td>D_flyback</td><td>1N4148W (SOD-123)</td><td><code>Diode_SMD:D_SOD-123</code></td><td>Flyback/freewheeling diode across coil</td></tr>
+<tr><td>LED indicator</td><td>Green 0603</td><td><code>LED_SMD:LED_0603_1608Metric</code></td><td>Relay state visual indicator</td></tr>
+<tr><td>R_LED</td><td>1 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>LED current limit (~2mA, sufficient for 0603)</td></tr>
+</table>
+
+<h4>Why Through-Hole Relays</h4>
+<ul>
+<li>Gate motors draw high surge current. The SRD relay's 10A contacts handle the inductive kick from motor contactors without welding.</li>
+<li>Through-hole relays are physically robust — they won't crack off the board under vibration from a sliding gate motor.</li>
+<li>Easily replaceable in the field (just desolder and swap) — important for a residential product.</li>
+<li>The 5V coil draws ~90mA, well within our 5V rail's 3A budget.</li>
+</ul>
+</div>
+
+<h3>4.6 RS-485 Transceiver</h3>
+
+<div class="footprint-card">
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>IC</td><td>MAX485ESA+ (half-duplex, 2.5 Mbps)</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Interface_UART:MAX485E</code></td></tr>
+<tr><td>Footprint</td><td><code>Package_SO:SOIC-8_3.9x4.9mm_P1.27mm</code></td></tr>
+<tr><td>LCSC P/N</td><td>C14038</td></tr>
+</table>
+
+<h4>External Components</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>R_term</td><td>120 Ω (optional, populate for end-of-line)</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Bus termination</td></tr>
+<tr><td>R_bias_A</td><td>560 Ω to VCC</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias (idle = mark)</td></tr>
+<tr><td>R_bias_B</td><td>560 Ω to GND</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias</td></tr>
+<tr><td>TVS (×2)</td><td>PESD5V0U2BT (SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>ESD protection on A/B lines</td></tr>
+<tr><td>C_dec</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>VCC decoupling</td></tr>
+</table>
+
+<h4>Connections</h4>
+<ul>
+<li>DI (pin 4) → ESP32-S3 IO16 (UART TX)</li>
+<li>RO (pin 1) → ESP32-S3 IO17 (UART RX)</li>
+<li>DE + RE tied together → ESP32-S3 IO18 (direction control: HIGH=TX, LOW=RX)</li>
+<li>A, B → screw terminal for RS-485 bus cable</li>
+</ul>
+</div>
+
+<h3>4.7 Input Protection (Limit Switches &amp; Safety Beam)</h3>
+
+<div class="footprint-card">
+<h4>Circuit per Input Channel (×3: IO6, IO7, IO15)</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>R_pullup</td><td>10 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Pull-up to 3.3V (NC sensors go LOW when triggered)</td></tr>
+<tr><td>R_series</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Current limiting for ESD events</td></tr>
+<tr><td>C_filter</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>RC debounce (τ = 330Ω × 100nF = 33µs)</td></tr>
+<tr><td>D_clamp</td><td>BAV99 (dual series, SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>Clamp to GND/3.3V rails</td></tr>
+</table>
+
+<h4>Why This Approach</h4>
+<ul>
+<li>Field wiring (10m+ cable to gate frame) picks up induced noise from the gate motor. The RC filter + clamping diodes prevent false triggers.</li>
+<li>The series resistor limits current if a cable is accidentally shorted to 12V (12V - 3.3V = 8.7V / 330Ω = 26mA → safe for BAV99 + GPIO).</li>
+<li>Hardware debounce means firmware doesn't need to waste cycles on software debouncing.</li>
+</ul>
+</div>
+
+<h3>4.8 Status LEDs</h3>
+
+<div class="footprint-card">
+<table>
+<tr><th>LED</th><th>Color</th><th>GPIO</th><th>Meaning</th><th>Footprint</th></tr>
+<tr><td>LED_PWR</td><td>Green</td><td>Always on (5V rail)</td><td>Board powered</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_NET</td><td>Yellow</td><td>W5500 LINK pin</td><td>Ethernet link active</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_AUTH</td><td>Green</td><td>IO47</td><td>Vehicle authorized</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_FAULT</td><td>Red</td><td>IO21</td><td>System fault</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+</table>
+
+<h4>LED Resistor Values</h4>
+<ul>
+<li>Power LED (5V rail): R = (5V - 2.0V) / 5mA = <strong>620 Ω</strong> (use 680 Ω standard value)</li>
+<li>GPIO LEDs (3.3V): R = (3.3V - 2.0V) / 5mA = <strong>260 Ω</strong> (use 330 Ω standard value)</li>
+<li>All resistors: <code>Resistor_SMD:R_0603_1608Metric</code></li>
+</ul>
+
+<h4>Why 0805 LEDs</h4>
+<ul>
+<li>0805 (2012 metric) LEDs are bright enough to see through a translucent enclosure lid</li>
+<li>Large enough to place by hand with tweezers, small enough not to waste PCB space</li>
+<li>0603 LEDs are too dim for visibility at distance; 1206 LEDs are unnecessarily large</li>
+</ul>
+</div>
+
+<h3>4.9 Decoupling &amp; ESD Protection</h3>
+
+<div class="footprint-card">
+<h4>ESP32-S3 Module Decoupling</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Qty</th><th>Footprint</th><th>Location</th></tr>
+<tr><td>C_dec</td><td>100 nF, X7R, 16V</td><td>4</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>One per VCC pin of ESP32-S3 module</td></tr>
+<tr><td>C_bulk</td><td>10 µF, X5R, 10V</td><td>2</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Near ESP32-S3 3V3 pins</td></tr>
+</table>
+
+<h4>USB ESD Protection</h4>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>USBLC6-2SC6</td><td>ESD clamp, SOT-23-6</td><td><code>Package_TO_SOT_SMD:SOT-23-6</code></td><td>Protects USB D+/D- from ESD strikes</td></tr>
+</table>
+
+<h4>Power Rail TVS</h4>
+<table>
+<tr><th>Location</th><th>Part</th><th>Footprint</th></tr>
+<tr><td>12V input</td><td>SMBJ15A</td><td><code>Diode_SMD:D_SMB</code></td></tr>
+<tr><td>5V rail</td><td>SMBJ6.0A</td><td><code>Diode_SMD:D_SMB</code></td></tr>
+</table>
+</div>
+
+<h3>4.10 Connectors &amp; Terminals</h3>
+
+<div class="footprint-card">
+<table>
+<tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
+<tr><td>J_PWR</td><td>12V DC input</td><td>2-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-2_5.08mm</code></td></tr>
+<tr><td>J_RELAY</td><td>Relay outputs (COM/NO/NC × 4)</td><td>12-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-12_3.81mm</code></td></tr>
+<tr><td>J_SENSE</td><td>Sensor inputs (limit×2 + beam)</td><td>6-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-6_3.81mm</code></td></tr>
+<tr><td>J_RS485</td><td>RS-485 A/B/GND</td><td>3-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-3_5.08mm</code></td></tr>
+<tr><td>J_PROG</td><td>UART programming header</td><td>1×4 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical</code></td></tr>
+<tr><td>J_DBG</td><td>SWD/JTAG debug header</td><td>1×5 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical</code></td></tr>
+</table>
+
+<h4>Why Screw Terminals</h4>
+<ul>
+<li>Field wiring (18 AWG stranded) is terminated with bare wire stripped ends — screw terminals accept this directly</li>
+<li>No crimping tools required for installation</li>
+<li>Phoenix-style terminals are industry standard for industrial control panels</li>
+<li>5.08mm pitch for power (thicker wire clearance), 3.81mm for signals (compact)</li>
+</ul>
+</div>
+
+<!-- CHAPTER 5 -->
+<h2>5. Schematic Capture — Step by Step</h2>
+
+<h3>5.1 Power Supply Section</h3>
+
+<div class="schematic-block">
+<h4>Complete Power Path</h4>
+<pre><code>J_PWR (12V IN)
+  │
+  ├── Polyfuse F1 (2A) ──┬── TVS D_TVS1 (SMBJ15A) ──┐
+  │                       │                            GND
+  │                       │
+  │                       ├── C_in_bulk (100µF/25V electrolytic)
+  │                       │
+  │                       ▼
+  │              ┌─────────────────┐
+  │              │    TPS5430      │
+  │              │                 │
+  │              │ VIN     BOOT────┤── C_boot (100nF)
+  │              │         SW──────┤── L1 (33µH) ──┬── C_out1 (47µF)
+  │              │         GND     │               ├── C_out2 (47µF)
+  │              │         EN      │               │
+  │              │         VSNS────┤── R_top(43k)──┤
+  │              │                 │               ├── R_bot(10k)──GND
+  │              └─────────────────┘               │
+  │                                                ▼
+  │                                           +5V RAIL
+  │                                                │
+  │                                    ┌───────────┤
+  │                                    │           │
+  │                           C_in_ldo(10µF)       │
+  │                                    │           ▼
+  │                                    │   ┌──────────────┐
+  │                                    │   │  AMS1117-3.3 │
+  │                                    │   │ IN    OUT─────┤── C_out_ldo(22µF)
+  │                                    │   │       GND     │
+  │                                    │   └──────────────┘
+  │                                    │           │
+  │                                    │           ▼
+  │                                    │      +3.3V RAIL
+  │                                    │
+  └── 12V RAIL (to safety beams, RS-485 if needed)</code></pre>
+</div>
+
+<h4>Schematic Entry Steps</h4>
+<ol class="steps">
+<li>Open the schematic editor. If using hierarchical sheets, open <code>power_supply.kicad_sch</code>.</li>
+<li>Place power symbols: Press <strong>P</strong>, search for <code>+12V</code>, <code>+5V</code>, <code>+3.3V</code>, <code>GND</code>. Place one of each as rail references.</li>
+<li>Place J_PWR: Press <strong>A</strong> (Add Symbol), search <code>Screw_Terminal_01x02</code>. Place it at the left edge of the sheet. Label pins: pin1 = +12V_IN, pin2 = GND.</li>
+<li>Place the polyfuse F1: Symbol <code>Polyfuse</code>. Connect in series with +12V_IN.</li>
+<li>Place TVS D_TVS1: Symbol <code>D_TVS</code>. Connect cathode to the +12V net (after polyfuse), anode to GND.</li>
+<li>Place C_in_bulk (100µF): Symbol <code>C_Polarized</code>. Connect + to +12V, – to GND.</li>
+<li>Place U_BUCK (TPS5430): Symbol <code>TPS5430DDA</code>. Wire VIN to +12V, GND to GND.</li>
+<li>Place all external components for the TPS5430 as shown in the power path diagram above.</li>
+<li>Place U_LDO (AMS1117-3.3): Symbol <code>AMS1117-3.3</code>. Wire VIN to +5V, VOUT to +3.3V, GND to GND.</li>
+<li>Place input/output capacitors for the LDO.</li>
+<li>Add <strong>test points</strong>: Place symbol <code>TestPoint</code> on +12V, +5V, and +3.3V nets.</li>
+<li>Add <strong>net labels</strong>: <code>+12V</code>, <code>+5V</code>, <code>+3V3</code> for inter-sheet connectivity.</li>
+</ol>
+
+<h3>5.2 ESP32-S3 Module Section</h3>
+
+<div class="schematic-block">
+<h4>ESP32-S3-WROOM-1 Connections</h4>
+<pre><code>                    ESP32-S3-WROOM-1-N16R8
+                    ┌────────────────────┐
+        +3V3 ──────┤ 3V3            GND  ├────── GND
+                    │                    │
+  W5500_CLK ◄──────┤ IO10          IO4  ├──────► RELAY_1
+ W5500_MOSI ◄──────┤ IO11          IO5  ├──────► RELAY_2
+ W5500_MISO ──────►┤ IO12          IO6  ├◄────── LIM_OPEN
+   W5500_CS ◄──────┤ IO13          IO7  ├◄────── LIM_CLOSED
+  W5500_INT ──────►┤ IO14         IO15  ├◄────── SAFETY_BEAM
+                    │                    │
+  RS485_TX  ◄──────┤ IO16         IO47  ├──────► LED_AUTH
+  RS485_RX  ──────►┤ IO17         IO21  ├──────► LED_FAULT
+  RS485_DE  ◄──────┤ IO18         IO48  ├──────► (RGB LED onboard)
+                    │                    │
+    USB_D-  ◄─────►┤ IO19               │
+    USB_D+  ◄─────►┤ IO20               │
+                    │                    │
+             EN ───┤ EN (with RC reset) │
+                    │                    │
+                    │    GND_PAD         │
+                    └───────┬────────────┘
+                            │
+                           GND (9× vias to ground plane)</code></pre>
+</div>
+
+<h4>ESP32-S3 Supporting Circuitry</h4>
+
+<p><strong>Reset circuit:</strong></p>
+<ul>
+<li>EN pin: 10 kΩ pull-up to 3.3V + 1 µF capacitor to GND (provides power-on reset delay)</li>
+<li>Tactile switch (reset button): connects EN to GND when pressed</li>
+<li>Symbol: <code>SW_Push</code>, Footprint: <code>Button_Switch_SMD:SW_SPST_TL3342</code></li>
+</ul>
+
+<p><strong>Boot mode select:</strong></p>
+<ul>
+<li>IO0 (BOOT): 10 kΩ pull-up to 3.3V (normal boot)</li>
+<li>Tactile switch (boot button): connects IO0 to GND for firmware download mode</li>
+<li>Auto-program circuit (optional): Use DTR/RTS from USB-UART to toggle EN and IO0 automatically (same as DevKit)</li>
+</ul>
+
+<p><strong>Decoupling:</strong></p>
+<ul>
+<li>4× 100 nF (0603) placed within 3mm of each 3V3/GND pin pair</li>
+<li>2× 10 µF (0805) placed within 10mm of the module</li>
+</ul>
+
+<h3>5.3 W5500 Ethernet Section</h3>
+
+<div class="schematic-block">
+<pre><code>                         W5500 (LQFP-48)
+                    ┌─────────────────────────┐
+ESP32 IO10 (CLK)───┤ SCLK              AVDD  ├───Ferrite───+3V3
+ESP32 IO11 (MOSI)──┤ MOSI              DVDD  ├───+3V3
+ESP32 IO12 (MISO)──┤ MISO              1V8OUT├───C(10µF)───GND
+ESP32 IO13 (CS)────┤ SCSn                    │
+ESP32 IO14 (INT)───┤ INTn              RSVD  ├───R(12.4k)───GND
+                    │                         │
+            GND ───┤ GND               EXRES1├───R(12.4k)───GND
+                    │                         │
+            GND ───┤ RSTn (via RC)     TOCAP ├───C(4.7µF)───GND
+                    │                         │
+    25MHz XTAL ────┤ XI               TXP/TXN├───┐
+    25MHz XTAL ────┤ XO               RXP/RXN├───┤── To RJ45 magjack
+                    │                         │   │   (HR911105A)
+                    │              LINKLED    ├───┤── LED indicator
+                    │              ACTLED     ├───┘
+                    └─────────────────────────┘</code></pre>
+</div>
+
+<h4>Key W5500 Schematic Notes</h4>
+<ol>
+<li><strong>AVDD:</strong> Must be filtered from DVDD through a ferrite bead (600Ω@100MHz). Do NOT connect directly to 3.3V.</li>
+<li><strong>RSTn:</strong> 10kΩ pull-up to 3.3V + 100nF to GND (ensures clean reset). Optionally connect to ESP32 GPIO for software-controlled reset.</li>
+<li><strong>Crystal routing:</strong> Keep XI/XO traces under 10mm, with ground guard ring. Load caps (2× 20pF) placed within 2mm of crystal pads.</li>
+<li><strong>PMODE pins:</strong> PMODE[2:0] all pulled up to 3.3V via 10kΩ for "all capable, auto-negotiation" mode.</li>
+<li><strong>SPI signals:</strong> Add 33Ω series resistors on SCLK and MOSI close to the W5500 for signal integrity (optional but recommended for traces >30mm).</li>
+</ol>
+
+<h3>5.4 Relay Output Section</h3>
+
+<div class="schematic-block">
+<h4>Per-Channel Relay Driver (×4)</h4>
+<pre><code>ESP32 IO4/IO5/IO21/IO42 ───[R_base 1kΩ]───┐
+                                            │ Base
+                                       ┌────┴────┐
+                                       │ SS8050  │
+                                       │  (NPN)  │
+                                       └────┬────┘
+                                            │ Collector
+                      ┌─────────────────────┤
+                      │                     │
+              D_flyback (1N4148W)           │
+              cathode ┤     anode           │
+                      │       │             │
+               +5V ───┘       └─────┤Relay Coil├───+5V
+                                    │  (SRD)   │
+                                    └──────────┘
+                                            │ Emitter
+                                           GND
+
+  Relay Contacts: ─── COM ─── NO ─── NC ─── → J_RELAY screw terminal</code></pre>
+</div>
+
+<div class="note"><strong>Note:</strong> The relay coil is powered from the +5V rail, NOT 3.3V. The NPN transistor level-shifts the 3.3V GPIO signal to switch the 5V relay. The flyback diode MUST be present — without it, the back-EMF from the relay coil will destroy the transistor.</div>
+
+<h3>5.5 Input Protection Section</h3>
+
+<div class="schematic-block">
+<h4>Per-Channel Input (×3: LIM_OPEN, LIM_CLOSED, SAFETY_BEAM)</h4>
+<pre><code>J_SENSE terminal ───[R_series 330Ω]───┬───[R_pullup 10kΩ]─── +3V3
+                                       │
+                                 [C_filter 100nF]
+                                       │
+                                      GND
+
+                              BAV99 clamp:
+                              ┌──|◄──── +3V3
+J_SENSE ── R_series ──────────┤
+                              └──►|──── GND
+                                       │
+                                       └─── To ESP32 GPIO (IO6/IO7/IO15)</code></pre>
+</div>
+
+<h3>5.6 RS-485 Section</h3>
+
+<div class="schematic-block">
+<pre><code>ESP32 IO16 (TX) ─────────────────────── DI (pin 4)  ┐
+ESP32 IO17 (RX) ─────────────────────── RO (pin 1)  │  MAX485ESA+
+ESP32 IO18 (DE) ──┬──────────────────── DE (pin 3)  │  (SOIC-8)
+                  └──────────────────── /RE (pin 2)  │
+                                                     │
+                +5V ──── VCC (pin 8)                 │
+                GND ──── GND (pin 5)                 │
+                                                     │
+                          A (pin 6) ────┬── R_bias_A(560Ω) ── +5V
+                                        ├── TVS
+                                        └── J_RS485 pin 1
+
+                          B (pin 7) ────┬── R_bias_B(560Ω) ── GND
+                                        ├── TVS
+                                        └── J_RS485 pin 2
+
+                                   J_RS485 pin 3 ── GND</code></pre>
+</div>
+
+<h3>5.7 USB-C Section</h3>
+
+<div class="schematic-block">
+<pre><code>USB-C Receptacle (GCT USB4105)
+┌──────────────────────────────┐
+│ VBUS ────[SS14 Schottky]────►│── +5V_USB (OR'd with main 5V)
+│                              │
+│ CC1 ─────[5.1kΩ]──── GND    │
+│ CC2 ─────[5.1kΩ]──── GND    │
+│                              │
+│ D+ ──────[22Ω]──────────────┤── ESP32 IO20
+│ D- ──────[22Ω]──────────────┤── ESP32 IO19
+│                              │
+│ SHIELD ──[1MΩ + 4.7nF]── GND│   (RC filter)
+└──────────────────────────────┘
+         │
+    [USBLC6-2SC6]  (ESD protection on D+/D-)
+         │
+        GND</code></pre>
+</div>
+
+<div class="warning"><strong>Important:</strong> The Schottky diode on VBUS prevents the 12V→5V buck converter from back-feeding power out the USB port. Without this, connecting USB while 12V is applied would try to power the host computer.</div>
+
+<h3>5.8 LED &amp; Indicator Section</h3>
+<pre><code>+5V ──[R 680Ω]──[LED_PWR Green 0805]── GND     (always on)
+
+IO47 ──[R 330Ω]──[LED_AUTH Green 0805]── GND   (authorized pulse)
+
+IO21 ──[R 330Ω]──[LED_FAULT Red 0805]── GND    (fault active)
+
+W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></pre>
+
+<!-- CHAPTER 6 -->
+<h2>6. Design Rules &amp; Constraints</h2>
+
+<h3>6.1 Setting Up Design Rules in KiCad</h3>
+<p>Open <strong>Board Setup → Design Rules → Net Classes</strong> in the PCB Editor:</p>
+
+<table>
+<tr><th>Net Class</th><th>Track Width</th><th>Clearance</th><th>Via Drill</th><th>Via Size</th><th>Applied To</th></tr>
+<tr><td>Default</td><td>0.25 mm</td><td>0.2 mm</td><td>0.3 mm</td><td>0.6 mm</td><td>All signal nets</td></tr>
+<tr><td>Power</td><td>0.5 mm</td><td>0.25 mm</td><td>0.4 mm</td><td>0.8 mm</td><td>+12V, +5V, +3V3, GND</td></tr>
+<tr><td>HighCurrent</td><td>1.0 mm</td><td>0.3 mm</td><td>0.5 mm</td><td>1.0 mm</td><td>Relay coil, 12V input</td></tr>
+<tr><td>USB</td><td>0.2 mm (impedance controlled)</td><td>0.2 mm</td><td>0.3 mm</td><td>0.6 mm</td><td>USB_D+, USB_D-</td></tr>
+<tr><td>SPI</td><td>0.2 mm</td><td>0.2 mm</td><td>0.3 mm</td><td>0.6 mm</td><td>SPI_CLK, SPI_MOSI, SPI_MISO, SPI_CS</td></tr>
+</table>
+
+<h3>6.2 PCB Layer Stackup</h3>
+<table>
+<tr><th>Layer</th><th>Name</th><th>Purpose</th><th>Copper Weight</th></tr>
+<tr><td>L1 (Top)</td><td>F.Cu</td><td>Signal + component pads</td><td>1 oz (35 µm)</td></tr>
+<tr><td>L2</td><td>In1.Cu</td><td>Ground plane (continuous, unbroken)</td><td>1 oz</td></tr>
+<tr><td>L3</td><td>In2.Cu</td><td>Power plane (+5V fill, +3V3 fill, +12V island)</td><td>1 oz</td></tr>
+<tr><td>L4 (Bottom)</td><td>B.Cu</td><td>Signal + component pads (bottom-side passives)</td><td>1 oz</td></tr>
+</table>
+
+<p>To configure this in KiCad: <strong>Board Setup → Board Stackup → Physical Stackup</strong>. Set to 4 layers. Ensure the prepreg/core thicknesses give a total board thickness of 1.6 mm.</p>
+
+<h3>6.3 Trace Width Calculator</h3>
+<p>Use KiCad's built-in calculator (<strong>Tools → PCB Calculator → Track Width</strong>) or these pre-calculated values:</p>
+<table>
+<tr><th>Current</th><th>Required Width (outer, 1oz, 20°C rise)</th><th>Used For</th></tr>
+<tr><td>100 mA</td><td>0.15 mm (6 mil) — use 0.25 mm</td><td>SPI, UART, GPIO signals</td></tr>
+<tr><td>500 mA</td><td>0.25 mm (10 mil) — use 0.5 mm</td><td>5V rail, 3.3V rail</td></tr>
+<tr><td>1 A</td><td>0.5 mm (20 mil) — use 0.75 mm</td><td>Relay coil supply</td></tr>
+<tr><td>2 A</td><td>0.9 mm (35 mil) — use 1.0 mm</td><td>12V input, buck converter</td></tr>
+<tr><td>3 A</td><td>1.3 mm (50 mil) — use 1.5 mm</td><td>Buck inductor to output</td></tr>
+</table>
+
+<h3>6.4 USB 2.0 Differential Pair</h3>
+<ul>
+<li>Target impedance: 90 Ω differential</li>
+<li>Trace width: ~0.2 mm with 0.15 mm gap on outer layer over ground plane (verify with KiCad impedance calculator for your stackup)</li>
+<li>Length matching: D+ and D- must be within 0.5 mm of each other</li>
+<li>Keep USB traces short (&lt; 50 mm), no vias if possible</li>
+<li>Route with 45° angles only (no 90° bends)</li>
+</ul>
+
+<h3>6.5 SPI Bus Rules</h3>
+<ul>
+<li>Maximum SPI clock: 33 MHz (W5500 supports up to 80 MHz, but ESP32-S3 SPI master practical limit is ~40 MHz)</li>
+<li>Keep SPI traces under 50 mm total length</li>
+<li>Route CLK, MOSI, MISO as a group (parallel, same layer)</li>
+<li>Add ground guard traces between SPI bus and noisy signals (relay control, 12V power)</li>
+<li>Series termination resistors (33 Ω) on CLK and MOSI at the driver end (ESP32) if trace length > 30 mm</li>
+</ul>
+
+<!-- CHAPTER 7 -->
+<h2>7. PCB Layout — Step by Step</h2>
+
+<h3>7.1 Board Outline &amp; Mounting Holes</h3>
+
+<ol class="steps">
+<li>In PCB Editor, switch to the <strong>Edge.Cuts</strong> layer</li>
+<li>Draw a rectangle: <strong>100 mm × 80 mm</strong>. Use <strong>Place → Line</strong> or the rectangle tool.
+<pre><code>Coordinates (origin at bottom-left):
+  Bottom-left: (0, 0)
+  Bottom-right: (100, 0)
+  Top-right: (100, 80)
+  Top-left: (0, 80)</code></pre>
+</li>
+<li>Round the corners with 2mm radius arcs (optional, improves aesthetics and reduces stress concentrations)</li>
+<li>Place 4× mounting holes:
+<ul>
+<li>Footprint: <code>MountingHole:MountingHole_3.2mm_M3_Pad_Via</code></li>
+<li>Positions: (5, 5), (95, 5), (5, 75), (95, 75) — 5mm inset from each corner</li>
+<li>Connect pad to GND net (provides chassis ground connection via standoffs)</li>
+</ul>
+</li>
+</ol>
+
+<h3>7.2 Component Placement Strategy</h3>
+
+<div class="note"><strong>Golden rule:</strong> Place components in the order that signals flow — power input at one edge, output connectors at the opposite/adjacent edges, MCU in the center.</div>
+
+<h4>Placement Zones (100×80mm board)</h4>
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│                         TOP EDGE                             │
+│   ┌─────────┐                              ┌──────────┐    │
+│   │  J_PWR  │  [Power Section]             │  J_RS485 │    │
+│   │ (12V in)│  TPS5430 + L1 + caps         │          │    │
+│   └─────────┘  AMS1117                     └──────────┘    │
+│                                                              │
+│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
+│                                                              │
+│                    ┌──────────────────┐                      │
+│   [LEDs]           │   ESP32-S3       │      [W5500 +       │
+│   PWR AUTH         │   WROOM-1        │       Crystal]      │
+│   NET FAULT        │   (center)       │                      │
+│                    │                  │      ┌──────────┐    │
+│                    └──────────────────┘      │  RJ45    │    │
+│                         ↑ antenna           │  Jack    │    │
+│                    (keep clear!)             └──────────┘    │
+│                                                              │
+│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
+│                                                              │
+│   ┌──────────────────────────────────────────────────────┐  │
+│   │ REL1  │ REL2  │ REL3  │ REL4  │   [Relay Section]   │  │
+│   │       │       │       │       │   NPN drivers below  │  │
+│   └───┬───┴───┬───┴───┬───┴───┬───┘   each relay        │  │
+│       │       │       │       │                           │  │
+│   ┌───┴───────┴───────┴───────┴─── J_RELAY ─────────┐   │  │
+│   │  12-pos screw terminal (relay outputs)            │   │  │
+│   └──────────────────────────────────────────────────┘   │  │
+│                                                              │
+│   ┌────────────┐       ┌────────────┐                       │
+│   │  J_SENSE   │       │   USB-C    │                       │
+│   │ (6-pos)    │       │            │                       │
+│   └────────────┘       └────────────┘                       │
+│                         BOTTOM EDGE                          │
+└─────────────────────────────────────────────────────────────┘</code></pre>
+
+<h4>Placement Rules</h4>
+<ol>
+<li><strong>Power section (top-left):</strong> Keep the buck converter, inductor, and output caps in a tight loop. The current loop (VIN → TPS5430 SW → L1 → C_out → GND → back to VIN) must be as small as possible to minimize EMI.</li>
+<li><strong>ESP32-S3 (center):</strong> Antenna faces toward a board edge with no copper. Place decoupling caps on the <strong>bottom side</strong> directly beneath the module's power pins.</li>
+<li><strong>W5500 + RJ45 (right side):</strong> Place the W5500 within 15mm of the RJ45 jack. Crystal within 5mm of W5500's XI/XO pins.</li>
+<li><strong>Relays (bottom area):</strong> Relays are the noisiest components — keep them physically far from the ESP32 and W5500. Route relay control signals with ground guard traces.</li>
+<li><strong>USB-C (bottom edge):</strong> Accessible from outside the enclosure. Mount flush with board edge or use a panel-mount cutout.</li>
+<li><strong>Screw terminals:</strong> All at board edges for easy wire access.</li>
+</ol>
+
+<h3>7.3 Power Plane Design</h3>
+
+<h4>Layer 2 (In1.Cu) — Ground Plane</h4>
+<ol>
+<li>Select layer <code>In1.Cu</code></li>
+<li>Click <strong>Place → Zone</strong></li>
+<li>Net: <code>GND</code></li>
+<li>Draw zone covering the entire board outline</li>
+<li><strong>Critical:</strong> Do NOT cut this plane. An unbroken ground plane is the single most important factor for EMI performance and signal integrity.</li>
+<li>The only acceptable break: a narrow slot under the antenna keepout zone of the ESP32-S3 (but even this should be a keep-out, not a plane cut)</li>
+</ol>
+
+<h4>Layer 3 (In2.Cu) — Power Planes</h4>
+<ol>
+<li>Create 3 zones on <code>In2.Cu</code>:
+<ul>
+<li><strong>+5V zone:</strong> Covers the relay section and feeds the LDO. Approximately 60% of board area.</li>
+<li><strong>+3.3V zone:</strong> Covers the ESP32-S3 and W5500 area. Approximately 35% of board area.</li>
+<li><strong>+12V zone:</strong> Small island near the power input and safety beam connector. Approximately 5%.</li>
+</ul>
+</li>
+<li>Zone priority: +12V = 1, +5V = 2, +3V3 = 3 (higher priority fills first where zones overlap)</li>
+<li>Leave 0.5mm gap between power zones</li>
+</ol>
+
+<h3>7.4 Signal Routing</h3>
+
+<h4>Routing Order (route in this sequence for best results)</h4>
+<ol>
+<li><strong>USB differential pair</strong> — most impedance-sensitive. Route first while the board is uncongested.
+<ul>
+<li>Use <strong>Route → Differential Pair</strong> in KiCad 9.0</li>
+<li>Set pair gap to 0.15 mm in Net Classes</li>
+<li>Route on Top layer only (F.Cu), directly over the unbroken GND plane</li>
+<li>No vias on the differential pair</li>
+</ul>
+</li>
+<li><strong>25 MHz crystal traces</strong> — short, symmetric, with ground guard.
+<ul>
+<li>Route on Top layer, keep traces under 5mm</li>
+<li>Place ground vias around both crystal pads</li>
+</ul>
+</li>
+<li><strong>SPI bus</strong> (ESP32 → W5500) — parallel routing, same layer
+<ul>
+<li>Route CLK, MOSI, MISO, CS as a group on F.Cu</li>
+<li>Keep traces parallel with 0.3mm minimum spacing between them</li>
+<li>Maximum length: 50mm. Target: 30mm or less.</li>
+</ul>
+</li>
+<li><strong>Power traces</strong> — thick traces on F.Cu connecting to power plane vias
+<ul>
+<li>Buck converter SW node to inductor: 1.5mm wide, as short as possible (&lt;5mm)</li>
+<li>Use multiple vias (3–4) to connect power traces to their respective inner-layer planes</li>
+</ul>
+</li>
+<li><strong>GPIO signals</strong> — relay drivers, LED outputs, sensor inputs
+<ul>
+<li>Standard 0.25mm traces</li>
+<li>Route relay control signals on B.Cu (bottom layer) to keep them away from the sensitive top-layer signals</li>
+</ul>
+</li>
+<li><strong>RS-485 bus</strong>
+<ul>
+<li>Route A and B as a differential pair (100Ω, though less critical than USB)</li>
+<li>Keep traces parallel, short run to the screw terminal</li>
+</ul>
+</li>
+</ol>
+
+<h4>Routing Tips in KiCad 9.0</h4>
+<ul>
+<li><strong>Interactive router:</strong> Press <code>X</code> to start routing, <code>V</code> to place a via and switch layers</li>
+<li><strong>Push-and-shove:</strong> Enable in <strong>Interactive Router Settings</strong> (gear icon) — it moves existing traces out of the way as you route</li>
+<li><strong>Length tuning:</strong> After routing USB pair, use <strong>Route → Tune Track Length</strong> to add serpentine to the shorter trace</li>
+<li><strong>Teardrops:</strong> After routing, run <strong>Edit → Apply Teardrops</strong> — adds reliability to pad-trace connections</li>
+</ul>
+
+<h3>7.5 Antenna Keepout Zone</h3>
+
+<ol>
+<li>Identify the antenna end of the ESP32-S3-WROOM-1 module (the narrow end, opposite the castellated pads)</li>
+<li>On <strong>ALL copper layers</strong> (F.Cu, In1.Cu, In2.Cu, B.Cu), create a <strong>Rule Area</strong>:
+<ul>
+<li>Click <strong>Place → Rule Area</strong></li>
+<li>Check: "Keep out copper fill", "Keep out tracks", "Keep out vias"</li>
+<li>Draw a rectangle extending 15mm from the antenna end</li>
+</ul>
+</li>
+<li>No components should be placed in this zone on any layer</li>
+<li>The board edge should be at or within this zone (antenna overhangs board edge = best performance)</li>
+</ol>
+
+<div class="warning"><strong>If you skip this step:</strong> The WiFi/BLE range will be reduced by 50–80%. For this project, WiFi is used for OTA updates and BLE for optional commissioning — both need reasonable range to work through an enclosure.</div>
+
+<h3>7.6 Thermal Relief &amp; Copper Fills</h3>
+
+<ol>
+<li><strong>Top and Bottom copper fills:</strong> After all routing is complete, add GND fills on F.Cu and B.Cu:
+<ul>
+<li><strong>Place → Zone</strong>, Net = GND, covering entire board</li>
+<li>Set zone clearance to 0.3mm (slightly larger than default to avoid acid traps)</li>
+<li>Set minimum island area to 5 mm² (removes useless copper fragments)</li>
+</ul>
+</li>
+<li><strong>Thermal relief on pads:</strong> KiCad defaults to thermal relief (spoked connections) for pads connected to copper fills. Keep this default — it makes hand soldering possible. For the ESP32 GND pad and the TPS5430 exposed pad, consider <strong>direct connection</strong> (solid) for better thermal performance.</li>
+<li><strong>Via stitching:</strong> After fills, add via stitching to connect F.Cu GND fill to the L2 GND plane:
+<ul>
+<li>Place vias on a 5mm grid across the board (where space allows)</li>
+<li>In KiCad 9.0: <strong>Edit → Fill All Zones</strong>, then use the via stitching plugin or manually place vias connected to GND</li>
+</ul>
+</li>
+</ol>
+
+<!-- CHAPTER 8 -->
+<h2>8. Design Rule Check (DRC)</h2>
+
+<h3>8.1 Running DRC</h3>
+<ol>
+<li>Click <strong>Inspect → Design Rules Checker</strong></li>
+<li>Click <strong>Run DRC</strong></li>
+<li>Fix ALL errors before generating manufacturing files. Warnings can be reviewed case-by-case.</li>
+</ol>
+
+<h3>8.2 Common DRC Errors and Fixes</h3>
+<table>
+<tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
+<tr><td>Clearance violation</td><td>Traces too close together</td><td>Move trace or increase spacing. Check net class settings.</td></tr>
+<tr><td>Unconnected net</td><td>Missing trace or via</td><td>Route the missing connection (highlighted in blue ratsnest)</td></tr>
+<tr><td>Via in keepout</td><td>Via placed in antenna zone</td><td>Move the via outside the keepout area</td></tr>
+<tr><td>Track width too small</td><td>Power trace using default width</td><td>Widen trace or assign correct net class</td></tr>
+<tr><td>Pad near edge</td><td>Component too close to board outline</td><td>Move component at least 1mm from board edge (except edge-mount connectors)</td></tr>
+<tr><td>Copper sliver</td><td>Narrow copper island in fill</td><td>Increase minimum island area in zone properties</td></tr>
+<tr><td>Silk over pad</td><td>Silkscreen text overlapping exposed pad</td><td>Move text or set "Exclude pads from silk" in zone properties</td></tr>
+</table>
+
+<h3>8.3 Electrical Rules Check (ERC) — In Schematic</h3>
+<p>Before moving to layout, run ERC in the Schematic Editor: <strong>Inspect → Electrical Rules Checker</strong>.</p>
+<table>
+<tr><th>Common ERC Error</th><th>Fix</th></tr>
+<tr><td>Power pin not driven</td><td>Add a power flag symbol (<code>PWR_FLAG</code>) on the net</td></tr>
+<tr><td>Unconnected pin</td><td>Either connect it or mark as "no connect" (place × symbol)</td></tr>
+<tr><td>Different net names on same wire</td><td>Remove duplicate labels, use a single net name</td></tr>
+</table>
+
+<!-- CHAPTER 9 -->
+<h2>9. Manufacturing Output</h2>
+
+<h3>9.1 Gerber Files</h3>
+<ol>
+<li>In PCB Editor: <strong>File → Fabrication Outputs → Gerbers</strong></li>
+<li>Settings:
+<table>
+<tr><th>Setting</th><th>Value</th></tr>
+<tr><td>Output directory</td><td><code>./gerbers/</code></td></tr>
+<tr><td>Layers</td><td>F.Cu, In1.Cu, In2.Cu, B.Cu, F.SilkS, B.SilkS, F.Mask, B.Mask, Edge.Cuts</td></tr>
+<tr><td>Format</td><td>Gerber X2 (RS-274X compatible)</td></tr>
+<tr><td>Coordinate format</td><td>4.6 (millimeters)</td></tr>
+<tr><td>Use extended X2 attributes</td><td>Yes</td></tr>
+<tr><td>Include aperture attributes</td><td>Yes</td></tr>
+<tr><td>Subtract soldermask from silkscreen</td><td>Yes</td></tr>
+</table>
+</li>
+<li>Click <strong>Generate Drill Files</strong> with these settings:
+<table>
+<tr><th>Setting</th><th>Value</th></tr>
+<tr><td>Format</td><td>Excellon</td></tr>
+<tr><td>Units</td><td>Millimeters</td></tr>
+<tr><td>Zeros format</td><td>Decimal</td></tr>
+<tr><td>Merge PTH and NPTH into one file</td><td>No (separate files)</td></tr>
+</table>
+</li>
+</ol>
+
+<h3>9.2 Generated Files</h3>
+<pre><code>gerbers/
+├── gate-field-controller-F_Cu.gtl        (top copper)
+├── gate-field-controller-In1_Cu.g2l      (ground plane)
+├── gate-field-controller-In2_Cu.g3l      (power plane)
+├── gate-field-controller-B_Cu.gbl        (bottom copper)
+├── gate-field-controller-F_SilkS.gto     (top silkscreen)
+├── gate-field-controller-B_SilkS.gbo     (bottom silkscreen)
+├── gate-field-controller-F_Mask.gts      (top solder mask)
+├── gate-field-controller-B_Mask.gbs      (bottom solder mask)
+├── gate-field-controller-Edge_Cuts.gm1   (board outline)
+├── gate-field-controller-PTH.drl         (plated through-hole drill)
+├── gate-field-controller-NPTH.drl        (non-plated hole drill)
+└── gate-field-controller-job.gbrjob      (Gerber job file)</code></pre>
+
+<h3>9.3 Bill of Materials (BOM) Export</h3>
+<ol>
+<li>In Schematic Editor: <strong>Tools → Generate BOM</strong></li>
+<li>Use the built-in CSV BOM plugin</li>
+<li>Or use <strong>File → Fabrication Outputs → Component Placement</strong> for pick-and-place files</li>
+</ol>
+
+<h3>9.4 Component Placement File (CPL / POS)</h3>
+<ol>
+<li>In PCB Editor: <strong>File → Fabrication Outputs → Component Placement (.pos)</strong></li>
+<li>Settings:
+<ul>
+<li>Format: CSV</li>
+<li>Units: Millimeters</li>
+<li>Files: Separate files for front and back</li>
+</ul>
+</li>
+<li>This file tells the pick-and-place machine where each SMD component goes</li>
+</ol>
+
+<!-- CHAPTER 10 -->
+<h2>10. Ordering from JLCPCB / PCBWay</h2>
+
+<h3>10.1 JLCPCB Order Settings</h3>
+<table>
+<tr><th>Parameter</th><th>Selection</th><th>Cost Impact</th></tr>
+<tr><td>Layers</td><td>4</td><td>~$10 extra vs 2-layer</td></tr>
+<tr><td>PCB Qty</td><td>5 (minimum)</td><td>~$25–35 for 5 boards</td></tr>
+<tr><td>Dimensions</td><td>100 × 80 mm</td><td>Within 100×100 budget tier</td></tr>
+<tr><td>PCB Thickness</td><td>1.6 mm</td><td>Standard (no extra)</td></tr>
+<tr><td>Surface Finish</td><td>HASL (lead-free)</td><td>Standard (no extra). Choose ENIG for +$5 if doing fine-pitch QFP.</td></tr>
+<tr><td>Copper Weight</td><td>1 oz (all layers)</td><td>Standard</td></tr>
+<tr><td>Solder Mask</td><td>Green</td><td>Standard</td></tr>
+<tr><td>Silkscreen</td><td>White</td><td>Standard</td></tr>
+<tr><td>Via Process</td><td>Tenting vias</td><td>Standard</td></tr>
+<tr><td>Board Outline Tolerance</td><td>±0.2 mm</td><td>Standard</td></tr>
+<tr><td>Confirm Production File</td><td>Yes</td><td>Free — they'll email you a review</td></tr>
+</table>
+
+<h3>10.2 Assembly Service (SMT)</h3>
+<p>Both JLCPCB and PCBWay offer SMT assembly. Upload:</p>
+<ol>
+<li><strong>BOM file</strong> (CSV with columns: Comment, Designator, Footprint, LCSC Part#)</li>
+<li><strong>CPL file</strong> (component placement with X, Y, Rotation, Side)</li>
+</ol>
+
+<div class="note"><strong>Tip:</strong> JLCPCB's "Economic" PCBA starts at $8 setup + per-component cost. For 5 boards with ~40 SMD parts, expect ~$50–80 total for assembly. Through-hole components (relays, screw terminals, RJ45) must be hand-soldered.</div>
+
+<h3>10.3 Cost Estimate</h3>
+<table>
+<tr><th>Item</th><th>Cost (USD)</th></tr>
+<tr><td>5× bare PCBs (4-layer, 100×80mm)</td><td>$25–35</td></tr>
+<tr><td>SMT assembly (per board)</td><td>$15–20</td></tr>
+<tr><td>Components (per board, LCSC)</td><td>$12–18</td></tr>
+<tr><td>Shipping (DHL to Kenya)</td><td>$15–25</td></tr>
+<tr><td><strong>Total for 5 assembled boards</strong></td><td><strong>$120–180</strong></td></tr>
+</table>
+
+<h3>10.4 Ordering Checklist</h3>
+<ul>
+<li>☐ Run DRC — zero errors</li>
+<li>☐ Run ERC — zero errors</li>
+<li>☐ Visual check in 3D viewer (<strong>View → 3D Viewer</strong> in KiCad)</li>
+<li>☐ Verify all mounting holes are non-plated or grounded as intended</li>
+<li>☐ Check that board outline is closed (no gaps in Edge.Cuts)</li>
+<li>☐ Verify silkscreen is readable (no text smaller than 0.8mm height)</li>
+<li>☐ Upload Gerbers to JLCPCB's online viewer — inspect each layer visually</li>
+<li>☐ Verify BOM and CPL match (same designators, correct rotations)</li>
+<li>☐ Check that all LCSC part numbers are in stock</li>
+</ul>
+
+<!-- CHAPTER 11 -->
+<h2>11. Assembly &amp; Testing Checklist</h2>
+
+<h3>11.1 Solder Order (if hand-assembling)</h3>
+<ol>
+<li><strong>Shortest components first:</strong> SMD resistors and capacitors (0603) using solder paste + hot air or iron with fine tip</li>
+<li><strong>ICs:</strong> W5500 (LQFP-48) — use flux + drag-solder technique. Then MAX485 (SOIC-8), SS8050 transistors (SOT-23)</li>
+<li><strong>Medium-height:</strong> AMS1117 (SOT-223), TPS5430 (HSOP-8), crystal, USB-C connector, LEDs</li>
+<li><strong>Tall components last:</strong> ESP32-S3 module (castellated pads — use lots of flux, solder one corner first, align, then all pads). Electrolytic capacitor. Inductor.</li>
+<li><strong>Through-hole last:</strong> Relays (4×), screw terminals, RJ45 jack, pin headers, mounting standoffs</li>
+</ol>
+
+<h3>11.2 First Power-On Test Sequence</h3>
+<ol>
+<li><strong>Visual inspection:</strong> Check for solder bridges (especially on W5500 QFP and ESP32 module). Use magnification (loupe or microscope).</li>
+<li><strong>Continuity check:</strong> With multimeter in continuity mode:
+<ul>
+<li>Verify no short between +12V and GND</li>
+<li>Verify no short between +5V and GND</li>
+<li>Verify no short between +3.3V and GND</li>
+</ul>
+</li>
+<li><strong>Power-on (12V):</strong> Apply 12V to J_PWR. Measure:
+<ul>
+<li>TP_5V: should read 4.9–5.1V</li>
+<li>TP_3V3: should read 3.25–3.35V</li>
+<li>LED_PWR: should illuminate green</li>
+</ul>
+</li>
+<li><strong>USB test:</strong> Connect USB-C cable. Computer should enumerate a USB device (ESP32-S3).</li>
+<li><strong>Flash test firmware:</strong> Flash the blink test from <code>docs/hardware/01-esp32-s3-devkit.md</code>. RGB LED should blink.</li>
+<li><strong>Ethernet test:</strong> Connect Ethernet cable. LED_NET should illuminate. Ping test to server IP.</li>
+<li><strong>Relay test:</strong> Run GPIO toggle test. Listen for relay click. Verify continuity across NO contacts with multimeter.</li>
+<li><strong>Input test:</strong> Short each sensor input to GND. Firmware should register the state change.</li>
+</ol>
+
+<h3>11.3 Troubleshooting</h3>
+<table>
+<tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
+<tr><td>No 5V output</td><td>TPS5430 not switching — check solder on exposed pad</td><td>Reflow TPS5430 with hot air. Verify EN pin is high.</td></tr>
+<tr><td>3.3V reads 5V</td><td>AMS1117 soldered backwards</td><td>Check tab orientation (tab connects to VOUT on AMS1117)</td></tr>
+<tr><td>ESP32 not enumerating on USB</td><td>USB D+/D- swapped or CC resistors wrong</td><td>Verify D+ goes to IO20, D- to IO19. Check 5.1kΩ on CC pins.</td></tr>
+<tr><td>W5500 no link</td><td>Crystal not oscillating</td><td>Probe XI with oscilloscope. Check crystal solder joints and load caps.</td></tr>
+<tr><td>Relay clicks but doesn't switch load</td><td>Relay contacts not reaching terminal</td><td>Check trace from relay COM/NO pad to screw terminal. Verify with multimeter.</td></tr>
+<tr><td>Erratic sensor readings</td><td>Missing decoupling or damaged TVS</td><td>Verify 100nF caps are present on each input. Check BAV99 orientation.</td></tr>
+<tr><td>ESP32 resets when relay switches</td><td>Insufficient decoupling on 3.3V rail</td><td>Add more bulk capacitance (22µF+) near ESP32. Verify ground plane integrity.</td></tr>
+</table>
+
+<!-- APPENDIX A -->
+<h2 style="page-break-before: always;">Appendix A: Complete Net List</h2>
+
+<table>
+<tr><th>Net Name</th><th>Type</th><th>Source</th><th>Destination(s)</th></tr>
+<tr><td>+12V</td><td>Power</td><td>J_PWR pin 1 (via polyfuse)</td><td>TPS5430 VIN, Safety beam TX/RX, TVS</td></tr>
+<tr><td>+5V</td><td>Power</td><td>TPS5430 output</td><td>AMS1117 IN, Relay coils, MAX485 VCC, USB VBUS (via diode)</td></tr>
+<tr><td>+3V3</td><td>Power</td><td>AMS1117 output</td><td>ESP32-S3 3V3, W5500 DVDD/AVDD, Pull-ups, LEDs</td></tr>
+<tr><td>GND</td><td>Power</td><td>Common ground</td><td>All GND pins, plane L2</td></tr>
+<tr><td>SPI_CLK</td><td>Signal</td><td>ESP32 IO10</td><td>W5500 SCLK (pin 31)</td></tr>
+<tr><td>SPI_MOSI</td><td>Signal</td><td>ESP32 IO11</td><td>W5500 MOSI (pin 30)</td></tr>
+<tr><td>SPI_MISO</td><td>Signal</td><td>W5500 MISO (pin 29)</td><td>ESP32 IO12</td></tr>
+<tr><td>SPI_CS</td><td>Signal</td><td>ESP32 IO13</td><td>W5500 SCSn (pin 28)</td></tr>
+<tr><td>SPI_INT</td><td>Signal</td><td>W5500 INTn (pin 27)</td><td>ESP32 IO14</td></tr>
+<tr><td>RELAY_1</td><td>Signal</td><td>ESP32 IO4</td><td>Q1 base (via 1kΩ)</td></tr>
+<tr><td>RELAY_2</td><td>Signal</td><td>ESP32 IO5</td><td>Q2 base (via 1kΩ)</td></tr>
+<tr><td>RELAY_3</td><td>Signal</td><td>ESP32 IO21</td><td>Q3 base (via 1kΩ)</td></tr>
+<tr><td>RELAY_4</td><td>Signal</td><td>ESP32 IO42</td><td>Q4 base (via 1kΩ)</td></tr>
+<tr><td>LIM_OPEN</td><td>Signal</td><td>J_SENSE pin 1 (via protection)</td><td>ESP32 IO6</td></tr>
+<tr><td>LIM_CLOSED</td><td>Signal</td><td>J_SENSE pin 3 (via protection)</td><td>ESP32 IO7</td></tr>
+<tr><td>SAFETY_BEAM</td><td>Signal</td><td>J_SENSE pin 5 (via protection)</td><td>ESP32 IO15</td></tr>
+<tr><td>RS485_TX</td><td>Signal</td><td>ESP32 IO16</td><td>MAX485 DI (pin 4)</td></tr>
+<tr><td>RS485_RX</td><td>Signal</td><td>MAX485 RO (pin 1)</td><td>ESP32 IO17</td></tr>
+<tr><td>RS485_DE</td><td>Signal</td><td>ESP32 IO18</td><td>MAX485 DE+/RE (pins 2,3)</td></tr>
+<tr><td>RS485_A</td><td>Signal</td><td>MAX485 A (pin 6)</td><td>J_RS485 pin 1</td></tr>
+<tr><td>RS485_B</td><td>Signal</td><td>MAX485 B (pin 7)</td><td>J_RS485 pin 2</td></tr>
+<tr><td>USB_DP</td><td>Signal</td><td>USB-C D+ (via 22Ω)</td><td>ESP32 IO20</td></tr>
+<tr><td>USB_DN</td><td>Signal</td><td>USB-C D- (via 22Ω)</td><td>ESP32 IO19</td></tr>
+<tr><td>LED_AUTH</td><td>Signal</td><td>ESP32 IO47</td><td>LED via 330Ω</td></tr>
+<tr><td>LED_FAULT</td><td>Signal</td><td>ESP32 IO21</td><td>LED via 330Ω</td></tr>
+</table>
+
+<!-- APPENDIX B -->
+<h2 style="page-break-before: always;">Appendix B: Full BOM with LCSC Part Numbers</h2>
+
+<table>
+<tr><th>#</th><th>Designator</th><th>Component</th><th>Value/Model</th><th>Package</th><th>LCSC #</th><th>Qty</th></tr>
+<tr><td>1</td><td>U1</td><td>ESP32-S3-WROOM-1-N16R8</td><td>ESP32-S3-WROOM-1-N16R8</td><td>Module (18×25.5mm)</td><td>C2913202</td><td>1</td></tr>
+<tr><td>2</td><td>U2</td><td>Ethernet Controller</td><td>W5500</td><td>LQFP-48 7×7mm</td><td>C32843</td><td>1</td></tr>
+<tr><td>3</td><td>U3</td><td>Buck Converter</td><td>TPS5430DDA</td><td>HSOP-8</td><td>C9865</td><td>1</td></tr>
+<tr><td>4</td><td>U4</td><td>3.3V LDO</td><td>AMS1117-3.3</td><td>SOT-223</td><td>C6186</td><td>1</td></tr>
+<tr><td>5</td><td>U5</td><td>RS-485 Transceiver</td><td>MAX485ESA+</td><td>SOIC-8</td><td>C14038</td><td>1</td></tr>
+<tr><td>6</td><td>U6</td><td>USB ESD Protection</td><td>USBLC6-2SC6</td><td>SOT-23-6</td><td>C7519</td><td>1</td></tr>
+<tr><td>7</td><td>Y1</td><td>Crystal 25MHz</td><td>25MHz 20pF</td><td>SMD 3215</td><td>C32346</td><td>1</td></tr>
+<tr><td>8</td><td>J1</td><td>RJ45 Magjack</td><td>HR911105A</td><td>Through-hole</td><td>C12074</td><td>1</td></tr>
+<tr><td>9</td><td>J2</td><td>USB-C Receptacle</td><td>USB4105-GF-A</td><td>SMD mid-mount</td><td>C2688138</td><td>1</td></tr>
+<tr><td>10</td><td>J3</td><td>12V Power Input</td><td>2-pos 5.08mm screw</td><td>Through-hole</td><td>C8269</td><td>1</td></tr>
+<tr><td>11</td><td>J4</td><td>Relay Output</td><td>12-pos 3.81mm screw</td><td>Through-hole</td><td>C395882</td><td>1</td></tr>
+<tr><td>12</td><td>J5</td><td>Sensor Input</td><td>6-pos 3.81mm screw</td><td>Through-hole</td><td>C395878</td><td>1</td></tr>
+<tr><td>13</td><td>J6</td><td>RS-485 Bus</td><td>3-pos 5.08mm screw</td><td>Through-hole</td><td>C8352</td><td>1</td></tr>
+<tr><td>14</td><td>K1–K4</td><td>Relay SPDT</td><td>SRD-05VDC-SL-C</td><td>Through-hole</td><td>C35449</td><td>4</td></tr>
+<tr><td>15</td><td>Q1–Q4</td><td>NPN Transistor</td><td>SS8050 (SOT-23)</td><td>SOT-23</td><td>C164886</td><td>4</td></tr>
+<tr><td>16</td><td>D1–D4</td><td>Flyback Diode</td><td>1N4148W</td><td>SOD-123</td><td>C81598</td><td>4</td></tr>
+<tr><td>17</td><td>D5</td><td>Catch Diode (buck)</td><td>SS34</td><td>SMA</td><td>C8678</td><td>1</td></tr>
+<tr><td>18</td><td>D6</td><td>USB VBUS Diode</td><td>SS14</td><td>SMA</td><td>C2480</td><td>1</td></tr>
+<tr><td>19</td><td>D_TVS1</td><td>12V TVS</td><td>SMBJ15A</td><td>SMB</td><td>C145448</td><td>1</td></tr>
+<tr><td>20</td><td>D_TVS2</td><td>5V TVS</td><td>SMBJ6.0A</td><td>SMB</td><td>C145431</td><td>1</td></tr>
+<tr><td>21</td><td>D_CLamp1–3</td><td>Clamping Diode</td><td>BAV99</td><td>SOT-23</td><td>C181104</td><td>3</td></tr>
+<tr><td>22</td><td>L1</td><td>Inductor 33µH</td><td>33µH 3A shielded</td><td>Bourns SRN8040</td><td>C408335</td><td>1</td></tr>
+<tr><td>23</td><td>FB1</td><td>Ferrite Bead</td><td>600Ω@100MHz 500mA</td><td>0805</td><td>C1015</td><td>1</td></tr>
+<tr><td>24</td><td>F1</td><td>Polyfuse</td><td>2A hold / 4A trip</td><td>1206</td><td>C70069</td><td>1</td></tr>
+<tr><td>25</td><td>LED1</td><td>Power LED</td><td>Green 0805</td><td>0805</td><td>C2297</td><td>1</td></tr>
+<tr><td>26</td><td>LED2</td><td>Network LED</td><td>Yellow 0805</td><td>0805</td><td>C2296</td><td>1</td></tr>
+<tr><td>27</td><td>LED3</td><td>Auth LED</td><td>Green 0805</td><td>0805</td><td>C2297</td><td>1</td></tr>
+<tr><td>28</td><td>LED4</td><td>Fault LED</td><td>Red 0805</td><td>0805</td><td>C2286</td><td>1</td></tr>
+<tr><td>29</td><td>LED5–LED8</td><td>Relay Status LED</td><td>Green 0603</td><td>0603</td><td>C72043</td><td>4</td></tr>
+<tr><td>30</td><td>SW1</td><td>Reset Button</td><td>TL3342 tactile</td><td>SMD 6×3.5mm</td><td>C318884</td><td>1</td></tr>
+<tr><td>31</td><td>SW2</td><td>Boot Button</td><td>TL3342 tactile</td><td>SMD 6×3.5mm</td><td>C318884</td><td>1</td></tr>
+<tr><td colspan="7"><strong>Passive Components</strong></td></tr>
+<tr><td>32</td><td>R (various)</td><td>1kΩ 0603</td><td>1kΩ 1% 1/10W</td><td>0603</td><td>C11702</td><td>12</td></tr>
+<tr><td>33</td><td>R (various)</td><td>10kΩ 0603</td><td>10kΩ 1% 1/10W</td><td>0603</td><td>C25804</td><td>10</td></tr>
+<tr><td>34</td><td>R (various)</td><td>330Ω 0603</td><td>330Ω 1% 1/10W</td><td>0603</td><td>C23138</td><td>7</td></tr>
+<tr><td>35</td><td>R (various)</td><td>680Ω 0603</td><td>680Ω 1% 1/10W</td><td>0603</td><td>C23179</td><td>1</td></tr>
+<tr><td>36</td><td>R (various)</td><td>22Ω 0603</td><td>22Ω 1% 1/10W</td><td>0603</td><td>C23345</td><td>2</td></tr>
+<tr><td>37</td><td>R (various)</td><td>5.1kΩ 0603</td><td>5.1kΩ 1% 1/10W</td><td>0603</td><td>C23186</td><td>2</td></tr>
+<tr><td>38</td><td>R (various)</td><td>33Ω 0603</td><td>33Ω 1% 1/10W</td><td>0603</td><td>C22982</td><td>2</td></tr>
+<tr><td>39</td><td>R (various)</td><td>43kΩ 0603</td><td>43kΩ 1% 1/10W</td><td>0603</td><td>C25797</td><td>1</td></tr>
+<tr><td>40</td><td>R (various)</td><td>12.4kΩ 0603</td><td>12.4kΩ 1% 1/10W</td><td>0603</td><td>C25752</td><td>2</td></tr>
+<tr><td>41</td><td>R (various)</td><td>15kΩ 0603</td><td>15kΩ 1% 1/10W</td><td>0603</td><td>C22809</td><td>1</td></tr>
+<tr><td>42</td><td>R (various)</td><td>560Ω 0603</td><td>560Ω 1% 1/10W</td><td>0603</td><td>C23204</td><td>2</td></tr>
+<tr><td>43</td><td>R (various)</td><td>120Ω 0603</td><td>120Ω 1% 1/10W</td><td>0603</td><td>C22787</td><td>1</td></tr>
+<tr><td>44</td><td>R (various)</td><td>1MΩ 0603</td><td>1MΩ 1% 1/10W</td><td>0603</td><td>C22935</td><td>1</td></tr>
+<tr><td>45</td><td>C (various)</td><td>100nF 0603 X7R</td><td>100nF 25V X7R</td><td>0603</td><td>C14663</td><td>18</td></tr>
+<tr><td>46</td><td>C (various)</td><td>10µF 0805 X5R</td><td>10µF 10V X5R</td><td>0805</td><td>C15850</td><td>5</td></tr>
+<tr><td>47</td><td>C (various)</td><td>22µF 0805 X5R</td><td>22µF 10V X5R</td><td>0805</td><td>C45783</td><td>2</td></tr>
+<tr><td>48</td><td>C (various)</td><td>47µF 1206 X5R</td><td>47µF 10V X5R</td><td>1206</td><td>C96123</td><td>2</td></tr>
+<tr><td>49</td><td>C (various)</td><td>22µF 1206 X5R</td><td>22µF 25V X5R</td><td>1206</td><td>C159843</td><td>1</td></tr>
+<tr><td>50</td><td>C (various)</td><td>100µF Electrolytic</td><td>100µF 25V</td><td>8×10.5mm</td><td>C3339</td><td>1</td></tr>
+<tr><td>51</td><td>C (various)</td><td>20pF 0603 C0G</td><td>20pF 50V C0G</td><td>0603</td><td>C1648</td><td>2</td></tr>
+<tr><td>52</td><td>C (various)</td><td>4.7µF 0805</td><td>4.7µF 10V X5R</td><td>0805</td><td>C1779</td><td>1</td></tr>
+<tr><td>53</td><td>C (various)</td><td>1µF 0603</td><td>1µF 16V X5R</td><td>0603</td><td>C15849</td><td>2</td></tr>
+<tr><td>54</td><td>C (various)</td><td>3.3nF 0603</td><td>3.3nF 50V X7R</td><td>0603</td><td>C1663</td><td>1</td></tr>
+<tr><td>55</td><td>C (various)</td><td>4.7nF 0603</td><td>4.7nF 50V X7R</td><td>0603</td><td>C1664</td><td>1</td></tr>
+</table>
+
+<!-- APPENDIX C -->
+<h2 style="page-break-before: always;">Appendix C: PCB Layer Stackup Detail</h2>
+
+<pre><code>╔══════════════════════════════════════════════════════════════════╗
+║  Layer 1 (F.Cu) — Top Copper                                    ║
+║  ────────────────────────────────────────────────────────────    ║
+║  Components: ESP32-S3 module, W5500, crystal, USB-C,             ║
+║  TPS5430, AMS1117, passives, LEDs, buttons                       ║
+║  Copper fills: GND (stitched to L2 plane)                        ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Prepreg (FR-4): 0.2 mm                                         ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Layer 2 (In1.Cu) — Ground Plane                                 ║
+║  ────────────────────────────────────────────────────────────    ║
+║  SOLID GND POUR — no splits, no routing on this layer.           ║
+║  Only clearances for through-hole pads and vias.                 ║
+║  This is the return-current reference for all top-layer signals. ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Core (FR-4): 1.0 mm                                            ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Layer 3 (In2.Cu) — Power Plane                                  ║
+║  ────────────────────────────────────────────────────────────    ║
+║  Split into zones:                                               ║
+║  • +3V3 zone (under ESP32 + W5500 area)                          ║
+║  • +5V zone (under relay area + center)                          ║
+║  • +12V island (near power input connector)                      ║
+║  No signal routing on this layer.                                ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Prepreg (FR-4): 0.2 mm                                         ║
+╠══════════════════════════════════════════════════════════════════╣
+║  Layer 4 (B.Cu) — Bottom Copper                                  ║
+║  ────────────────────────────────────────────────────────────    ║
+║  Components: Bottom-side decoupling caps (under ESP32 module),   ║
+║  relay driver transistors and resistors.                          ║
+║  Signal routing: relay control lines, sensor input traces.       ║
+║  Copper fills: GND (stitched to L2 plane)                        ║
+╚══════════════════════════════════════════════════════════════════╝
+
+Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code></pre>
+
+<h3>Design for Manufacturing (DFM) Summary</h3>
+<table>
+<tr><th>Parameter</th><th>Our Design</th><th>JLCPCB 4-Layer Minimum</th><th>Margin</th></tr>
+<tr><td>Minimum trace width</td><td>0.2 mm</td><td>0.09 mm</td><td>2.2× ✓</td></tr>
+<tr><td>Minimum trace spacing</td><td>0.2 mm</td><td>0.09 mm</td><td>2.2× ✓</td></tr>
+<tr><td>Minimum via drill</td><td>0.3 mm</td><td>0.2 mm</td><td>1.5× ✓</td></tr>
+<tr><td>Minimum via annular ring</td><td>0.15 mm</td><td>0.1 mm</td><td>1.5× ✓</td></tr>
+<tr><td>Minimum pad size</td><td>0.8 mm × 1.0 mm (0603)</td><td>No minimum</td><td>✓</td></tr>
+<tr><td>Drill-to-copper clearance</td><td>0.25 mm</td><td>0.2 mm</td><td>1.25× ✓</td></tr>
+<tr><td>Board edge to copper</td><td>0.5 mm</td><td>0.3 mm</td><td>1.67× ✓</td></tr>
+</table>
+
+<div class="tip"><strong>Design complete.</strong> This board integrates all gate-side electronics into a single robust 4-layer PCB. The generous DFM margins ensure reliable fabrication at any budget PCB house. The through-hole relays and screw terminals make field wiring straightforward, while the SMD electronics keep the board compact.</div>
+
+<hr>
+<p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
+Gate Automation Field PCB Design Guide — KiCad 9.0<br>
+ALPR + LiDAR Automated Vehicle Gate Control System<br>
+Document revision 1.0 — April 2026
+</p>
+
+</body>
+</html>
