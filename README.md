@@ -83,14 +83,14 @@ release on GitHub.
 | # | Milestone | Status |
 |---|---|---|
 | 4.1 | gRPC wire contract (`shared/proto`) | ✅ Complete |
-| **4.2** | **Server inference (TensorRT engines for YOLOv9 + PaddleOCR)** | 🔵 **In progress — see "Latest accomplishment" below** |
+| **4.2** | **Server inference (TensorRT engines for YOLOv9 + PaddleOCR)** | ✅ **Complete** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.1 | TrtEngine RAII wrapper around TensorRT 10.x | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.2 | YOLOv9 plate detector | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ✅ Complete |
-| 4.3 | Server RPC + fusion engine | ⏳ Pending |
+| **4.3** | **Server RPC + fusion engine** | 🔵 **In progress — next** |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
