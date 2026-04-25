@@ -92,6 +92,7 @@ add_library(gate_inference STATIC
     src/trt_engine.cpp
     src/yolo_plate_detector.cpp
     src/paddle_ocr_recognizer.cpp
+    src/alpr_pipeline.cpp
 )
 
 target_include_directories(gate_inference

@@ -87,8 +87,8 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.1 | TrtEngine RAII wrapper around TensorRT 10.x | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.2 | YOLOv9 plate detector | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ⏳ Next |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ⏳ Next |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ⏳ Pending |
 | 4.3 | Server RPC + fusion engine | ⏳ Pending |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
@@ -100,7 +100,144 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.2.3: PaddleOCR plate-text recognizer
+## Latest accomplishment — Phase 4.2.4: ALPR pipeline orchestrator
+
+> **Completed 2026-04-25.** Code in
+> [`server/inference/include/inference/alpr_pipeline.hpp`](server/inference/include/inference/alpr_pipeline.hpp)
+> and [`server/inference/src/alpr_pipeline.cpp`](server/inference/src/alpr_pipeline.cpp).
+
+### What I built
+
+`AlprPipeline` is the single class the rest of the server (gate
+controller, fusion engine, gRPC service) talks to for license-plate
+reads. It owns both inference backends from the previous milestones,
+chains them, and exposes one method:
+
+```cpp
+std::vector<PlateReading> AlprPipeline::process(const cv::Mat& frame_bgr);
+```
+
+`PlateReading` carries the detector geometry **and** the OCR result
+together, so a downstream consumer never has to correlate two
+parallel arrays:
+
+```cpp
+struct PlateReading {
+    cv::Rect2f  box;             // detector box in original-frame pixels
+    std::string text;            // CTC-decoded plate string
+    float       detection_score; // YOLO confidence
+    float       ocr_score;       // mean per-char CTC confidence
+};
+```
+
+| Artifact | Purpose |
+|---|---|
+| `server/inference/include/inference/alpr_pipeline.hpp` | Public API: `PlateReading`, `AlprPipeline::Config` (bundles detector + recognizer config + crop policy), move-only pipeline class. |
+| `server/inference/src/alpr_pipeline.cpp` | Implementation: top-K cap, margin-expanded crop with frame-edge clamp, batched OCR, joined output assembly. |
+| `server/inference/CMakeLists.txt` (updated) | Adds `alpr_pipeline.cpp` to the `gate_inference` static library. |
+
+### Technical detail
+
+#### Why one class instead of free functions
+
+Detection and recognition share three traits that argue for a single
+owning object: (1) both hold non-trivial scratch buffers that should be
+allocated once at startup; (2) both wrap a `TrtEngine` whose CUDA stream
+should not outlive the engine; (3) the *policy* knobs (margin, top-K,
+OCR floor) need to live somewhere that isn't either backend. A pipeline
+class concentrates ownership in one place — when the gate controller
+constructs an `AlprPipeline`, two TensorRT engines and their CUDA
+streams come up as a unit, and the destruction order at shutdown is
+guaranteed correct because both backends are members.
+
+The class is move-only and noexcept-movable for the same reason as the
+backends: the eventual multi-camera setup will hold a
+`std::vector<AlprPipeline>` (one per camera lane), and reallocation must
+not run an engine destructor by accident.
+
+#### Top-K crop policy
+
+`detector_.detect()` returns boxes sorted by descending confidence.
+The pipeline takes the top
+`Config::max_plates_per_frame` (default 8) and discards the rest before
+OCR is invoked. The cap exists for two reasons:
+
+- **Latency protection on noisy frames.** EfficientNMS still emits up
+  to `max_detections` boxes (typically 100). On a clean residential gate
+  frame that's almost always 1 plate, but on a wide-angle parking-lot
+  shot the recognizer would otherwise be invoked dozens of times for
+  low-confidence noise.
+- **Predictable upper bound on OCR latency.** Phase 4.3 (fusion engine)
+  will run on a fixed frame budget; pinning the OCR fan-out makes that
+  budget computable.
+
+#### Crop with margin and clamp
+
+CRNN models are trained on plates with a small border of background
+context. Cropping flush to the YOLO box trims the leftmost/rightmost
+character — a known failure mode that drops one or two characters from
+the OCR output. `expand_and_clamp_()` pads each detector box by
+`Config::crop_margin` (default 8 %) of its width/height on every side,
+then clamps the resulting ROI to the frame so a plate detected at the
+edge of view doesn't index outside the image.
+
+The expansion is done in float (`cv::Rect2f` arithmetic), then quantized
+once at the end — `floor` for the origin and `ceil` for the size — so a
+fractional 0.5 px never costs a column. Boxes that clamp to fewer than
+4×4 pixels are dropped before OCR is called; the recognizer would
+reject the empty crop anyway and this keeps the failure local.
+
+#### Batched OCR
+
+The `recognize_batch` overload added in 4.2.3 isn't yet truly batched at
+the TensorRT level — it loops the single-image path. The pipeline still
+calls it (instead of looping itself) because that's the API surface
+that **will** become batched in Phase 4.3 without changing the
+pipeline. When the recognizer's enqueue path grows real batch support,
+the pipeline gets the speedup for free and `process()` stays unchanged.
+
+#### Output policy
+
+OCR results are returned **unfiltered** by `ocr_score` — the
+`Config::ocr_confidence_floor` field stores the threshold but
+`process()` does not apply it. This is deliberate: low-confidence reads
+are useful telemetry (a guard reviewing the dashboard wants to see the
+"almost-recognized" plates) and the gate-control policy is the
+authoritative consumer of the threshold. Encoding the policy at the
+pipeline boundary would force the dashboard to either re-derive it or
+read filtered data.
+
+The result list is in detection-score order (inherited from
+`YoloPlateDetector::detect`), so callers can take `result[0]` as "the
+most likely primary plate in this frame" without resorting.
+
+#### Allocation discipline
+
+`process()` itself allocates exactly two `std::vector`s per frame
+(`crops` and `kept`), each pre-reserved to `n_keep`. The `cv::Mat`
+crops use OpenCV's reference-counted pixel data — `frame_bgr(roi)` is
+an O(1) view; the explicit `.clone()` produces an independent buffer
+the recognizer can safely consume. No CUDA allocations happen here;
+both engines' device buffers were sized at `load()` time and are reused.
+
+#### Verified compile
+
+```
+[1/7] Scanning .../alpr_pipeline.cpp for CXX dependencies
+[2/7] Generating CXX dyndep file
+[3/4] Building CXX object .../alpr_pipeline.cpp.o
+[4/4] Linking CXX static library libgate_inference.a
+```
+
+Built against TensorRT 10.16.1, CUDA 13.1.115, OpenCV 4.14.0, GCC
+14.2.0 with `-std=c++20 -Wall -Wextra -Wpedantic -Werror` — no
+diagnostics. clang-format pass applied to match the project's
+`.clang-format` (Google base, `ColumnLimit 100`, `IndentWidth 4`,
+`IncludeBlocks Regroup`) so the CI Lint job stays green.
+
+---
+
+## Previous milestone — Phase 4.2.3: PaddleOCR plate-text recognizer
 
 > **Completed 2026-04-25.** Code in
 > [`server/inference/include/inference/paddle_ocr_recognizer.hpp`](server/inference/include/inference/paddle_ocr_recognizer.hpp)
