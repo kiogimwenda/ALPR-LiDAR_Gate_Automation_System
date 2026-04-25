@@ -88,8 +88,8 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.2 | YOLOv9 plate detector | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ⏳ Next |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ⏳ Next |
 | 4.3 | Server RPC + fusion engine | ⏳ Pending |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
@@ -100,7 +100,129 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.2.4: ALPR pipeline orchestrator
+## Latest accomplishment — Phase 4.2.5: ONNX → TensorRT engine tooling
+
+> **Completed 2026-04-25.** Scripts in
+> [`scripts/export-models/`](scripts/export-models/) — `convert_onnx_to_trt.py`,
+> `inspect_engine.py`, plus a [README](scripts/export-models/README.md)
+> documenting the upstream YOLOv9 / PaddleOCR export commands.
+
+### What I built
+
+Phase 4.2.1–4.2.4 produced a C++ inference layer that consumes serialized
+TensorRT engines (`.plan` files). 4.2.5 is the missing piece on the
+**Python side**: how those `.plan` files are produced from upstream ONNX
+exports, with the dynamic shape profiles, FP16 flags, and hardware
+compatibility settings the C++ side expects to find at runtime.
+
+| Artifact | Purpose |
+|---|---|
+| `scripts/export-models/convert_onnx_to_trt.py` | ONNX → `.plan` builder using TensorRT's Python `Builder` / `OnnxParser` / `BuilderConfig` API. FP16 default, optional INT8, `--min/--opt/--max-shape` profile knobs, `--hardware-compat ampere_plus` default for sm_80…sm_120 portability. Prints final I/O signatures after build. |
+| `scripts/export-models/inspect_engine.py` | Deserializes a `.plan` and prints every I/O tensor's name, shape, dtype, and per-profile shape ranges. The fast way to verify the C++ Config tensor names still match what the engine actually exposes. |
+| `scripts/export-models/README.md` | Documents the upstream export commands for YOLOv9 (`export.py --include onnx_end2end`) and PaddleOCR (`paddle2onnx`), plus the exact `convert_onnx_to_trt.py` invocations that match the C++ Config defaults. |
+
+### Technical detail
+
+#### Why a thin wrapper instead of `trtexec`
+
+NVIDIA ships `trtexec` for one-off engine builds, and it's fine for that.
+The trouble is that the engines this project produces aren't one-off:
+
+- The PP-OCRv4 recognizer needs a **dynamic-shape optimization profile**
+  with three width values (`min=32, opt=160, max=320`) chosen so the
+  builder picks kernels tuned for typical Kenya plates (≈ 1:3.3 aspect)
+  rather than for the worst-case 320 px. Encoding that profile in a
+  shell-script `trtexec` invocation is doable but unreadable.
+- Both engines need `HardwareCompatibilityLevel.AMPERE_PLUS` so the same
+  `.plan` runs on the dev box (RTX 5060, sm_120) and the production
+  server (RTX 4060, sm_89). `trtexec` exposes the flag but `--help` is
+  ~400 lines and the right combination is not obvious.
+- The C++ side binds tensors **by name**. Verifying that `softmax_2.tmp_0`
+  is still what PaddleOCR exports needs an inspection step that's not a
+  shell pipeline of `trtexec --dumpProfile` parsing.
+
+A small, readable Python script that calls the same TRT API the C++ side
+uses internally is easier to maintain than a shell wrapper around an
+opaque tool.
+
+#### `convert_onnx_to_trt.py` — what it actually does
+
+Six steps:
+
+1. **Logger.** A `trt.Logger` at `WARNING` (or `INFO` with `-v`) so the
+   build output is small enough to read but loud enough to surface ONNX
+   parse errors.
+2. **Parse.** `Builder.create_network(0)` (explicit batch is now the only
+   mode in TRT 10) → `OnnxParser`. On parse failure every parser error
+   is dumped before exit so an upstream change to the ONNX surface
+   doesn't fail silently.
+3. **Builder config.** `set_memory_pool_limit(WORKSPACE, 4 GiB)` (CLI
+   override available) — the workspace pool is what the builder uses to
+   try alternative kernels, so a stingy budget produces measurably worse
+   engines. 4 GiB fits both 8 GB GPUs with room to spare.
+4. **Precision flags.** `BuilderFlag.FP16` by default. `INT8` is
+   reachable via `--int8` but the project doesn't ship a calibration
+   cache yet, so it'll fall back to FP16 for unquantized layers — the
+   flag is there for Phase 5 hardening.
+5. **Hardware compatibility.** `HardwareCompatibilityLevel.AMPERE_PLUS`
+   trades 5–10 % inference speed vs. arch-specific kernels for a single
+   `.plan` that runs on every machine in the fleet. Override with
+   `--hardware-compat none` for benchmark-grade builds.
+6. **Optimization profile.** If any of `--min/--opt/--max-shape` is
+   given, all three are required and `--input-name` must point to the
+   tensor. The shape parser accepts `NxCxHxW`-style strings so the CLI
+   stays terse: `--max-shape 1x3x48x320`.
+
+After `build_serialized_network()` returns the bytes, the script
+re-deserializes the engine just to dump its I/O signatures — same code
+path as `inspect_engine.py`. This confirms the build at the CLI without
+needing a follow-up command.
+
+#### `inspect_engine.py` — why a separate script
+
+Engines outlive the build process. Six months from now, somebody
+upgrades PaddleOCR, re-exports the recognizer, and the OCR result silently
+drops one character because the output tensor was renamed from
+`softmax_2.tmp_0` to `softmax_2`. The C++ side will throw a
+`TrtException("tensor not found")` at startup, which is the right
+behavior — but `inspect_engine.py` lets the operator see that mismatch
+in seconds without booting the server, just by pointing it at the new
+`.plan`.
+
+It also prints the per-profile `(min, opt, max)` shape ranges for
+dynamic inputs, which is the only way to confirm a converted engine's
+profile actually matches what the C++ recognizer was sized for.
+
+#### Why the upstream export commands are documented but not scripted
+
+Both YOLOv9 and PaddleOCR ship their own canonical exporters as part of
+their training repos. Mirroring those commands into a local Python
+script would (a) immediately drift the moment upstream bumps a flag,
+and (b) drag every dependency of `yolov9` and `paddleocr` into this
+project's environment for a step that runs once. The README lists the
+exact upstream commands instead, with the parameter values that produce
+ONNX matching the C++ side's expectations (e.g. `--topk-all 100` so
+EfficientNMS_TRT emits the `[1, 100, 4]` `det_boxes` shape that the
+detector's `max_detections_` was sized for).
+
+This is the same pattern the project uses elsewhere — never hand-write
+canonical text; reference the canonical source.
+
+#### What's *not* in this milestone
+
+- Engine artifacts (`.plan` files). They're per-host, depend on the
+  exact TRT version + GPU arch, and are gitignored under
+  `server/models/`. Operator builds them at deploy time from the
+  upstream ONNX.
+- INT8 calibration cache. The flag is wired but the calibration data
+  pipeline is a Phase 5 concern.
+- Multi-batch optimization profiles. The C++ side runs one camera
+  frame at a time; multi-image batching is a Phase 4.3.x feature and
+  this script will gain a `--max-batch` flag when that lands.
+
+---
+
+## Previous milestone — Phase 4.2.4: ALPR pipeline orchestrator
 
 > **Completed 2026-04-25.** Code in
 > [`server/inference/include/inference/alpr_pipeline.hpp`](server/inference/include/inference/alpr_pipeline.hpp)
