@@ -82,8 +82,14 @@ release on GitHub.
 
 | # | Milestone | Status |
 |---|---|---|
-| **4.1** | **gRPC wire contract (`shared/proto`)** | ✅ **Complete — see "Latest accomplishment" below** |
-| 4.2 | Server inference (TensorRT engines for YOLOv9 + PaddleOCR) | ⏳ Next |
+| 4.1 | gRPC wire contract (`shared/proto`) | ✅ Complete |
+| **4.2** | **Server inference (TensorRT engines for YOLOv9 + PaddleOCR)** | 🔵 **In progress — see "Latest accomplishment" below** |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.1 | TrtEngine RAII wrapper around TensorRT 10.x | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.2 | YOLOv9 plate detector | ⏳ Next |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ⏳ Pending |
 | 4.3 | Server RPC + fusion engine | ⏳ Pending |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
@@ -94,7 +100,187 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.1: gRPC wire contract
+## Latest accomplishment — Phase 4.2.1: TrtEngine RAII wrapper
+
+> **Completed 2026-04-25.** Code in
+> [`server/inference/include/inference/trt_engine.hpp`](server/inference/include/inference/trt_engine.hpp)
+> and [`server/inference/src/trt_engine.cpp`](server/inference/src/trt_engine.cpp).
+
+### What I built
+
+A modern C++20 RAII wrapper around the TensorRT 10.x runtime API. It owns the
+full inference state for one engine — the deserialized `ICudaEngine`, an
+`IExecutionContext`, a CUDA stream, and per-binding device buffers — and
+exposes a name-based, exception-throwing interface that the rest of the
+inference layer (YOLOv9 detector, PaddleOCR recognizer, ALPR pipeline) is
+built on top of.
+
+| Artifact | Purpose |
+|---|---|
+| `server/inference/include/inference/trt_engine.hpp` | Public API: `TrtException`, `TrtLogger`, `TensorIo` descriptor, move-only `TrtEngine` class. |
+| `server/inference/src/trt_engine.cpp` | Implementation: engine deserialization, binding introspection, dynamic-shape buffer sizing, async H↔D + `enqueueV3` execution path. |
+| `server/inference/CMakeLists.txt` | Builds `gate_inference` static lib; locates TensorRT headers/libs via standard system paths or `-DTENSORRT_ROOT=…`. |
+| `server/CMakeLists.txt` | Adds the `inference/` subtree under `BUILD_SERVER=ON`. |
+| Root `CMakeLists.txt` | Conditionally pulls in `server/` only when CUDA + spdlog are resolved, mirroring the same graceful-skip pattern used for `shared/proto/` and `tests/`. |
+
+### Technical detail
+
+#### Why a hand-written wrapper
+
+TensorRT's runtime API (`IRuntime`, `ICudaEngine`, `IExecutionContext`)
+returns raw pointers, uses noexcept return-code error handling, and in TRT
+10.x deletes via the C++ `delete` operator (the older `destroy()` virtual is
+gone). Calling that surface directly from inference code would scatter
+`if (!ok) return false;` checks through every detector and recognizer. The
+wrapper:
+
+- Concentrates all error handling at one boundary — every TRT failure
+  becomes a `gate::inference::TrtException` with a descriptive message
+  (failing call name + offending tensor + offending shape where relevant).
+- Takes ownership of the runtime / engine / context / CUDA stream / device
+  buffers via `unique_ptr` with custom deleters, so the destructor frees
+  resources in the only correct order: device buffers → stream → context →
+  engine → runtime.
+- Exposes name-based binding (`engine->getIOTensorName(i)` /
+  `setTensorAddress(name, ptr)`) so re-exporting an engine with renumbered
+  bindings doesn't break call sites — they reference tensors by string.
+- Is move-only and noexcept-movable, which lets it live inside containers
+  (`std::vector<TrtEngine>`) for the multi-engine pipeline that Phases 4.2.2
+  and 4.2.3 will assemble.
+
+#### Engine load path
+
+`TrtEngine::load(path, logger)`:
+
+1. Reads the serialized `.plan` file into a `std::vector<std::byte>` in one
+   shot. The plan is opaque bytes; we do not parse it — TensorRT does.
+2. `nvinfer1::createInferRuntime(logger)` produces the runtime. The supplied
+   logger is a TensorRT `ILogger` reference; the project's default
+   implementation, `TrtLogger`, bridges TRT severities to spdlog levels
+   (`kINTERNAL_ERROR → critical`, `kERROR → err`, `kWARNING → warn`, etc.)
+   with a configurable threshold (default `kWARNING` to keep INFO chatter
+   out of the production log).
+3. `runtime_->deserializeCudaEngine(blob.data(), blob.size())` reconstructs
+   the engine. A null return raises `TrtException` with the engine path so
+   plan corruption surfaces immediately at startup, never at the first
+   inference.
+4. `engine_->createExecutionContext()` produces the per-thread context.
+5. A dedicated CUDA stream is created via `cudaStreamCreate`. Every H↔D
+   copy and every kernel launch is enqueued on this stream, so `sync()` is
+   the single observation point for all in-flight work.
+
+#### Binding introspection
+
+After the context is created, the loader walks
+`engine_->getNbIOTensors()` and builds a `TensorIo` descriptor for each
+binding:
+
+```cpp
+struct TensorIo {
+    std::string             name;       // canonical TRT tensor name
+    nvinfer1::Dims          shape;      // -1 marks dynamic dims
+    nvinfer1::DataType      dtype;
+    bool                    is_input;
+    std::size_t             elem_size;  // bytes per element
+};
+```
+
+Two parallel containers index by binding position (`tensors_`,
+`device_buffers_`, `device_buffer_bytes_`); a `name_to_index_` hash map
+gives O(1) name lookup. All public methods take `std::string_view` and
+resolve through that map so call sites don't carry binding numbers.
+
+#### Dynamic-shape device buffer allocation
+
+The hardest part of a generic TRT wrapper is sizing buffers when the engine
+has dynamic dimensions (the `-1` dims YOLOv9 uses for `batch` and the OCR
+recognizer uses for sequence length). The wrapper handles all three cases
+in `allocate_buffers_()`:
+
+1. **Static binding** — `volume(shape) * elem_size` is allocated directly.
+2. **Dynamic input** — the wrapper queries
+   `engine_->getProfileShape(name, 0, OptProfileSelector::kMAX)` and
+   allocates for that maximum. Subsequent `set_input_shape()` calls with
+   any in-profile shape reuse the same buffer.
+3. **Dynamic output** — output shapes can also be `-1` (e.g. NMS-derived
+   detection counts). The wrapper does a second pass: it primes every
+   dynamic input with its kMAX shape via `setInputShape`, then asks the
+   context to resolve each output via `getTensorShape(name)`, and allocates
+   from there.
+
+`buffer_bytes(name)` consults the context's *current* view of the shape, so
+after `set_input_shape()` the reported size shrinks to match the runtime
+shape — the device buffer is over-allocated (safe) but `enqueue()` only
+copies the bytes the model actually consumes/produces.
+
+#### Async execution path
+
+`enqueue(host_in, host_out)` performs the entire ALPR-step lifecycle on the
+internal stream:
+
+1. **Re-bind every tensor address.** TRT 10's `enqueueV3` requires an
+   address for every input and output to have been set since the last
+   `setInputShape` call. The wrapper rebinds unconditionally so callers
+   don't accidentally inherit a stale binding from a prior context use.
+2. **Async H→D for every input** in the supplied map.
+   `cudaMemcpyAsync(..., cudaMemcpyHostToDevice, stream_)`. Each input span
+   is size-checked against `buffer_bytes(name)`; mismatches throw before
+   any DMA is issued.
+3. **Async forward pass.** `context_->enqueueV3(stream_)`. A `false` return
+   raises `TrtException` with a hint about the most likely cause (unbound
+   input or unset shape).
+4. **Async D→H for every requested output**, with the same size-check
+   discipline.
+5. **`sync()`** is a separate, optional call. The split lets the caller
+   overlap CPU work (post-processing, fusion, gRPC reply assembly) with
+   GPU work, and gives the ALPR pipeline a place to insert a CUDA event
+   for cross-stream barriers later.
+
+Every CUDA call goes through a `check_cuda(status, "what")` helper that
+converts the error code into `cudaGetErrorString(...)` text so failures in
+production logs are immediately diagnosable.
+
+#### Build integration
+
+`server/inference/CMakeLists.txt` locates TensorRT through `find_path` /
+`find_library` rather than `find_package` because TensorRT does not ship a
+CMake config. The result is wrapped in an `IMPORTED` target,
+`TensorRT::nvinfer`, with the header path attached as `SYSTEM` includes so
+the project-wide `-Wall -Wextra -Wpedantic -Werror` doesn't flag TRT's
+own headers. The library links `CUDA::cudart` from `CUDAToolkit` and
+`spdlog::spdlog` from vcpkg.
+
+The root `CMakeLists.txt` only descends into `server/` when `BUILD_SERVER`
+is on **and** `find_package(spdlog CONFIG QUIET)` succeeds. CI's
+non-toolchain Build job stays green because the inference module is simply
+skipped with a clear status message; local development with the vcpkg
+toolchain pulls the full dependency closure (gRPC, protobuf, drogon,
+spdlog, sqlite3, fmt, nlohmann-json, Catch2, cli11) and builds normally.
+
+#### Verified compile
+
+Built clean against:
+
+- TensorRT 10.16.1 (`libnvinfer.so` at `/usr/lib/x86_64-linux-gnu/`)
+- CUDA Toolkit 13.1.115 (nvcc + cudart)
+- GCC 14.2.0 with `-std=c++20 -Wall -Wextra -Wpedantic -Werror`
+- spdlog 1.17.0 from vcpkg
+
+Build output:
+
+```
+[1/4] Scanning .../trt_engine.cpp for CXX dependencies
+[2/4] Generating CXX dyndep file ...
+[3/4] Building CXX object .../trt_engine.cpp.o
+[4/4] Linking CXX static library libgate_inference.a
+```
+
+No warnings, no diagnostics — strict warnings are kept on for first-party
+code.
+
+---
+
+## Previous milestone — Phase 4.1: gRPC wire contract
 
 > **Pulled this off on 2026-04-25.** Full code in
 > [`shared/proto/`](shared/proto/) and [`tests/proto/`](tests/proto/).

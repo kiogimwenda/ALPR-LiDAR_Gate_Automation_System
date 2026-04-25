@@ -51,6 +51,19 @@ if(BUILD_TESTS)
     endif()
 endif()
 
-# Server / dashboard / firmware are added in subsequent Phase 4 milestones.
-# add_subdirectory(server)
+if(BUILD_SERVER)
+    if(NOT ENABLE_GPU)
+        message(FATAL_ERROR "BUILD_SERVER=ON requires ENABLE_GPU=ON (CUDA/TensorRT).")
+    endif()
+    find_package(spdlog CONFIG QUIET)
+    if(spdlog_FOUND)
+        add_subdirectory(server)
+    else()
+        message(STATUS
+            "Skipping server/: spdlog not found via find_package(CONFIG). "
+            "Configure with the vcpkg toolchain to build the inference + RPC server.")
+    endif()
+endif()
+
+# Dashboard / firmware are added in subsequent Phase 4 milestones.
 # add_subdirectory(dashboard/backend)
