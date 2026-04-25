@@ -85,8 +85,8 @@ release on GitHub.
 | 4.1 | gRPC wire contract (`shared/proto`) | ✅ Complete |
 | **4.2** | **Server inference (TensorRT engines for YOLOv9 + PaddleOCR)** | 🔵 **In progress — see "Latest accomplishment" below** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.1 | TrtEngine RAII wrapper around TensorRT 10.x | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.2 | YOLOv9 plate detector | ⏳ Next |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.2 | YOLOv9 plate detector | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ⏳ Next |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ⏳ Pending |
@@ -100,7 +100,138 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.2.1: TrtEngine RAII wrapper
+## Latest accomplishment — Phase 4.2.2: YOLOv9 plate detector
+
+> **Completed 2026-04-25.** Code in
+> [`server/inference/include/inference/yolo_plate_detector.hpp`](server/inference/include/inference/yolo_plate_detector.hpp)
+> and [`server/inference/src/yolo_plate_detector.cpp`](server/inference/src/yolo_plate_detector.cpp).
+
+### What I built
+
+A single-camera YOLOv9 license-plate detector built directly on the
+`TrtEngine` wrapper from 4.2.1. It takes a BGR `cv::Mat` and returns a
+`std::vector<PlateDetection>` whose boxes are already in the original
+image's pixel coordinate frame — the call site does not need to know
+anything about model input size, letterboxing, or NMS.
+
+| Artifact | Purpose |
+|---|---|
+| `server/inference/include/inference/yolo_plate_detector.hpp` | Public API: `PlateDetection` struct, `YoloPlateDetector::Config`, move-only detector class. |
+| `server/inference/src/yolo_plate_detector.cpp` | Implementation: letterbox, BGR→RGB normalization, CHW pack, async inference, EfficientNMS_TRT decode, coordinate unmap. |
+| `server/inference/CMakeLists.txt` (updated) | Adds OpenCV (core + imgproc) to `gate_inference`'s public link line. |
+
+### Technical detail
+
+#### Why model-side NMS
+
+The detector targets ONNX exports produced by the official `yolov9` repo
+with the `--end2end` flag, which embeds the standard
+`EfficientNMS_TRT` plugin in the model graph. The engine therefore emits
+already-NMSed detections via four output tensors — `num_dets`,
+`det_boxes`, `det_scores`, `det_classes` — and the C++ side never has to
+implement anchor decoding or non-max suppression. This pushes
+~2 ms of CPU work onto the GPU where it overlaps with the rest of the
+forward pass, and keeps the call-site code under 200 lines.
+
+The detector still applies a `confidence_floor` filter on the way back
+out as defense-in-depth: the EfficientNMS thresholds are baked in at
+export time, but the deployment may want a stricter floor without
+re-exporting the engine.
+
+#### Preprocessing pipeline
+
+`YoloPlateDetector::detect(const cv::Mat& bgr)` does the standard
+YOLO-family preprocessing in three OpenCV steps:
+
+1. **Letterbox.** `letterbox_()` resizes the source frame to fit inside
+   the model's input canvas (default 640×640) preserving aspect ratio,
+   then pads the remainder with neutral gray `(114, 114, 114)` — the
+   YOLOv9 / Ultralytics convention. The `(scale, pad_x, pad_y)` triple
+   is captured so detection boxes can be unmapped exactly.
+2. **Color + dtype.** `cv::cvtColor(... BGR2RGB)` then `convertTo(...,
+   CV_32FC3, 1/255)`. Two function calls; OpenCV does the SIMD work.
+3. **HWC → CHW.** `cv::split` writes the three planes directly into a
+   contiguous `std::vector<float>` host buffer that the wrapper
+   pre-allocated at `load()` time, so per-frame inference does no heap
+   allocation in the hot path.
+
+The host buffer is then handed to `TrtEngine::enqueue` as a
+`std::span<const std::byte>` keyed by the input tensor name (`"images"`
+by default).
+
+#### Output decoding
+
+`enqueue` is followed by a single `sync()` (we don't yet pipeline
+detection with downstream OCR — that's 4.2.4 territory). The four
+output buffers are then walked once:
+
+```
+for i in [0, num_dets[0]):
+    score = scores[i]
+    if score < confidence_floor: continue
+    (x1, y1, x2, y2) = boxes[i*4 : i*4+4]      // letterboxed-input space
+    x1 = max(0, (x1 - pad_x) / scale)          // → original-image space
+    y1 = max(0, (y1 - pad_y) / scale)
+    x2 = min(W, (x2 - pad_x) / scale)
+    y2 = min(H, (y2 - pad_y) / scale)
+    if x2 <= x1 or y2 <= y1: continue          // degenerate after clamp
+    emit PlateDetection{box, score, class_id}
+```
+
+Detections are returned sorted by descending confidence so the ALPR
+pipeline (4.2.4) can apply a top-K crop policy without resorting.
+
+#### Allocation discipline
+
+Five host scratch buffers (`input_chw_`, `num_dets_host_`, `boxes_host_`,
+`scores_host_`, `classes_host_`) are sized once at `load()` from the
+context-resolved output shapes and reused for every frame. The detector
+makes zero allocations in the per-frame path beyond OpenCV's internal
+working memory for the `cvtColor`/`convertTo`/`split` steps.
+
+The `max_detections` constant comes from the engine itself —
+`engine_->context()->getTensorShape("det_boxes")` returns
+`[1, max_det, 4]` after the input shape is pinned at load time. This
+keeps the C++ side automatically in sync with however the ONNX export
+was configured.
+
+#### CMake: surviving OpenCV-with-CUDA on a modern toolchain
+
+OpenCV was source-built against CUDA 13.1, which means
+`OpenCVConfig.cmake` unconditionally calls
+`find_host_package(CUDA REQUIRED)` — the legacy `FindCUDA` module.
+CMake 3.27+ defaulted policy `CMP0146` to `NEW`, which removes that
+module, and the policy doesn't propagate through vcpkg's
+`find_package` wrapper. Rather than fight scoping, the build pre-fills
+the half-dozen `CUDA_*` variables that OpenCV's config actually reads —
+sourced from the modern `CUDA::cudart` / `CUDA::cublas` /
+`CUDA::cufft` / `CUDA::nppc` / `CUDA::nppial` / `CUDA::npps` imported
+targets that `find_package(CUDAToolkit)` provides — and stubs out
+`find_cuda_helper_libs` as a no-op since we've already populated the
+libraries it would have found. OpenCV's `if(NOT CUDA_FOUND)` short-
+circuits cleanly and the rest of its config proceeds normally.
+
+This is documented inline in `server/inference/CMakeLists.txt` so the
+next person who reads it doesn't have to re-derive the chain.
+
+#### Verified compile
+
+```
+[1/6] Scanning .../trt_engine.cpp for CXX dependencies
+[2/6] Scanning .../yolo_plate_detector.cpp for CXX dependencies
+[3/6] Generating CXX dyndep file ...
+[4/6] Building CXX object .../trt_engine.cpp.o
+[5/6] Building CXX object .../yolo_plate_detector.cpp.o
+[6/6] Linking CXX static library libgate_inference.a
+```
+
+Built against TensorRT 10.16.1, CUDA 13.1.115, OpenCV 4.14.0 (CUDA
+source-build), GCC 14.2.0 with `-std=c++20 -Wall -Wextra -Wpedantic
+-Werror` — no diagnostics.
+
+---
+
+## Previous milestone — Phase 4.2.1: TrtEngine RAII wrapper
 
 > **Completed 2026-04-25.** Code in
 > [`server/inference/include/inference/trt_engine.hpp`](server/inference/include/inference/trt_engine.hpp)
