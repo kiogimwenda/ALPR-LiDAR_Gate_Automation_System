@@ -1,4 +1,443 @@
-// gate_service.proto — RPC schema for PCB <-> GPU server communication.
-// Defines: InferenceRequest, InferenceResponse, GateCommand, Telemetry.
+// gate_service.proto
+//
+// RPC contract between the gate-side ESP32-S3 field controller and the GPU
+// inference/decision server. Also defines the dashboard event stream.
+//
+// Design goals:
+//   1. One canonical schema — firmware, server, dashboard, simulation, and
+//      tests all generate stubs from this single file.
+//   2. Forward-compatible — every message carries explicit field numbers and
+//      reserves room for additions without breaking deployed firmware.
+//   3. Streaming first — gates run continuously; long-lived bidirectional
+//      streams beat polling for both throughput and OTA progress reporting.
+//   4. Self-describing — every event carries a monotonic event_id and
+//      wall-clock timestamp so the dashboard can replay and the server can
+//      reconcile out-of-order arrivals.
+//
+// All timestamps use google.protobuf.Timestamp (UTC). All durations use
+// google.protobuf.Duration. All binary blobs are explicitly sized.
+
 syntax = "proto3";
-package gate;
+
+package gate.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+
+option cc_enable_arenas = true;
+option optimize_for = SPEED;
+
+// ---------------------------------------------------------------------------
+// Common enums
+// ---------------------------------------------------------------------------
+
+// VehicleClass — produced by the LiDAR pipeline. Matches the 8-class taxonomy
+// from docs/diagrams/03-lidar-subsystem.mmd. Order is stable.
+enum VehicleClass {
+  VEHICLE_CLASS_UNKNOWN     = 0;
+  VEHICLE_CLASS_PEDESTRIAN  = 1;
+  VEHICLE_CLASS_BICYCLE     = 2;
+  VEHICLE_CLASS_MOTORCYCLE  = 3;
+  VEHICLE_CLASS_SEDAN       = 4;
+  VEHICLE_CLASS_SUV         = 5;
+  VEHICLE_CLASS_PICKUP      = 6;
+  VEHICLE_CLASS_VAN         = 7;
+  VEHICLE_CLASS_TRUCK       = 8;
+}
+
+// GateState — the only legal states. Matches the state machine in
+// docs/diagrams/05-gate-state-machine.mmd. Transitions are server-authoritative
+// but firmware reports actual hardware state via Telemetry.
+enum GateState {
+  GATE_STATE_UNKNOWN  = 0;
+  GATE_STATE_CLOSED   = 1;  // Both limit switches show closed
+  GATE_STATE_OPENING  = 2;  // Trigger fired, no limit switch yet
+  GATE_STATE_OPEN     = 3;  // Open limit switch active
+  GATE_STATE_CLOSING  = 4;  // Auto-close timer expired, motor reversing
+  GATE_STATE_FAULT    = 5;  // Limit switch stuck, motor timeout, beam blocked
+  GATE_STATE_LOCKDOWN = 6;  // Force-close override active
+}
+
+// AuthVerdict — final fusion engine decision per
+// docs/diagrams/04-fusion-decision.mmd.
+enum AuthVerdict {
+  AUTH_VERDICT_UNSPECIFIED    = 0;
+  AUTH_VERDICT_AUTHORIZED     = 1;  // Open the gate
+  AUTH_VERDICT_DENIED         = 2;  // Hard deny — log + alert
+  AUTH_VERDICT_LOW_CONFIDENCE = 3;  // Below threshold — alert guard
+  AUTH_VERDICT_MANUAL_REVIEW  = 4;  // Allowlist hit but class mismatch
+}
+
+// DenyReason — only meaningful when verdict == DENIED or LOW_CONFIDENCE.
+enum DenyReason {
+  DENY_REASON_NONE             = 0;
+  DENY_REASON_BLOCKLISTED      = 1;
+  DENY_REASON_NOT_ON_ALLOWLIST = 2;
+  DENY_REASON_OUTSIDE_WINDOW   = 3;
+  DENY_REASON_FORCE_CLOSE      = 4;
+  DENY_REASON_LOW_ALPR_CONF    = 5;
+  DENY_REASON_LOW_LIDAR_CONF   = 6;
+  DENY_REASON_CLASS_MISMATCH   = 7;
+  DENY_REASON_NO_PLATE_FOUND   = 8;
+  DENY_REASON_DUPLICATE_ENTRY  = 9;  // Anti-tailgating
+}
+
+// CommandKind — every imperative the server sends to the field PCB.
+enum CommandKind {
+  COMMAND_KIND_UNSPECIFIED  = 0;
+  COMMAND_KIND_OPEN_GATE    = 1;
+  COMMAND_KIND_CLOSE_GATE   = 2;
+  COMMAND_KIND_PULSE_RELAY  = 3;  // Single trigger pulse (default mode)
+  COMMAND_KIND_LATCH_OPEN   = 4;  // Force open until released
+  COMMAND_KIND_LATCH_CLOSE  = 5;  // Lockdown
+  COMMAND_KIND_RELEASE_LATCH= 6;
+  COMMAND_KIND_REBOOT       = 7;
+  COMMAND_KIND_BEGIN_OTA    = 8;
+  COMMAND_KIND_LED_PATTERN  = 9;  // Visual feedback (auth flash, fault blink)
+}
+
+// LedPattern — visual feedback patterns the firmware can render on the auth
+// and fault LEDs. Matches the firmware led_strip module.
+enum LedPattern {
+  LED_PATTERN_OFF        = 0;
+  LED_PATTERN_AUTH_FLASH = 1;  // 3× green flash
+  LED_PATTERN_DENY_FLASH = 2;  // 3× red flash
+  LED_PATTERN_FAULT_SLOW = 3;  // 1Hz red blink
+  LED_PATTERN_OTA_PULSE  = 4;  // Yellow pulse during update
+  LED_PATTERN_BOOT_OK    = 5;  // Solid green for 2s on boot
+}
+
+// Severity for FaultEvent.
+enum FaultSeverity {
+  FAULT_SEVERITY_UNSPECIFIED = 0;
+  FAULT_SEVERITY_INFO        = 1;
+  FAULT_SEVERITY_WARN        = 2;
+  FAULT_SEVERITY_ERROR       = 3;
+  FAULT_SEVERITY_CRITICAL    = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Geometry & detection primitives
+// ---------------------------------------------------------------------------
+
+// Pixel-space bounding box. Coordinates are absolute pixels in the camera's
+// native resolution (Hikvision DS-2CD2043G2-I default 2560x1440).
+message BoundingBox {
+  uint32 x      = 1;
+  uint32 y      = 2;
+  uint32 width  = 3;
+  uint32 height = 4;
+}
+
+// World-space 3D position relative to the LiDAR origin (forward-X, left-Y,
+// up-Z, ROS REP-103 convention). Units: meters.
+message Point3D {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+// 3D oriented bounding box from the LiDAR detector.
+message BoundingBox3D {
+  Point3D center      = 1;
+  float   length      = 2;  // X dimension, meters
+  float   width       = 3;  // Y dimension, meters
+  float   height      = 4;  // Z dimension, meters
+  float   yaw_radians = 5;  // Rotation about Z (heading)
+}
+
+// ---------------------------------------------------------------------------
+// Inference subsystem messages
+// ---------------------------------------------------------------------------
+
+// Single ALPR result for one detected plate. The full ALPR pipeline output
+// (plate detection + OCR) is collapsed into this message.
+message PlateDetection {
+  string      plate_text      = 1;  // OCR result, normalized uppercase, no spaces
+  float       detection_conf  = 2;  // YOLOv9 confidence [0.0, 1.0]
+  float       ocr_conf        = 3;  // PaddleOCR mean character confidence
+  BoundingBox box             = 4;
+  string      country_hint    = 5;  // ISO-3166 alpha-2, "" if unknown
+  string      raw_ocr         = 6;  // Pre-normalization OCR text (for audit)
+}
+
+// Single LiDAR detection.
+message VehicleDetection {
+  VehicleClass  class           = 1;
+  float         class_conf      = 2;  // [0.0, 1.0]
+  BoundingBox3D box             = 3;
+  Point3D       velocity_mps    = 4;  // Tracked velocity, m/s
+  uint32        track_id        = 5;  // Stable ID across frames (0 if untracked)
+  uint32        point_count     = 6;  // Number of LiDAR points in this cluster
+}
+
+// Snapshot of one detection cycle from both sensor pipelines. The server
+// builds this from independent ALPR and LiDAR streams and feeds it to the
+// fusion engine.
+message DetectionFrame {
+  google.protobuf.Timestamp capture_ts        = 1;  // Earliest sensor timestamp
+  uint64                    frame_id          = 2;  // Monotonic per gate_id
+  string                    gate_id           = 3;
+  repeated PlateDetection   plates            = 4;
+  repeated VehicleDetection vehicles          = 5;
+  string                    camera_image_uri  = 6;  // Optional URI to JPEG snapshot
+  string                    lidar_pcd_uri     = 7;  // Optional URI to point cloud
+}
+
+// ---------------------------------------------------------------------------
+// Authorization / fusion messages
+// ---------------------------------------------------------------------------
+
+// Request from server to fusion engine. Server-internal but defined here so
+// simulation and tests can drive the engine directly.
+message AuthorizeRequest {
+  DetectionFrame frame              = 1;
+  string         site_id            = 2;  // Multi-tenant key
+  bool           override_allowlist = 3;  // Guard manual approval
+  string         actor              = 4;  // "auto" / username for audit
+}
+
+// Final decision delivered to firmware and dashboard.
+message AuthDecision {
+  string                    decision_id    = 1;  // UUIDv4
+  google.protobuf.Timestamp decision_ts    = 2;
+  string                    gate_id        = 3;
+  AuthVerdict               verdict        = 4;
+  DenyReason                deny_reason    = 5;  // Only set when not authorized
+  string                    matched_plate  = 6;  // Empty if no match
+  VehicleClass              matched_class  = 7;
+  float                     combined_conf  = 8;  // w1*alpr + w2*lidar
+  string                    reason_text    = 9;  // Human-readable for UI
+  uint64                    frame_id       = 10; // Backref to DetectionFrame
+  string                    actor          = 11;
+}
+
+// ---------------------------------------------------------------------------
+// Field-controller telemetry & commands
+// ---------------------------------------------------------------------------
+
+// Once per second from the firmware. Lightweight — keep payload small to
+// minimize cellular fallback bandwidth.
+message Telemetry {
+  string                    gate_id           = 1;
+  google.protobuf.Timestamp sent_ts           = 2;
+  GateState                 gate_state        = 3;
+  bool                      limit_open        = 4;
+  bool                      limit_closed      = 5;
+  bool                      safety_beam_clear = 6;
+  uint32                    uptime_sec        = 7;
+  int32                     rssi_dbm          = 8;   // Wifi RSSI, 0 if wired
+  uint32                    free_heap_bytes   = 9;
+  uint32                    min_free_heap     = 10;  // Watermark since boot
+  float                     supply_voltage_v  = 11;  // Measured 12V rail
+  float                     core_temp_c       = 12;
+  string                    firmware_version  = 13;  // SemVer string
+  string                    firmware_sha256   = 14;  // Hex digest of running image
+  uint64                    seq               = 15;  // Monotonic counter
+}
+
+// Server → firmware command.
+message GateCommand {
+  string                    command_id  = 1;  // UUIDv4 — firmware echoes in ack
+  google.protobuf.Timestamp issued_ts   = 2;
+  string                    gate_id     = 3;
+  CommandKind               kind        = 4;
+  google.protobuf.Duration  duration    = 5;  // For pulse / latch operations
+  LedPattern                led_pattern = 6;  // Only for COMMAND_KIND_LED_PATTERN
+  uint32                    relay_index = 7;  // 0-3, default 0 (leaf 1)
+  string                    actor       = 8;  // For audit log
+  bytes                     signature   = 9;  // Optional ed25519 over hash
+}
+
+// Firmware → server acknowledgement of a command. Sent immediately on receipt
+// (with completed=false) and again when execution finishes.
+message CommandAck {
+  string                    command_id   = 1;
+  google.protobuf.Timestamp received_ts  = 2;
+  google.protobuf.Timestamp completed_ts = 3;  // Zero until finished
+  bool                      completed    = 4;
+  bool                      success      = 5;
+  string                    error_text   = 6;  // Populated only when !success
+  GateState                 state_after  = 7;
+}
+
+// ---------------------------------------------------------------------------
+// Fault / events
+// ---------------------------------------------------------------------------
+
+message FaultEvent {
+  string                    fault_id     = 1;  // UUIDv4
+  google.protobuf.Timestamp occurred_ts  = 2;
+  string                    gate_id      = 3;
+  FaultSeverity             severity     = 4;
+  string                    code         = 5;  // e.g., "MOTOR_TIMEOUT"
+  string                    description  = 6;  // Human-readable
+  map<string, string>       context      = 7;  // Free-form k/v
+}
+
+// ---------------------------------------------------------------------------
+// OTA update streaming
+// ---------------------------------------------------------------------------
+
+message OtaManifest {
+  string                    target_version  = 1;  // SemVer
+  string                    image_sha256    = 2;  // Hex
+  uint64                    image_size      = 3;  // Bytes
+  bytes                     ed25519_sig     = 4;  // Signature over manifest+image
+  string                    signing_key_id  = 5;
+  google.protobuf.Timestamp built_ts        = 6;
+  string                    release_notes   = 7;  // URL or short text
+  uint32                    min_uptime_sec  = 8;  // Refuse update if uptime < this (production safety)
+}
+
+message OtaChunk {
+  uint64 offset = 1;
+  bytes  data   = 2;  // Up to 4096 bytes per chunk (ESP32 flash sector)
+  bool   final  = 3;  // True on last chunk
+}
+
+message OtaProgress {
+  string  command_id     = 1;
+  uint64  bytes_received = 2;
+  uint64  bytes_total    = 3;
+  enum OtaPhase {
+    OTA_PHASE_UNKNOWN     = 0;
+    OTA_PHASE_DOWNLOADING = 1;
+    OTA_PHASE_VERIFYING   = 2;
+    OTA_PHASE_INSTALLING  = 3;
+    OTA_PHASE_REBOOTING   = 4;
+    OTA_PHASE_COMPLETE    = 5;
+    OTA_PHASE_FAILED      = 6;
+    OTA_PHASE_ROLLED_BACK = 7;
+  }
+  OtaPhase phase    = 4;
+  string   message  = 5;  // Optional human description
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard event stream (server → web UI)
+// ---------------------------------------------------------------------------
+
+message DashboardEvent {
+  uint64                    event_id   = 1;  // Monotonic per server boot
+  google.protobuf.Timestamp event_ts   = 2;
+  oneof payload {
+    AuthDecision  decision   = 3;
+    Telemetry     telemetry  = 4;
+    FaultEvent    fault      = 5;
+    OtaProgress   ota        = 6;
+    GateCommand   command    = 7;
+    CommandAck    ack        = 8;
+  }
+}
+
+// Filter the dashboard subscription by site/gate.
+message DashboardSubscription {
+  string         site_id          = 1;  // Empty = all
+  repeated string gate_ids        = 2;  // Empty = all
+  bool           include_decisions = 3;
+  bool           include_telemetry = 4;
+  bool           include_faults    = 5;
+  bool           include_ota       = 6;
+  uint64         since_event_id    = 7;  // Replay events after this
+}
+
+// ---------------------------------------------------------------------------
+// Allowlist / blocklist management (admin RPC)
+// ---------------------------------------------------------------------------
+
+message TimeWindow {
+  uint32 start_minute_of_day = 1;  // 0..1439, local time
+  uint32 end_minute_of_day   = 2;
+  uint32 days_of_week_mask   = 3;  // bit0=Mon ... bit6=Sun
+}
+
+message Allowlistentry {
+  string                plate_text       = 1;  // Normalized uppercase
+  repeated VehicleClass allowed_classes  = 2;  // Empty = any class allowed
+  repeated TimeWindow   time_windows     = 3;  // Empty = always allowed
+  string                owner_name       = 4;
+  string                owner_unit       = 5;  // Apartment/house number
+  google.protobuf.Timestamp valid_from   = 6;
+  google.protobuf.Timestamp valid_until  = 7;  // Zero = no expiry
+  string                notes            = 8;
+  string                added_by         = 9;
+  google.protobuf.Timestamp added_ts     = 10;
+}
+
+message UpsertAllowlistRequest {
+  string                site_id = 1;
+  repeated Allowlistentry entries = 2;
+}
+
+message UpsertAllowlistResponse {
+  uint32 inserted = 1;
+  uint32 updated  = 2;
+}
+
+message ListAllowlistRequest {
+  string site_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListAllowlistResponse {
+  repeated Allowlistentry entries = 1;
+  string                  next_page_token = 2;
+}
+
+message DeleteAllowlistRequest {
+  string site_id = 1;
+  repeated string plate_texts = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Service definitions
+// ---------------------------------------------------------------------------
+
+// FieldControllerService — server methods called by the firmware. Connection
+// is initiated by the firmware on boot; both telemetry and command channels
+// are kept open for the life of the session.
+service FieldControllerService {
+  // Long-lived bidirectional stream. Firmware sends Telemetry every second;
+  // server replies with GateCommand when needed. CommandAck flows back over
+  // the same stream as Telemetry (multiplexed via oneof — see ControlEnvelope).
+  rpc Control (stream ControlEnvelope) returns (stream ControlEnvelope);
+
+  // OTA delivery: server streams OtaChunk after firmware requests an update.
+  rpc DeliverOta (OtaManifest) returns (stream OtaChunk);
+
+  // Firmware reports OTA progress back to server.
+  rpc ReportOtaProgress (stream OtaProgress) returns (google.protobuf.Empty);
+
+  // Push detection frames to server (server-side ALPR + LiDAR run on dedicated
+  // GPU server, but firmware can also push pre-processed frames in dev mode).
+  rpc SubmitDetection (DetectionFrame) returns (AuthDecision);
+}
+
+// ControlEnvelope multiplexes the bidirectional Control stream. Exactly one
+// payload set per envelope.
+message ControlEnvelope {
+  oneof payload {
+    Telemetry  telemetry = 1;
+    CommandAck ack       = 2;
+    FaultEvent fault     = 3;
+    GateCommand command  = 4;  // Only ever populated by server
+  }
+}
+
+// DashboardService — methods called by the web UI backend.
+service DashboardService {
+  rpc Subscribe (DashboardSubscription) returns (stream DashboardEvent);
+  rpc IssueCommand (GateCommand) returns (CommandAck);
+  rpc Authorize (AuthorizeRequest) returns (AuthDecision);
+}
+
+// AdminService — allowlist/blocklist CRUD. Authentication enforced via
+// gRPC interceptors using JWT (see ADR-003).
+service AdminService {
+  rpc UpsertAllowlist (UpsertAllowlistRequest) returns (UpsertAllowlistResponse);
+  rpc ListAllowlist   (ListAllowlistRequest)   returns (ListAllowlistResponse);
+  rpc DeleteAllowlist (DeleteAllowlistRequest) returns (UpsertAllowlistResponse);
+}
