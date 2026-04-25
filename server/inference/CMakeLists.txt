@@ -91,6 +91,7 @@ set_target_properties(TensorRT::nvinfer PROPERTIES
 add_library(gate_inference STATIC
     src/trt_engine.cpp
     src/yolo_plate_detector.cpp
+    src/paddle_ocr_recognizer.cpp
 )
 
 target_include_directories(gate_inference

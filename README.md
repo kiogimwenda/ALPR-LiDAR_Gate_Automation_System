@@ -86,8 +86,8 @@ release on GitHub.
 | **4.2** | **Server inference (TensorRT engines for YOLOv9 + PaddleOCR)** | 🔵 **In progress — see "Latest accomplishment" below** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.1 | TrtEngine RAII wrapper around TensorRT 10.x | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.2 | YOLOv9 plate detector | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ⏳ Next |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.3 | PaddleOCR character recognizer | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ⏳ Next |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ⏳ Pending |
 | 4.3 | Server RPC + fusion engine | ⏳ Pending |
@@ -100,7 +100,129 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.2.2: YOLOv9 plate detector
+## Latest accomplishment — Phase 4.2.3: PaddleOCR plate-text recognizer
+
+> **Completed 2026-04-25.** Code in
+> [`server/inference/include/inference/paddle_ocr_recognizer.hpp`](server/inference/include/inference/paddle_ocr_recognizer.hpp)
+> and [`server/inference/src/paddle_ocr_recognizer.cpp`](server/inference/src/paddle_ocr_recognizer.cpp).
+> Dictionary asset at
+> [`server/models/dict_kenya_plates.txt`](server/models/dict_kenya_plates.txt).
+
+### What I built
+
+A PaddleOCR PP-OCRv4-compatible plate-text recognizer that takes a
+cropped plate image (the typical output of `YoloPlateDetector::detect`)
+and returns a `RecognizedPlate { text, confidence }`. Like the
+detector, it sits directly on top of the `TrtEngine` wrapper from
+4.2.1 and uses the same async-enqueue / single-sync execution model so
+the upcoming ALPR pipeline can chain detection → recognition without
+ever reading the host CPU between models.
+
+| Artifact | Purpose |
+|---|---|
+| `server/inference/include/inference/paddle_ocr_recognizer.hpp` | Public API: `RecognizedPlate` struct, `PaddleOcrRecognizer::Config`, move-only recognizer class. |
+| `server/inference/src/paddle_ocr_recognizer.cpp` | Implementation: aspect-preserving resize + right-pad, per-channel mean/std normalization, async TRT inference, greedy CTC decode. |
+| `server/models/dict_kenya_plates.txt` | 36-character dictionary (0–9, A–Z) covering every character that can appear on a Kenyan civilian or government plate. |
+| `server/models/README.md` | Explains what model assets live in the tree (dictionaries) vs. what is built locally and gitignored (`.plan` engines, `.onnx` exports). |
+
+### Technical detail
+
+#### Preprocessing — what PaddleOCR actually expects
+
+PP-OCRv4's plate recognizer is a CRNN-style network: a CNN backbone
+that emits a sequence of feature columns, fed into a CTC head. The
+input contract is unusual:
+
+- **Fixed input height (48 px)** — required, because the CNN backbone's
+  vertical stride collapses height to 1 in the feature map.
+- **Variable input width up to a maximum (320 px)** — the recognizer
+  reads left-to-right, so wider crops give more time steps but the
+  trained max is 320.
+- **Aspect-preserving resize** — squashing a wide plate into a square
+  destroys character geometry; the model is trained on aspect-preserved
+  inputs zero-padded on the right.
+
+`preprocess_()` does exactly that: resize so height = 48 and width =
+`round(48 × aspect)` clamped to `[1, 320]`, then `copyTo` into a
+`(48 × 320, BGR, zero-padded)` canvas. The CTC head treats those
+zero-padded columns as low-energy time steps and decodes them as blanks,
+which the post-processor strips — so padding has no semantic effect on
+the output text.
+
+#### Normalization
+
+PP-OCRv4 was trained with `(pixel/255 - mean) / std`, default
+`mean = std = (0.5, 0.5, 0.5)`. With those symmetric values the
+BGR-vs-RGB channel order is irrelevant, so the recognizer reads
+OpenCV's native BGR directly and avoids a `cvtColor` round trip. The
+arithmetic is per-channel (`cv::split` → subtract → divide), which keeps
+us off `opencv_dnn::blobFromImage` and shaves a heavy module out of the
+link line.
+
+#### CTC greedy decode
+
+The recognizer's output is `[1, T, C]` post-softmax probabilities. The
+decoder is the standard CTC greedy:
+
+```
+for each time step t in [0, T):
+    c = argmax_c output[t, c]
+    if c == 0 (blank) or c == prev: skip            # CTC blank + repeat collapse
+    text   += dictionary[c - 1]
+    conf   += output[t, c]
+    prev   = c
+return (text, conf / kept_count)
+```
+
+Per-character confidence is the argmax probability at that time step;
+overall plate confidence is the mean of those per-character values.
+This is the right summary statistic for a downstream allow-list match —
+a single low-confidence character in a 7-character plate drops the
+score visibly, but a strong reading on the rest still indicates a high-
+quality OCR.
+
+A future enhancement (Phase 4.3 fusion engine) will use **per-character
+confidence** rather than the mean to gate ambiguous chars (e.g.
+`O` vs `0`) against the allow-list, but the mean is the right v1.
+
+#### Dictionary contract
+
+`dictionary_path` points to a UTF-8 text file with one character per
+line. The model output's class 0 is the CTC blank token; class `i+1`
+maps to dictionary line `i`. The recognizer enforces this on load —
+if the model's class count doesn't equal `dictionary.size() + 1`, it
+throws immediately with a descriptive `TrtException` so the failure
+mode is "won't start" rather than "OCRs garbage".
+
+The committed dictionary is tuned for **Kenya plates** specifically —
+the format is `KXX 000X` (three letters + three digits + one letter),
+and the 36-character vocabulary (0–9, A–Z) keeps the classifier head
+small. Multi-region deployments swap the dictionary file without a
+recompile; `server/models/README.md` documents the convention.
+
+#### Allocation discipline
+
+Identical to the detector: two host scratch buffers (`input_chw_`,
+`output_logits_`), sized once at `load()` from the engine's resolved
+shapes and reused for every recognition call. Per-frame inference
+allocates only OpenCV's working memory for the resize + split.
+
+#### Verified compile
+
+```
+[1/7] Scanning .../paddle_ocr_recognizer.cpp for CXX dependencies
+[2/7] Generating CXX dyndep file
+[3/5] Building CXX object .../paddle_ocr_recognizer.cpp.o
+[4/5] Linking CXX static library libgate_inference.a
+```
+
+Built against the same toolchain as 4.2.1 and 4.2.2 (TensorRT 10.16.1,
+CUDA 13.1.115, OpenCV 4.14.0, GCC 14.2.0,
+`-std=c++20 -Wall -Wextra -Wpedantic -Werror`) — no diagnostics.
+
+---
+
+## Previous milestone — Phase 4.2.2: YOLOv9 plate detector
 
 > **Completed 2026-04-25.** Code in
 > [`server/inference/include/inference/yolo_plate_detector.hpp`](server/inference/include/inference/yolo_plate_detector.hpp)
