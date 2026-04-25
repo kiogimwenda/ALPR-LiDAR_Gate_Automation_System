@@ -90,7 +90,13 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ✅ Complete |
-| **4.3** | **Server RPC + fusion engine** | 🔵 **In progress — next** |
+| **4.3** | **Server RPC + fusion engine** | 🔵 **In progress** |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.1 | Allowlist + blocklist store (SQLite) | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.3 | Dashboard event broadcaster | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ⏳ Pending |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
@@ -100,7 +106,210 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.2.6: Catch2 inference unit tests
+## Latest accomplishment — Phase 4.3.1: Allowlist + blocklist store (SQLite)
+
+> **Completed 2026-04-25.** Library in
+> [`server/auth/`](server/auth/), tests in
+> [`tests/auth/allowlist_store_test.cpp`](tests/auth/allowlist_store_test.cpp).
+
+### What I built
+
+The first non-inference library on the server side: `gate_auth` — a thin,
+thread-safe SQLite wrapper that owns the allowlist (which plates are
+permitted) and the blocklist (which plates are explicitly denied), keyed
+per-site for multi-tenant deployments. The fusion engine in 4.3.2 reads
+through this store; the gRPC `AdminService` in 4.3.4 will write to it.
+
+| Artifact | Purpose |
+|---|---|
+| `server/auth/include/auth/allowlist_store.hpp` | Public API: `AllowlistStore::open(path)`, `upsert`, `lookup`, `is_blocklisted`, `blocklist_upsert`/`remove`, `list` (paginated), `remove`. Also `normalize_plate()` and the `is_allowed_now(entry, class, now_unix, now_local)` policy helper. |
+| `server/auth/src/allowlist_store.cpp` | sqlite3 C-API implementation with prepared-statement caching, WAL journaling, and a versioned schema migration on open. |
+| `server/auth/CMakeLists.txt` | Builds `gate_auth` (static library) linked against `gate_proto` (public, for the entry types) and `SQLite::SQLite3` (private). |
+| `tests/auth/allowlist_store_test.cpp` | 12 Catch2 v3 cases — 58 assertions — exercising normalization, CRUD round-trips, cascade-on-remove, pagination ordering, blocklist site-scoping, and every `is_allowed_now()` decision branch. |
+| `tests/auth/CMakeLists.txt` | Test binary `test_auth_allowlist_store`, gated on `TARGET gate_auth`. |
+| `server/CMakeLists.txt`, `tests/CMakeLists.txt` (updated) | Same `if(TARGET …)` gating model as 4.2 — auth is added to server/ when `gate_proto` exists, and tests are added when `gate_auth` exists. |
+
+### Technical detail
+
+#### Why SQLite, why now
+
+The architecture (ADR-002 and the proto schema) treats the allowlist as
+a hot-path lookup against camera frame rate (~25 fps per gate). Three
+options were on the table:
+
+1. **In-memory hash-map.** Fast, trivial. Loses everything on restart;
+   needs a separate persistence path (and reconciliation when the
+   dashboard writes mid-flight). Rejected — the allowlist *is* state.
+2. **A real RDBMS (PostgreSQL).** Overkill for a single-server
+   deployment with thousands of rows; adds a daemon to operate.
+3. **SQLite, embedded.** Single-file, transactional, ACID, WAL for
+   concurrent dashboard writes during inference reads, no daemon.
+   Already in `vcpkg.json`.
+
+SQLite (#3) wins on every axis that matters: the working set is small
+enough that the entire database fits in OS page cache, point lookups
+through the `(site_id, plate_text)` primary key are O(log n) on a
+B-tree at minimum, and the schema is simple enough that operators can
+inspect it with `sqlite3 alphabet.db ".schema"`. The write rate is
+human-scale (admin UI, occasional bulk imports) so WAL contention isn't
+a concern.
+
+#### Schema layout
+
+Three normalized tables with cascading deletes:
+
+- **`allowlist`** — `(site_id, plate_text)` primary key, plus owner
+  metadata (`owner_name`, `owner_unit`), validity window
+  (`valid_from`, `valid_until` as unix epoch seconds; 0 = unbounded),
+  free-form `notes`, and an audit trail (`added_by`, `added_ts`).
+  `WITHOUT ROWID` because the natural primary key is already small
+  text and we never need a stable rowid.
+- **`allowlist_classes`** — many-to-many, `(site_id, plate_text,
+  vehicle_class)` triple. An empty join is interpreted as "any
+  class allowed," matching the proto's documented semantics.
+- **`allowlist_windows`** — many-to-many, `(start_minute_of_day,
+  end_minute_of_day, days_of_week_mask)` per row. No primary key
+  because duplicate windows are merely redundant, not invalid; an
+  index on `(site_id, plate_text)` covers the lookup path.
+- **`blocklist`** — separate table, `(site_id, plate_text)` primary
+  key, `reason` for audit. Always wins over the allowlist per the
+  fusion-engine verdict ladder.
+- **`schema_version`** — one row, monotonically increasing. The
+  current schema is v1; future migrations append a per-version
+  upgrade block rather than writing speculative down-migrations.
+
+`PRAGMA journal_mode = WAL` and `PRAGMA synchronous = NORMAL` give us
+concurrent reader/writer access and crash-consistent durability without
+the per-transaction fsync cost of `synchronous=FULL`. These are the
+standard production defaults for SQLite as a service-of-record.
+
+#### Plate-text normalization
+
+The proto contract states stored plates are *normalized uppercase*. To
+keep that invariant honest, every public API path runs the input
+through `normalize_plate()`:
+
+- ASCII lowercase → uppercase (no locale dependency, no `std::toupper`
+  surprises with `setlocale`).
+- Strip ASCII spaces, tabs, dashes, and underscores — the typical OCR
+  noise from PaddleOCR's CTC head and from human-entered admin lists.
+- Pass non-ASCII bytes through unchanged so internationalized plates
+  (e.g. with Greek or Cyrillic glyphs) round-trip safely.
+
+This is a free function deliberately — the dashboard backend will need
+the same normalization before it queries the store, and exposing it in
+the public header lets that code share the canonical implementation
+rather than reinvent it.
+
+#### `is_allowed_now()` — the policy helper
+
+Returns `true` when an entry is *currently* valid for a given vehicle
+class. Three independent gates, evaluated in cheapness order:
+
+1. **Validity-window dates.** `now_unix < valid_from` or
+   `now_unix >= valid_until` ⇒ deny. The half-open `[from, until)`
+   interpretation matches how digital ACLs always work — an entry
+   that "expires Friday at midnight" is denied at the first second of
+   Saturday, not seconds before.
+2. **Vehicle class.** If `allowed_classes` is empty, any class is
+   accepted; otherwise the LiDAR-reported class must be on the list.
+3. **Time-of-day window.** If no windows are set, always accept.
+   Otherwise the *current* local time (passed in as `std::tm` by the
+   caller — the policy helper is pure and TZ-agnostic) must satisfy
+   one of the entry's `TimeWindow`s. Each `TimeWindow` carries a
+   `days_of_week_mask` (bit0 = Mon … bit6 = Sun, per the proto) and a
+   half-open `[start, end)` minute range. Wrap-around windows
+   (`end < start`, e.g. 22:00–02:00) are encoded by inversion.
+
+Splitting this out as a free function — rather than a method on
+`AllowlistStore` — means the fusion engine can call it on the entry
+returned by `lookup()` without re-querying the database, and tests
+can synthesize entries inline without touching a SQLite handle.
+
+#### Upsert semantics
+
+The proto's `UpsertAllowlistRequest` is *batch-with-conflict-replace*:
+the dashboard sends a list of entries, each is added if new and
+updated if its `(site_id, plate_text)` already exists, and the
+response reports inserted vs updated counts. The store implements that
+literally:
+
+- A single `BEGIN IMMEDIATE` / `COMMIT` per batch — either every
+  entry lands or none do, with `ROLLBACK` on any per-row failure.
+  That matters for bulk imports (e.g. an HOA importing 200 plates
+  from a CSV) where partial commits are worse than retrying.
+- The main-row write is a SQL `INSERT ... ON CONFLICT DO UPDATE`
+  (the SQLite-flavored equivalent of `MERGE`), which is one round-trip
+  to the engine instead of `SELECT then INSERT/UPDATE`.
+- Sub-rows (`allowlist_classes`, `allowlist_windows`) follow a
+  *wipe-and-rewrite* policy: delete all sub-rows for the key, then
+  insert the new ones. This gives the upsert "set semantics" — the
+  caller's submitted list of classes/windows is now exactly what's
+  stored, with no ghost rows from prior versions.
+- Inserted-vs-updated counting is via a precursor `SELECT 1` keyed on
+  the same primary key. SQLite's `last_insert_rowid()` doesn't
+  distinguish insert-from-update for `WITHOUT ROWID` tables.
+
+#### Pagination
+
+`list()` orders by `plate_text` and uses the last plate of the page as
+the next page token — a classic keyset cursor. Two reasons over
+LIMIT/OFFSET:
+
+- O(log n) per page regardless of how deep the cursor walks. OFFSET
+  on a 100k-entry site reading page 50 of 50 would scan 49 × page_size
+  rows just to discard them.
+- Stable under concurrent writes: a row inserted "above" the cursor
+  doesn't shift the page boundary.
+
+The implementation requests `limit + 1` rows per page — if the extra
+row arrives, there's another page and the token is set; otherwise the
+response is the last page. Page-size is clamped to `[1, 1000]`.
+
+To avoid the obvious 2×N round-trips for hydrating sub-rows on a page,
+`list()` issues exactly two follow-up queries with `IN (?, ?, …)`
+clauses sized to the page width, then stitches results back into the
+returned `Allowlistentry` objects in memory.
+
+#### Threading model
+
+A `std::mutex` serializes every public method against the underlying
+`sqlite3*` handle. SQLite's own thread safety is `SQLITE_OPEN_FULLMUTEX`
+on open (chosen here for clarity over `SQLITE_OPEN_NOMUTEX` + an
+external mutex), but the in-process mutex still matters for
+multi-statement operations (e.g. `BEGIN`/per-row `INSERT`/`COMMIT`)
+where ordering across threads must be preserved. Lock contention is a
+non-issue at the rates we expect — the camera produces a frame every
+40 ms; the lookup path holds the lock for microseconds.
+
+#### Move-only with PIMPL
+
+`AllowlistStore` is move-only with a `std::unique_ptr<Impl>` for the
+sqlite3 handle. PIMPL was deliberate: it keeps `<sqlite3.h>` out of the
+public header, so downstream targets (fusion engine, gRPC services,
+tests) don't transitively pull in the SQLite C API. The static
+factory `open()` is the only constructor — there is no default
+constructor, so a half-initialized `AllowlistStore` is unrepresentable.
+
+#### Verified run
+
+```
+$ ninja gate_auth test_auth_allowlist_store
+[7/7] Linking CXX executable tests/auth/test_auth_allowlist_store
+
+$ ./tests/auth/test_auth_allowlist_store --reporter compact
+RNG seed: 3014959169
+All tests passed (58 assertions in 12 test cases)
+```
+
+All 12 cases run against `:memory:` databases — no filesystem state
+leaks, no per-test cleanup, sub-millisecond per case. The full suite
+(11 inference + 12 auth = 23 cases, 96 assertions) completes in well
+under a second.
+
+---
+
+## Previous milestone — Phase 4.2.6: Catch2 inference unit tests
 
 > **Completed 2026-04-25.** Tests in
 > [`tests/inference/cpu_algorithms_test.cpp`](tests/inference/cpu_algorithms_test.cpp).
@@ -1069,13 +1278,17 @@ gate-automation/
 ├── shared/
 │   ├── proto/             # ✅ Phase 4.1 — gRPC wire contract
 │   └── include/           # Shared C++ headers
-├── server/                # ⏳ Phase 4.2 — ALPR + LiDAR inference + fusion
+├── server/                # 🔵 Phase 4.2/4.3 — ALPR + LiDAR inference + fusion
+│   ├── inference/         # ✅ Phase 4.2 — TensorRT engines + ALPR pipeline
+│   └── auth/              # ✅ Phase 4.3.1 — allowlist + blocklist store
 ├── firmware/              # ⏳ Phase 4.4 — ESP-IDF field controller firmware
 ├── simulation/            # ⏳ Phase 4.6 — virtual gate harness
 ├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
 ├── deployment/            # ⏳ Phase 4.8 — systemd units + install scripts
 ├── tests/                 # Catch2 unit + contract tests
-│   └── proto/             # ✅ Phase 4.1 — proto contract tests
+│   ├── proto/             # ✅ Phase 4.1 — proto contract tests
+│   ├── inference/         # ✅ Phase 4.2.6 — host-side algorithm tests
+│   └── auth/              # ✅ Phase 4.3.1 — allowlist store tests
 ├── scripts/bootstrap/     # Reproducible WSL2 dev environment scripts
 └── .github/workflows/     # CI: build, test, lint, codeql, commitlint, proto
 ```

@@ -9,3 +9,11 @@
 # (the daemon entry point) alongside `inference/`.
 
 add_subdirectory(inference)
+
+# auth/ depends on gate_proto (built in shared/proto when BUILD_PROTO=ON).
+# Skip cleanly if the proto target is unavailable so a CUDA-only configure
+# doesn't error out — the fusion engine and admin service won't link
+# without it, and the parent already gates BUILD_SERVER appropriately.
+if(TARGET gate_proto)
+    add_subdirectory(auth)
+endif()

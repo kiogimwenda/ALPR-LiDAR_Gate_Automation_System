@@ -18,3 +18,10 @@ endif()
 if(TARGET gate_inference)
     add_subdirectory(inference)
 endif()
+
+# Auth tests link against gate_auth (which transitively requires gate_proto).
+# Gated the same way so a CPU-only proto build still gets full coverage of
+# the allowlist/blocklist store without paying for TensorRT.
+if(TARGET gate_auth)
+    add_subdirectory(auth)
+endif()
