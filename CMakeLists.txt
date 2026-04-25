@@ -25,12 +25,30 @@ if(ENABLE_GPU)
 endif()
 
 if(BUILD_PROTO)
-    add_subdirectory(shared/proto)
+    find_package(Protobuf CONFIG QUIET)
+    find_package(gRPC     CONFIG QUIET)
+    if(Protobuf_FOUND AND gRPC_FOUND)
+        add_subdirectory(shared/proto)
+    else()
+        message(STATUS
+            "Skipping shared/proto: Protobuf and/or gRPC not found via "
+            "find_package(CONFIG). Configure with the vcpkg toolchain "
+            "(-DCMAKE_TOOLCHAIN_FILE=$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake) "
+            "to build the C++ proto stubs. The descriptor-level contract is "
+            "still guarded by tests/proto/validate_descriptor.py.")
+    endif()
 endif()
 
 if(BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(tests)
+    find_package(Catch2 3 CONFIG QUIET)
+    if(Catch2_FOUND)
+        enable_testing()
+        add_subdirectory(tests)
+    else()
+        message(STATUS
+            "Skipping tests/: Catch2 v3 not found via find_package(CONFIG). "
+            "Configure with the vcpkg toolchain to build the C++ test suite.")
+    endif()
 endif()
 
 # Server / dashboard / firmware are added in subsequent Phase 4 milestones.
