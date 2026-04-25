@@ -15,20 +15,19 @@
 // true batched inference is a Phase 4.2.4 pipeline-orchestration concern.
 #pragma once
 
-#include "inference/trt_engine.hpp"
-
-#include <opencv2/core.hpp>
-
 #include <array>
 #include <filesystem>
+#include <opencv2/core.hpp>
 #include <string>
 #include <vector>
+
+#include "inference/trt_engine.hpp"
 
 namespace gate::inference {
 
 struct RecognizedPlate {
-    std::string text;        // CTC-decoded plate string
-    float       confidence;  // mean of per-char output probabilities, [0, 1]
+    std::string text;  // CTC-decoded plate string
+    float confidence;  // mean of per-char output probabilities, [0, 1]
 };
 
 class PaddleOcrRecognizer {
@@ -39,14 +38,14 @@ public:
         // CTC blank token; index i+1 corresponds to dictionary line i.
         std::filesystem::path dictionary_path;
 
-        int                  input_width  = 320;
-        int                  input_height = 48;
+        int input_width = 320;
+        int input_height = 48;
         // PP-OCRv4 default normalization: pixel/255 → (x - mean) / std.
         std::array<float, 3> mean = {0.5f, 0.5f, 0.5f};
         std::array<float, 3> stddev = {0.5f, 0.5f, 0.5f};
 
         // Tensor names — defaults match the official PaddleOCR ONNX export.
-        std::string input_name  = "x";
+        std::string input_name = "x";
         std::string output_name = "softmax_2.tmp_0";
     };
 
@@ -54,10 +53,10 @@ public:
     // dictionary read failure.
     static PaddleOcrRecognizer load(Config cfg, nvinfer1::ILogger& logger);
 
-    PaddleOcrRecognizer(PaddleOcrRecognizer&&) noexcept            = default;
+    PaddleOcrRecognizer(PaddleOcrRecognizer&&) noexcept = default;
     PaddleOcrRecognizer& operator=(PaddleOcrRecognizer&&) noexcept = default;
-    PaddleOcrRecognizer(const PaddleOcrRecognizer&)                = delete;
-    PaddleOcrRecognizer& operator=(const PaddleOcrRecognizer&)     = delete;
+    PaddleOcrRecognizer(const PaddleOcrRecognizer&) = delete;
+    PaddleOcrRecognizer& operator=(const PaddleOcrRecognizer&) = delete;
 
     // Recognize a single cropped plate image (BGR). Returns empty text
     // and confidence == 0.0 if the model predicts only blanks.
@@ -65,19 +64,17 @@ public:
 
     // Convenience batch overload — runs the single-image path in a loop.
     // Useful when the ALPR pipeline has multiple plates per frame.
-    [[nodiscard]] std::vector<RecognizedPlate>
-    recognize_batch(const std::vector<cv::Mat>& plates);
+    [[nodiscard]] std::vector<RecognizedPlate> recognize_batch(const std::vector<cv::Mat>& plates);
 
-    [[nodiscard]] TrtEngine&       engine()       noexcept { return engine_; }
+    [[nodiscard]] TrtEngine& engine() noexcept { return engine_; }
     [[nodiscard]] const TrtEngine& engine() const noexcept { return engine_; }
-    [[nodiscard]] const Config&    config() const noexcept { return cfg_; }
-    [[nodiscard]] std::size_t      vocabulary_size() const noexcept {
+    [[nodiscard]] const Config& config() const noexcept { return cfg_; }
+    [[nodiscard]] std::size_t vocabulary_size() const noexcept {
         return dictionary_.size() + 1;  // +1 for the blank
     }
 
 private:
-    PaddleOcrRecognizer(TrtEngine&& engine, Config cfg,
-                        std::vector<std::string> dictionary);
+    PaddleOcrRecognizer(TrtEngine&& engine, Config cfg, std::vector<std::string> dictionary);
 
     // Resize the source plate to the model's input height (preserve aspect
     // ratio), pad/crop to input_width on the right, normalize per channel,
@@ -89,15 +86,15 @@ private:
     // argmax-probabilities of the kept characters.
     RecognizedPlate ctc_decode_(const float* logits) const;
 
-    TrtEngine                engine_;
-    Config                   cfg_;
+    TrtEngine engine_;
+    Config cfg_;
     std::vector<std::string> dictionary_;  // index i → character at line i
 
-    int seq_len_     = 0;  // T from output shape
+    int seq_len_ = 0;      // T from output shape
     int num_classes_ = 0;  // C from output shape (dictionary_.size() + 1)
 
-    std::vector<float> input_chw_;       // 3 * input_height * input_width
-    std::vector<float> output_logits_;   // T * C
+    std::vector<float> input_chw_;      // 3 * input_height * input_width
+    std::vector<float> output_logits_;  // T * C
 };
 
 }  // namespace gate::inference

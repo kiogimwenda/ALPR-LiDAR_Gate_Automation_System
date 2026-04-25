@@ -2,11 +2,10 @@
 
 #include "inference/yolo_plate_detector.hpp"
 
-#include <spdlog/spdlog.h>
-#include <opencv2/imgproc.hpp>
-
 #include <algorithm>
 #include <cstring>
+#include <opencv2/imgproc.hpp>
+#include <spdlog/spdlog.h>
 
 namespace gate::inference {
 
@@ -48,31 +47,32 @@ YoloPlateDetector YoloPlateDetector::load(Config cfg, nvinfer1::ILogger& logger)
                            "' has fewer than 3 dims — is this an end2end NMS engine?");
     }
     // Use the context-resolved shape (the engine may have dynamic dims).
-    const auto resolved = self.engine_.context()
-                              ->getTensorShape(self.cfg_.boxes_name.c_str());
+    const auto resolved = self.engine_.context()->getTensorShape(self.cfg_.boxes_name.c_str());
     self.max_detections_ = static_cast<int>(resolved.d[1]);
     if (self.max_detections_ <= 0) {
-        throw TrtException("YoloPlateDetector: could not resolve max_detections "
-                           "from " + self.cfg_.boxes_name + " shape");
+        throw TrtException(
+            "YoloPlateDetector: could not resolve max_detections "
+            "from " +
+            self.cfg_.boxes_name + " shape");
     }
 
     // Allocate host-side scratch buffers, sized once.
-    self.input_chw_.assign(static_cast<std::size_t>(3 * self.cfg_.input_height *
-                                                    self.cfg_.input_width), 0.0f);
+    self.input_chw_.assign(
+        static_cast<std::size_t>(3 * self.cfg_.input_height * self.cfg_.input_width), 0.0f);
     self.num_dets_host_.assign(1, 0);
-    self.boxes_host_  .assign(static_cast<std::size_t>(self.max_detections_) * 4, 0.0f);
-    self.scores_host_ .assign(static_cast<std::size_t>(self.max_detections_),     0.0f);
-    self.classes_host_.assign(static_cast<std::size_t>(self.max_detections_),     0);
+    self.boxes_host_.assign(static_cast<std::size_t>(self.max_detections_) * 4, 0.0f);
+    self.scores_host_.assign(static_cast<std::size_t>(self.max_detections_), 0.0f);
+    self.classes_host_.assign(static_cast<std::size_t>(self.max_detections_), 0);
 
     spdlog::info("YoloPlateDetector ready: {}x{} input, max_detections={}, conf_floor={}",
-                 self.cfg_.input_width, self.cfg_.input_height,
-                 self.max_detections_, self.cfg_.confidence_floor);
+                 self.cfg_.input_width, self.cfg_.input_height, self.max_detections_,
+                 self.cfg_.confidence_floor);
 
     return self;
 }
 
-YoloPlateDetector::LetterboxParams
-YoloPlateDetector::letterbox_(const cv::Mat& src, cv::Mat& dst) const {
+YoloPlateDetector::LetterboxParams YoloPlateDetector::letterbox_(const cv::Mat& src,
+                                                                 cv::Mat& dst) const {
     const float src_w = static_cast<float>(src.cols);
     const float src_h = static_cast<float>(src.rows);
     const float dst_w = static_cast<float>(cfg_.input_width);
@@ -88,7 +88,7 @@ YoloPlateDetector::letterbox_(const cv::Mat& src, cv::Mat& dst) const {
 
     // Center the resized image inside the canvas; pad with neutral gray
     // (114, 114, 114) — the YOLOv9 / Ultralytics convention.
-    const int pad_x = (cfg_.input_width  - new_w) / 2;
+    const int pad_x = (cfg_.input_width - new_w) / 2;
     const int pad_y = (cfg_.input_height - new_h) / 2;
     dst.create(cfg_.input_height, cfg_.input_width, src.type());
     dst.setTo(cv::Scalar(114, 114, 114));
@@ -97,8 +97,7 @@ YoloPlateDetector::letterbox_(const cv::Mat& src, cv::Mat& dst) const {
     return {scale, static_cast<float>(pad_x), static_cast<float>(pad_y)};
 }
 
-std::vector<PlateDetection>
-YoloPlateDetector::detect(const cv::Mat& bgr) {
+std::vector<PlateDetection> YoloPlateDetector::detect(const cv::Mat& bgr) {
     if (bgr.empty()) {
         throw TrtException("YoloPlateDetector::detect: input image is empty");
     }
@@ -131,9 +130,9 @@ YoloPlateDetector::detect(const cv::Mat& bgr) {
     };
     const std::unordered_map<std::string, std::span<std::byte>> host_out{
         {cfg_.num_dets_name, as_writable_bytes(num_dets_host_)},
-        {cfg_.boxes_name,    as_writable_bytes(boxes_host_)},
-        {cfg_.scores_name,   as_writable_bytes(scores_host_)},
-        {cfg_.classes_name,  as_writable_bytes(classes_host_)},
+        {cfg_.boxes_name, as_writable_bytes(boxes_host_)},
+        {cfg_.scores_name, as_writable_bytes(scores_host_)},
+        {cfg_.classes_name, as_writable_bytes(classes_host_)},
     };
     engine_.enqueue(host_in, host_out);
     engine_.sync();
@@ -145,7 +144,8 @@ YoloPlateDetector::detect(const cv::Mat& bgr) {
 
     for (int i = 0; i < n; ++i) {
         const float score = scores_host_[i];
-        if (score < cfg_.confidence_floor) continue;
+        if (score < cfg_.confidence_floor)
+            continue;
 
         // Box is (x1, y1, x2, y2) in letterboxed-input pixel space.
         const float x1_in = boxes_host_[i * 4 + 0];
@@ -156,25 +156,23 @@ YoloPlateDetector::detect(const cv::Mat& bgr) {
         // Undo letterbox: subtract pad, divide by scale, clamp to image.
         const float x1 = std::max(0.0f, (x1_in - lb.pad_x) / lb.scale);
         const float y1 = std::max(0.0f, (y1_in - lb.pad_y) / lb.scale);
-        const float x2 = std::min(static_cast<float>(bgr.cols),
-                                  (x2_in - lb.pad_x) / lb.scale);
-        const float y2 = std::min(static_cast<float>(bgr.rows),
-                                  (y2_in - lb.pad_y) / lb.scale);
-        if (x2 <= x1 || y2 <= y1) continue;  // degenerate after clamping
+        const float x2 = std::min(static_cast<float>(bgr.cols), (x2_in - lb.pad_x) / lb.scale);
+        const float y2 = std::min(static_cast<float>(bgr.rows), (y2_in - lb.pad_y) / lb.scale);
+        if (x2 <= x1 || y2 <= y1)
+            continue;  // degenerate after clamping
 
         PlateDetection d;
-        d.box        = cv::Rect2f(x1, y1, x2 - x1, y2 - y1);
+        d.box = cv::Rect2f(x1, y1, x2 - x1, y2 - y1);
         d.confidence = score;
-        d.class_id   = classes_host_[i];
+        d.class_id = classes_host_[i];
         dets.push_back(d);
     }
 
     // EfficientNMS_TRT already returns detections sorted by score, but the
     // confidence-floor filter above can leave gaps; sort once for safety.
-    std::sort(dets.begin(), dets.end(),
-              [](const PlateDetection& a, const PlateDetection& b) {
-                  return a.confidence > b.confidence;
-              });
+    std::sort(dets.begin(), dets.end(), [](const PlateDetection& a, const PlateDetection& b) {
+        return a.confidence > b.confidence;
+    });
     return dets;
 }
 
