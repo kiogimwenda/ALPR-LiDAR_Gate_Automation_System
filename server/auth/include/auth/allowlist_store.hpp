@@ -50,9 +50,8 @@ std::string normalize_plate(std::string_view raw);
 // for the time-window check. A null/zeroed `now_local` is interpreted as
 // "no time restriction enforced" — used by tests that only care about
 // validity windows.
-bool is_allowed_now(const gate::v1::Allowlistentry& entry,
-                    gate::v1::VehicleClass vehicle_class, std::time_t now_unix,
-                    const std::tm& now_local);
+bool is_allowed_now(const gate::v1::Allowlistentry& entry, gate::v1::VehicleClass vehicle_class,
+                    std::time_t now_unix, const std::tm& now_local);
 
 class AllowlistStore {
 public:

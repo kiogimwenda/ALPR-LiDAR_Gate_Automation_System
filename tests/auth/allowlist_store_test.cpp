@@ -7,7 +7,6 @@
 #include "auth/allowlist_store.hpp"
 
 #include <catch2/catch_test_macros.hpp>
-
 #include <ctime>
 #include <string>
 #include <vector>
@@ -46,8 +45,7 @@ TEST_CASE("normalize_plate: uppercases ASCII and strips whitespace and dashes",
     REQUIRE(normalize_plate("kΩ7") == "KΩ7");
 }
 
-TEST_CASE("AllowlistStore: upsert + lookup round-trips entry verbatim",
-          "[allowlist][crud]") {
+TEST_CASE("AllowlistStore: upsert + lookup round-trips entry verbatim", "[allowlist][crud]") {
     auto store = AllowlistStore::open(":memory:");
 
     auto e = make_entry("kbz 123a", "Alice Resident");
@@ -76,8 +74,7 @@ TEST_CASE("AllowlistStore: upsert + lookup round-trips entry verbatim",
     REQUIRE(got->time_windows(0).days_of_week_mask() == 0b0011111u);
 }
 
-TEST_CASE("AllowlistStore: upsert with same key updates rather than inserts",
-          "[allowlist][crud]") {
+TEST_CASE("AllowlistStore: upsert with same key updates rather than inserts", "[allowlist][crud]") {
     auto store = AllowlistStore::open(":memory:");
 
     auto e = make_entry("KBZ123A", "Alice");
@@ -111,8 +108,7 @@ TEST_CASE("AllowlistStore: lookup returns nullopt for unknown plate or wrong sit
     REQUIRE_FALSE(store.lookup("other-site", "KBZ123A").has_value());
 }
 
-TEST_CASE("AllowlistStore: remove deletes rows and cascades sub-rows",
-          "[allowlist][crud]") {
+TEST_CASE("AllowlistStore: remove deletes rows and cascades sub-rows", "[allowlist][crud]") {
     auto store = AllowlistStore::open(":memory:");
 
     auto e = make_entry("KBZ123A");
@@ -137,8 +133,7 @@ TEST_CASE("AllowlistStore: remove deletes rows and cascades sub-rows",
     REQUIRE(re->time_windows_size() == 1);
 }
 
-TEST_CASE("AllowlistStore: list paginates and orders by plate_text",
-          "[allowlist][list]") {
+TEST_CASE("AllowlistStore: list paginates and orders by plate_text", "[allowlist][list]") {
     auto store = AllowlistStore::open(":memory:");
 
     std::vector<Allowlistentry> batch;
@@ -164,8 +159,7 @@ TEST_CASE("AllowlistStore: list paginates and orders by plate_text",
     REQUIRE(p3.next_token.empty());
 }
 
-TEST_CASE("AllowlistStore: blocklist upsert + lookup are site-scoped",
-          "[allowlist][blocklist]") {
+TEST_CASE("AllowlistStore: blocklist upsert + lookup are site-scoped", "[allowlist][blocklist]") {
     auto store = AllowlistStore::open(":memory:");
 
     store.blocklist_upsert("site-a", "kbz 123a", "stolen vehicle");
@@ -223,14 +217,13 @@ TEST_CASE("is_allowed_now: time-window matches by minute-of-day and weekday",
     const std::time_t mon_5pm = mon_midnight + 17 * 3600;
     const std::time_t sat_10am = mon_midnight + (5 * 86400) + 10 * 3600;
 
-    REQUIRE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_10am,
-                           utc_local(mon_10am)));
+    REQUIRE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_10am, utc_local(mon_10am)));
     // Half-open window — 17:00 is excluded.
     REQUIRE_FALSE(
         is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_5pm, utc_local(mon_5pm)));
     // Saturday is not in the day mask.
-    REQUIRE_FALSE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, sat_10am,
-                                 utc_local(sat_10am)));
+    REQUIRE_FALSE(
+        is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, sat_10am, utc_local(sat_10am)));
 }
 
 TEST_CASE("is_allowed_now: window wraps past midnight when end < start",
@@ -246,10 +239,8 @@ TEST_CASE("is_allowed_now: window wraps past midnight when end < start",
     const std::time_t mon_0100 = mon_midnight + 1 * 3600;
     const std::time_t mon_1200 = mon_midnight + 12 * 3600;
 
-    REQUIRE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_2300,
-                           utc_local(mon_2300)));
-    REQUIRE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_0100,
-                           utc_local(mon_0100)));
-    REQUIRE_FALSE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_1200,
-                                 utc_local(mon_1200)));
+    REQUIRE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_2300, utc_local(mon_2300)));
+    REQUIRE(is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_0100, utc_local(mon_0100)));
+    REQUIRE_FALSE(
+        is_allowed_now(e, VehicleClass::VEHICLE_CLASS_SEDAN, mon_1200, utc_local(mon_1200)));
 }

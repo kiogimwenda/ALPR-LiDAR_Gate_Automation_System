@@ -79,7 +79,9 @@ void bind_text(sqlite3_stmt* stmt, int idx, std::string_view s) {
 void bind_int64(sqlite3_stmt* stmt, int idx, std::int64_t v) {
     sqlite3_bind_int64(stmt, idx, v);
 }
-void bind_int(sqlite3_stmt* stmt, int idx, int v) { sqlite3_bind_int(stmt, idx, v); }
+void bind_int(sqlite3_stmt* stmt, int idx, int v) {
+    sqlite3_bind_int(stmt, idx, v);
+}
 
 std::string column_text(sqlite3_stmt* stmt, int idx) {
     const auto* p = reinterpret_cast<const char*>(sqlite3_column_text(stmt, idx));
@@ -102,13 +104,15 @@ struct Stmt {
     Stmt(Stmt&& o) noexcept : p(std::exchange(o.p, nullptr)) {}
     Stmt& operator=(Stmt&& o) noexcept {
         if (this != &o) {
-            if (p) sqlite3_finalize(p);
+            if (p)
+                sqlite3_finalize(p);
             p = std::exchange(o.p, nullptr);
         }
         return *this;
     }
     ~Stmt() {
-        if (p) sqlite3_finalize(p);
+        if (p)
+            sqlite3_finalize(p);
     }
     sqlite3_stmt* get() const noexcept { return p; }
 };
@@ -116,7 +120,8 @@ struct Stmt {
 Stmt prepare(sqlite3* db, std::string_view sql) {
     sqlite3_stmt* s = nullptr;
     const auto rc = sqlite3_prepare_v2(db, sql.data(), static_cast<int>(sql.size()), &s, nullptr);
-    if (rc != SQLITE_OK) throw_db(db, "prepare failed");
+    if (rc != SQLITE_OK)
+        throw_db(db, "prepare failed");
     return Stmt{s};
 }
 
@@ -141,7 +146,8 @@ void run_migrations(sqlite3* db) {
             current = sqlite3_column_int(s.get(), 0);
         }
     }
-    if (current == kSchemaVersion) return;
+    if (current == kSchemaVersion)
+        return;
     if (current > kSchemaVersion) {
         throw AuthDbException("schema_version " + std::to_string(current) +
                               " is newer than this binary supports (" +
@@ -153,7 +159,8 @@ void run_migrations(sqlite3* db) {
     exec(db, "DELETE FROM schema_version");
     auto s = prepare(db, "INSERT INTO schema_version(version) VALUES (?)");
     bind_int(s.get(), 1, kSchemaVersion);
-    if (sqlite3_step(s.get()) != SQLITE_DONE) throw_db(db, "schema_version write failed");
+    if (sqlite3_step(s.get()) != SQLITE_DONE)
+        throw_db(db, "schema_version write failed");
 }
 
 }  // namespace
@@ -165,7 +172,8 @@ std::string normalize_plate(std::string_view raw) {
     out.reserve(raw.size());
     for (const char c : raw) {
         const auto u = static_cast<unsigned char>(c);
-        if (u == ' ' || u == '\t' || u == '-' || u == '_') continue;
+        if (u == ' ' || u == '\t' || u == '-' || u == '_')
+            continue;
         if (u >= 'a' && u <= 'z') {
             out.push_back(static_cast<char>(u - ('a' - 'A')));
         } else {
@@ -180,27 +188,30 @@ namespace {
 // Half-open window check: `[start, end)` minutes-of-day, with day-of-week
 // gate. ISO mask convention: bit0 = Mon … bit6 = Sun (per the .proto).
 bool window_contains(const gate::v1::TimeWindow& w, int minute_of_day, int iso_dow_bit) {
-    if (!(w.days_of_week_mask() & (1u << iso_dow_bit))) return false;
+    if (!(w.days_of_week_mask() & (1u << iso_dow_bit)))
+        return false;
     const auto start = static_cast<int>(w.start_minute_of_day());
     const auto end = static_cast<int>(w.end_minute_of_day());
     // Wrap-around windows (e.g., 22:00–02:00) are encoded as end < start.
-    if (start <= end) return minute_of_day >= start && minute_of_day < end;
+    if (start <= end)
+        return minute_of_day >= start && minute_of_day < end;
     return minute_of_day >= start || minute_of_day < end;
 }
 
 bool class_allowed(const gate::v1::Allowlistentry& e, gate::v1::VehicleClass cls) {
-    if (e.allowed_classes_size() == 0) return true;
+    if (e.allowed_classes_size() == 0)
+        return true;
     for (int i = 0; i < e.allowed_classes_size(); ++i) {
-        if (e.allowed_classes(i) == cls) return true;
+        if (e.allowed_classes(i) == cls)
+            return true;
     }
     return false;
 }
 
 }  // namespace
 
-bool is_allowed_now(const gate::v1::Allowlistentry& entry,
-                    gate::v1::VehicleClass vehicle_class, std::time_t now_unix,
-                    const std::tm& now_local) {
+bool is_allowed_now(const gate::v1::Allowlistentry& entry, gate::v1::VehicleClass vehicle_class,
+                    std::time_t now_unix, const std::tm& now_local) {
     // 1. Validity-window dates.
     if (entry.has_valid_from() && entry.valid_from().seconds() > 0 &&
         now_unix < entry.valid_from().seconds()) {
@@ -211,9 +222,11 @@ bool is_allowed_now(const gate::v1::Allowlistentry& entry,
         return false;
     }
     // 2. Vehicle class restriction.
-    if (!class_allowed(entry, vehicle_class)) return false;
+    if (!class_allowed(entry, vehicle_class))
+        return false;
     // 3. Time-of-day windows.
-    if (entry.time_windows_size() == 0) return true;
+    if (entry.time_windows_size() == 0)
+        return true;
     const int minute_of_day = now_local.tm_hour * 60 + now_local.tm_min;
     // tm_wday: Sun=0..Sat=6. ISO bit: Mon=0..Sun=6.
     const int iso_bit = (now_local.tm_wday + 6) % 7;
@@ -232,7 +245,8 @@ struct AllowlistStore::Impl {
     mutable std::mutex mu;
 
     ~Impl() {
-        if (db) sqlite3_close(db);
+        if (db)
+            sqlite3_close(db);
     }
 };
 
@@ -261,8 +275,7 @@ AllowlistStore::UpsertStats AllowlistStore::upsert(
 
     exec(db, "BEGIN IMMEDIATE");
     try {
-        auto count = prepare(db,
-                             "SELECT 1 FROM allowlist WHERE site_id=? AND plate_text=?");
+        auto count = prepare(db, "SELECT 1 FROM allowlist WHERE site_id=? AND plate_text=?");
         auto upsert_main = prepare(db, R"sql(
             INSERT INTO allowlist (
                 site_id, plate_text, owner_name, owner_unit,
@@ -277,13 +290,13 @@ AllowlistStore::UpsertStats AllowlistStore::upsert(
                 added_by    = excluded.added_by,
                 added_ts    = excluded.added_ts
         )sql");
-        auto del_classes = prepare(
-            db, "DELETE FROM allowlist_classes WHERE site_id=? AND plate_text=?");
+        auto del_classes =
+            prepare(db, "DELETE FROM allowlist_classes WHERE site_id=? AND plate_text=?");
         auto ins_class = prepare(db,
                                  "INSERT OR IGNORE INTO allowlist_classes "
                                  "(site_id, plate_text, vehicle_class) VALUES (?, ?, ?)");
-        auto del_windows = prepare(
-            db, "DELETE FROM allowlist_windows WHERE site_id=? AND plate_text=?");
+        auto del_windows =
+            prepare(db, "DELETE FROM allowlist_windows WHERE site_id=? AND plate_text=?");
         auto ins_window = prepare(db, R"sql(
             INSERT INTO allowlist_windows (
                 site_id, plate_text,
@@ -311,22 +324,21 @@ AllowlistStore::UpsertStats AllowlistStore::upsert(
             bind_text(upsert_main.get(), 2, plate);
             bind_text(upsert_main.get(), 3, e.owner_name());
             bind_text(upsert_main.get(), 4, e.owner_unit());
-            bind_int64(upsert_main.get(), 5,
-                       e.has_valid_from() ? e.valid_from().seconds() : 0);
-            bind_int64(upsert_main.get(), 6,
-                       e.has_valid_until() ? e.valid_until().seconds() : 0);
+            bind_int64(upsert_main.get(), 5, e.has_valid_from() ? e.valid_from().seconds() : 0);
+            bind_int64(upsert_main.get(), 6, e.has_valid_until() ? e.valid_until().seconds() : 0);
             bind_text(upsert_main.get(), 7, e.notes());
             bind_text(upsert_main.get(), 8, e.added_by());
-            bind_int64(upsert_main.get(), 9,
-                       e.has_added_ts() ? e.added_ts().seconds() : 0);
-            if (sqlite3_step(upsert_main.get()) != SQLITE_DONE) throw_db(db, "upsert main");
+            bind_int64(upsert_main.get(), 9, e.has_added_ts() ? e.added_ts().seconds() : 0);
+            if (sqlite3_step(upsert_main.get()) != SQLITE_DONE)
+                throw_db(db, "upsert main");
 
             // Classes — wipe and rewrite. Set semantics, not append.
             sqlite3_reset(del_classes.get());
             sqlite3_clear_bindings(del_classes.get());
             bind_text(del_classes.get(), 1, site_id);
             bind_text(del_classes.get(), 2, plate);
-            if (sqlite3_step(del_classes.get()) != SQLITE_DONE) throw_db(db, "del classes");
+            if (sqlite3_step(del_classes.get()) != SQLITE_DONE)
+                throw_db(db, "del classes");
 
             for (int i = 0; i < e.allowed_classes_size(); ++i) {
                 sqlite3_reset(ins_class.get());
@@ -334,7 +346,8 @@ AllowlistStore::UpsertStats AllowlistStore::upsert(
                 bind_text(ins_class.get(), 1, site_id);
                 bind_text(ins_class.get(), 2, plate);
                 bind_int(ins_class.get(), 3, static_cast<int>(e.allowed_classes(i)));
-                if (sqlite3_step(ins_class.get()) != SQLITE_DONE) throw_db(db, "ins class");
+                if (sqlite3_step(ins_class.get()) != SQLITE_DONE)
+                    throw_db(db, "ins class");
             }
 
             // Windows — same wipe-and-rewrite policy.
@@ -342,7 +355,8 @@ AllowlistStore::UpsertStats AllowlistStore::upsert(
             sqlite3_clear_bindings(del_windows.get());
             bind_text(del_windows.get(), 1, site_id);
             bind_text(del_windows.get(), 2, plate);
-            if (sqlite3_step(del_windows.get()) != SQLITE_DONE) throw_db(db, "del windows");
+            if (sqlite3_step(del_windows.get()) != SQLITE_DONE)
+                throw_db(db, "del windows");
 
             for (int i = 0; i < e.time_windows_size(); ++i) {
                 const auto& w = e.time_windows(i);
@@ -352,8 +366,7 @@ AllowlistStore::UpsertStats AllowlistStore::upsert(
                 bind_text(ins_window.get(), 2, plate);
                 bind_int(ins_window.get(), 3, static_cast<int>(w.start_minute_of_day()));
                 bind_int(ins_window.get(), 4, static_cast<int>(w.end_minute_of_day()));
-                bind_int64(ins_window.get(), 5,
-                           static_cast<std::int64_t>(w.days_of_week_mask()));
+                bind_int64(ins_window.get(), 5, static_cast<std::int64_t>(w.days_of_week_mask()));
                 if (sqlite3_step(ins_window.get()) != SQLITE_DONE)
                     throw_db(db, "ins window");
             }
@@ -372,8 +385,8 @@ AllowlistStore::UpsertStats AllowlistStore::upsert(
     return stats;
 }
 
-std::optional<gate::v1::Allowlistentry> AllowlistStore::lookup(
-    const std::string& site_id, std::string_view plate_text) const {
+std::optional<gate::v1::Allowlistentry> AllowlistStore::lookup(const std::string& site_id,
+                                                               std::string_view plate_text) const {
     std::lock_guard lk{impl_->mu};
     auto* db = impl_->db;
     const std::string plate = normalize_plate(plate_text);
@@ -387,8 +400,10 @@ std::optional<gate::v1::Allowlistentry> AllowlistStore::lookup(
     bind_text(main.get(), 1, site_id);
     bind_text(main.get(), 2, plate);
     const auto rc = sqlite3_step(main.get());
-    if (rc == SQLITE_DONE) return std::nullopt;
-    if (rc != SQLITE_ROW) throw_db(db, "lookup");
+    if (rc == SQLITE_DONE)
+        return std::nullopt;
+    if (rc != SQLITE_ROW)
+        throw_db(db, "lookup");
 
     gate::v1::Allowlistentry e;
     e.set_plate_text(column_text(main.get(), 0));
@@ -406,10 +421,9 @@ std::optional<gate::v1::Allowlistentry> AllowlistStore::lookup(
         e.mutable_added_ts()->set_seconds(at);
     }
 
-    auto classes = prepare(
-        db,
-        "SELECT vehicle_class FROM allowlist_classes "
-        "WHERE site_id=? AND plate_text=? ORDER BY vehicle_class");
+    auto classes = prepare(db,
+                           "SELECT vehicle_class FROM allowlist_classes "
+                           "WHERE site_id=? AND plate_text=? ORDER BY vehicle_class");
     bind_text(classes.get(), 1, site_id);
     bind_text(classes.get(), 2, plate);
     while (sqlite3_step(classes.get()) == SQLITE_ROW) {
@@ -429,16 +443,14 @@ std::optional<gate::v1::Allowlistentry> AllowlistStore::lookup(
         auto* w = e.add_time_windows();
         w->set_start_minute_of_day(
             static_cast<std::uint32_t>(sqlite3_column_int(windows.get(), 0)));
-        w->set_end_minute_of_day(
-            static_cast<std::uint32_t>(sqlite3_column_int(windows.get(), 1)));
+        w->set_end_minute_of_day(static_cast<std::uint32_t>(sqlite3_column_int(windows.get(), 1)));
         w->set_days_of_week_mask(
             static_cast<std::uint32_t>(sqlite3_column_int64(windows.get(), 2)));
     }
     return e;
 }
 
-bool AllowlistStore::is_blocklisted(const std::string& site_id,
-                                    std::string_view plate_text) const {
+bool AllowlistStore::is_blocklisted(const std::string& site_id, std::string_view plate_text) const {
     std::lock_guard lk{impl_->mu};
     auto* db = impl_->db;
     const std::string plate = normalize_plate(plate_text);
@@ -467,7 +479,8 @@ std::uint32_t AllowlistStore::blocklist_upsert(const std::string& site_id,
     bind_text(s.get(), 1, site_id);
     bind_text(s.get(), 2, plate);
     bind_text(s.get(), 3, reason);
-    if (sqlite3_step(s.get()) != SQLITE_DONE) throw_db(db, "blocklist_upsert");
+    if (sqlite3_step(s.get()) != SQLITE_DONE)
+        throw_db(db, "blocklist_upsert");
     return 1;
 }
 
@@ -483,7 +496,8 @@ std::size_t AllowlistStore::blocklist_remove(const std::string& site_id,
         sqlite3_clear_bindings(s.get());
         bind_text(s.get(), 1, site_id);
         bind_text(s.get(), 2, plate);
-        if (sqlite3_step(s.get()) != SQLITE_DONE) throw_db(db, "blocklist_remove");
+        if (sqlite3_step(s.get()) != SQLITE_DONE)
+            throw_db(db, "blocklist_remove");
         removed += static_cast<std::size_t>(sqlite3_changes(db));
     }
     return removed;
@@ -503,7 +517,8 @@ std::size_t AllowlistStore::remove(const std::string& site_id,
             sqlite3_clear_bindings(s.get());
             bind_text(s.get(), 1, site_id);
             bind_text(s.get(), 2, plate);
-            if (sqlite3_step(s.get()) != SQLITE_DONE) throw_db(db, "remove");
+            if (sqlite3_step(s.get()) != SQLITE_DONE)
+                throw_db(db, "remove");
             removed += static_cast<std::size_t>(sqlite3_changes(db));
         }
         exec(db, "COMMIT");
@@ -563,7 +578,8 @@ AllowlistStore::Page AllowlistStore::list(const std::string& site_id, std::uint3
 
     // Hydrate classes + windows for the page in two queries each rather
     // than (2 * limit) — important once `page_size` grows.
-    if (page.entries.empty()) return page;
+    if (page.entries.empty())
+        return page;
 
     std::string in_clause = "(";
     for (std::size_t i = 0; i < plates.size(); ++i) {
