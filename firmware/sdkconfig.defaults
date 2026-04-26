@@ -1,0 +1,42 @@
+# sdkconfig.defaults — compile-time defaults for gate-firmware.
+#
+# Anything users configure via `idf.py menuconfig` overrides these.
+# Keep this file readable: short comments above non-obvious settings.
+
+# --- Target ----------------------------------------------------------------
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_IDF_TARGET_ESP32S3=y
+
+# --- Compiler --------------------------------------------------------------
+# C++20 across the codebase, so component code can use std::span etc.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n          # -fno-exceptions saves ~30 KB
+CONFIG_COMPILER_CXX_RTTI=n                # -fno-rtti saves another ~10 KB
+CONFIG_COMPILER_OPTIMIZATION_PERF=y       # -O2 — production default
+
+# --- FreeRTOS --------------------------------------------------------------
+CONFIG_FREERTOS_HZ=1000                   # 1 ms tick — same as Zephyr default
+
+# --- Logging ---------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_TIMESTAMP_SOURCE_RTOS=y        # log timestamps from xTaskGetTickCount
+
+# --- Watchdog --------------------------------------------------------------
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10          # 10 s default; main task pets it
+
+# --- Partitions ------------------------------------------------------------
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# --- Bootloader (OTA-capable) ----------------------------------------------
+# We boot from ota_data after the first OTA; without OTA history the
+# bootloader picks ota_0 by default (see the partition layout).
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+
+# --- Flash size ------------------------------------------------------------
+# Most ESP32-S3 dev boards ship with 4 MB. Production hardware will likely
+# be 8 MB; partitions.csv keeps the layout 4-MB-friendly so dev kits work.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y

@@ -1,0 +1,15 @@
+# partitions.csv — flash partition map for gate-firmware (4 MB target).
+#
+# Two-OTA layout: each app slot is 1.5 MB which leaves comfortable room for
+# our binaries (LWIP + W5500 + esp-tls + grpc-c brings the application close
+# to 1 MB) plus headroom for compression overhead. NVS holds runtime
+# configuration; otadata records which OTA slot the bootloader booted last;
+# storage is a small SPIFFS for offline-mode allowlist cache.
+#
+# Name,    Type, SubType, Offset,   Size
+nvs,       data, nvs,     0x9000,   0x4000
+otadata,   data, ota,     0xd000,   0x2000
+phy_init,  data, phy,     0xf000,   0x1000
+ota_0,     app,  ota_0,   0x10000,  0x180000
+ota_1,     app,  ota_1,   0x190000, 0x180000
+storage,   data, spiffs,  0x310000, 0xF0000

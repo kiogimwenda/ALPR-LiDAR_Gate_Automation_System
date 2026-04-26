@@ -48,3 +48,9 @@ __pycache__/
 
 # OS cruft
 .DS_Store Thumbs.db
+
+# ESP-IDF per-developer + per-build artifacts
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock
+firmware/managed_components/

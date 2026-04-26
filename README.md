@@ -97,7 +97,12 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ✅ Complete |
-| **4.4** | **Firmware drivers (W5500, relays, sensors)** | 🔵 **In progress — next** |
+| **4.4** | **Firmware drivers (W5500, relays, sensors)** | 🔵 **In progress** |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.1 | ESP-IDF project skeleton + hello-world build | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.2 | GPIO drivers: relays + limit switches | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam interrupt + LED status driver | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
 | 4.7 | Dashboard backend + frontend | ⏳ Pending |
@@ -106,7 +111,150 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.3 complete: end-to-end gRPC server delivered
+## Latest accomplishment — Phase 4.4.1: ESP-IDF firmware skeleton + hello-world build
+
+> **Completed 2026-04-26.** Project tree under
+> [`firmware/`](firmware/), build instructions in
+> [`firmware/README.md`](firmware/README.md).
+
+### What I built
+
+The bedrock for the gate-side firmware: a real ESP-IDF v6.x project
+that builds clean for the ESP32-S3 target, with a 4 MB OTA-capable
+partition layout, a `gate_drivers` component skeleton waiting for
+the GPIO/W5500/safety/LED drivers in subsequent sub-milestones, and
+a `main` entry point that logs a boot banner and idles. The earlier
+empty-stub `firmware/{app,drivers,include,platform,src,tests}/` tree
+was a placeholder layout from Phase 0; it didn't fit ESP-IDF's
+component model and held no actual code, so it was replaced.
+
+| Artifact | Purpose |
+|---|---|
+| `firmware/CMakeLists.txt` | Top-level project file. Calls into `$IDF_PATH/tools/cmake/project.cmake` so `idf.py build` finds the standard component registration hook. |
+| `firmware/sdkconfig.defaults` | Compile-time pinning: target ESP32-S3, FreeRTOS @ 1 kHz, `-O2`, exceptions+RTTI off (saves ~40 KB), task watchdog @ 10 s, custom partition table, 4 MB / 80 MHz flash. |
+| `firmware/partitions.csv` | Two-OTA 4 MB layout: `nvs`(16K) + `otadata`(8K) + `phy_init`(4K) + `ota_0`(1.5M) + `ota_1`(1.5M) + `storage`(960K SPIFFS for offline allowlist cache). |
+| `firmware/main/CMakeLists.txt` + `main.cpp` | App entry component. `app_main()` logs a boot banner with version + IDF revision + chip features, then idles in a 1-second `vTaskDelay` loop. Idle becomes the gate state-machine task in Phase 4.5. |
+| `firmware/components/gate_drivers/` | First-party hardware-driver component. 4.4.1 ships only a `version.{hpp,cpp}` so `main` has something to depend on; subsequent milestones add `relay`, `limit_switch`, `w5500`, `safety_beam`, `led`. |
+| `firmware/README.md` | Quick-start: install ESP-IDF, source `export.sh`, `idf.py set-target esp32s3`, `idf.py build`, expected first-boot console output. |
+| `.github/workflows/lint.yml` (updated) | clang-tidy step now scopes to `server/ shared/ dashboard/backend/` — running host clang-tidy on xtensa-targeting firmware would produce bogus errors. clang-format still covers firmware for stylistic checks. Firmware-specific static analysis lands with the firmware CI workflow in 4.4.5. |
+
+### Technical detail
+
+#### Why a fresh tree, not retrofit the old stubs
+
+The pre-existing `firmware/` tree had `app/`, `drivers/`, `include/`,
+`platform/`, `src/`, `tests/` — a layout that mirrors the *server*
+side. That doesn't match ESP-IDF's expectations:
+
+- ESP-IDF's CMake project hook auto-discovers components from
+  `main/` (the application entry) and `components/` (extra custom
+  components). `drivers/` and `app/` aren't recognized.
+- `idf_component_register()` is the unit of registration —
+  per-component CMakeLists declaring sources, includes, and
+  dependencies. The old stubs had none.
+
+I deleted the empty stubs (each was 1-2 lines of comment header,
+no actual code) and rebuilt as a proper ESP-IDF tree. Future
+sub-milestones grow `components/gate_drivers/` rather than scattering
+files across the previous folder layout.
+
+#### Why two OTA slots and not factory + ota
+
+ESP-IDF supports both layouts. "Factory + ota" gives you a
+read-only fallback image; "ota_0 + ota_1" is the modern
+ping-pong-update layout where every binary is upgradable. ADR-009
+(OTA strategy) calls for ed25519-signed images that the firmware
+verifies before swapping the active partition — that's
+fundamentally a two-slot pattern. The partition table here matches
+that contract: 1.5 MB per slot leaves comfortable room for the
+LWIP + W5500 + esp-tls + grpc client stack the firmware will
+eventually carry.
+
+The first-boot bootloader picks `ota_0` automatically (no ota_data
+populated yet). After the first successful OTA the ota_data
+partition records the active slot; from there the bootloader
+ping-pongs.
+
+#### Compiler flags worth flagging
+
+`CONFIG_COMPILER_CXX_EXCEPTIONS=n` and
+`CONFIG_COMPILER_CXX_RTTI=n` together save ~40 KB of flash on a
+hello-world image. The cost is no `try/catch` and no
+`dynamic_cast` — both irrelevant for embedded code that has to
+handle hardware errors via return codes anyway. If a future driver
+needs RTTI for a CRTP-free polymorphic dispatch, we'll revisit, but
+that's an unlikely requirement.
+
+`CONFIG_COMPILER_OPTIMIZATION_PERF=y` (-O2) is the production
+default; `-Og` for debug-build local development is one
+`menuconfig` toggle away. Logging defaults to INFO level with
+RTOS-tick timestamps, matching what the server-side spdlog produces
+so cross-system logs line up.
+
+#### One sub-milestone, three build artifacts
+
+`idf.py build` produces:
+
+- `build/bootloader/bootloader.bin` — 18.5 KB, the second-stage
+  bootloader. Lives at flash offset `0x0`; reads the partition
+  table and ota_data to pick which OTA slot to boot.
+- `build/partition_table/partition-table.bin` — 3 KB, the
+  partition table itself at offset `0x8000`.
+- `build/gate_firmware.bin` — 152 KB, the actual app image. Lands
+  at `0x10000` (the start of `ota_0`). 90 % of the 1.5 MB OTA slot
+  is free — plenty of room for the network stack and gRPC client
+  in upcoming sub-milestones.
+
+These three plus `build/ota_data_initial.bin` (the empty-OTA-data
+seed) are what `idf.py flash` writes to the chip.
+
+#### One v6.1 quirk worth recording
+
+ESP-IDF v6.1-dev renamed the chip-info struct's `full_revision`
+field to `revision` (still encoded as `MXX`, with M = major and
+XX = minor, just shorter). The boot banner uses
+`chip.revision / 100` and `chip.revision % 100` for the
+two-component display. v5.x users porting forward will hit the
+same compile error.
+
+#### What the lint workflow change covers
+
+Pre-4.4.1, the `firmware/` tree held only header stubs with no real
+code, so host `clang-tidy` happily processed them as empty
+translation units. With actual ESP-IDF includes (`#include <esp_log.h>`)
+in `main.cpp`, host clang-tidy can't resolve those headers — they
+live under the xtensa toolchain include paths, not `/usr/include`.
+The workflow update scopes clang-tidy to `server/ shared/
+dashboard/backend/`, leaving clang-format (which doesn't need
+preprocessor expansion) to keep covering firmware for style.
+
+A dedicated firmware CI workflow comes in Phase 4.4.5 — that one
+will install ESP-IDF, run `idf.py build`, and produce its own
+firmware-targeting compile_commands.json for tools that need it.
+
+#### Verified run
+
+```
+$ . ~/esp/esp-idf/export.sh
+$ idf.py set-target esp32s3
+$ idf.py build
+…
+Successfully created ESP32-S3 image.
+Generated /home/deby/projects/gate-automation/firmware/build/gate_firmware.bin
+gate_firmware.bin binary size 0x265c0 bytes. Smallest app partition is
+  0x180000 bytes. 0x159a40 bytes (90%) free.
+```
+
+Three artifacts produced: `bootloader.bin` (18 KB),
+`partition-table.bin` (3 KB), `gate_firmware.bin` (152 KB,
+10 % of the 1.5 MB OTA slot). Phase 4.4.2 grows that with the
+relay + limit-switch GPIO drivers; subsequent milestones add the
+W5500 ethernet wrapper, safety-beam interrupt, and LED-pattern
+renderer.
+
+---
+
+## Previous milestone — Phase 4.3 complete: end-to-end gRPC server delivered
 
 > **Completed 2026-04-26.** Final sub-milestone (4.3.6) tests in
 > [`tests/integration/grpc_roundtrip_test.cpp`](tests/integration/grpc_roundtrip_test.cpp).
@@ -2073,7 +2221,12 @@ gate-automation/
 │   ├── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
 │   ├── rpc/               # ✅ Phase 4.3.4/5 — gRPC services + lifecycle wrapper
 │   └── src/main.cpp       # ✅ Phase 4.3.5 — gate-server daemon entry point
-├── firmware/              # ⏳ Phase 4.4 — ESP-IDF field controller firmware
+├── firmware/              # 🔵 Phase 4.4 — ESP-IDF field controller firmware (ESP32-S3)
+│   ├── main/              # ✅ Phase 4.4.1 — app_main entry component
+│   ├── components/
+│   │   └── gate_drivers/  # 🔵 Phase 4.4.2-4.4.4 — relay/limit/eth/safety/LED drivers
+│   ├── partitions.csv     # Two-OTA 4 MB layout (nvs, otadata, ota_0/1, spiffs)
+│   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)
 ├── simulation/            # ⏳ Phase 4.6 — virtual gate harness
 ├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
 ├── deployment/            # ⏳ Phase 4.8 — systemd units + install scripts
