@@ -101,7 +101,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.1 | ESP-IDF project skeleton + hello-world build | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.2 | GPIO drivers: relays + limit switches | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam interrupt + LED status driver | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam input + LED status driver | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
@@ -111,7 +111,144 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.4.3: W5500 SPI-ethernet driver wrapper
+## Latest accomplishment — Phase 4.4.4: safety-beam input + LED status driver
+
+> **Completed 2026-04-26.** Two new drivers in
+> [`gate_drivers/`](firmware/components/gate_drivers/):
+> [`safety_beam.{hpp,cpp}`](firmware/components/gate_drivers/include/gate_drivers/safety_beam.hpp)
+> and
+> [`status_led.{hpp,cpp}`](firmware/components/gate_drivers/include/gate_drivers/status_led.hpp).
+
+### What I built
+
+The two remaining hardware drivers needed before the firmware app
+(Phase 4.5) can wire up the gate state machine: a fast-debounce
+beam-break input that triggers safety stops, and a three-color LED
+pattern renderer that turns the proto's `LedPattern` enum into
+animated GPIO toggles.
+
+| Artifact | Purpose |
+|---|---|
+| `gate_drivers/include/gate_drivers/safety_beam.hpp` + `src/safety_beam.cpp` | `SafetyBeam` — same poll+debounce pattern as `LimitSwitch` but tuned for safety: 1 ms poll period, 5 ms debounce (worst-case ~6 ms detection latency). `is_blocked()` always reads "true = beam interrupted" regardless of electrical polarity. Failsafe-aligned default (active-high when blocked) — a disconnected sensor wire reads HIGH and looks blocked. |
+| `gate_drivers/include/gate_drivers/status_led.hpp` + `src/status_led.cpp` | `StatusLed` — drives three discrete LEDs (red/green/yellow) and renders the proto's `LedPattern` enum as animated patterns: `kAuthFlash` (3× green), `kDenyFlash` (3× red), `kFaultSlow` (1 Hz red), `kOtaPulse` (1 Hz yellow), `kBootOk` (solid green 2 s), `kOff`. 100 ms tick periodic timer; `render(p)` is non-blocking and interrupts in-flight patterns cleanly. |
+| `gate_drivers/CMakeLists.txt` (updated) | Adds `safety_beam.cpp` + `status_led.cpp` to the source list. No new REQUIRES — both drivers reuse `esp_driver_gpio + esp_timer + log`. |
+
+### Technical detail
+
+#### Why the safety beam is its own class instead of a re-tuned LimitSwitch
+
+`LimitSwitch` and `SafetyBeam` both wrap the same primitive (poll a
+GPIO with a debounce window) but they're semantically different
+concerns:
+
+- A **limit switch** says "we reached the end of travel." Stale
+  signals are mostly harmless; a 50 ms debounce is fine.
+- A **safety beam** says "stop the motor immediately, somebody is
+  in the gate's path." Latency directly translates to risk; 5 ms
+  is the right knob.
+
+Naming the class `SafetyBeam` makes that intent explicit at the
+call site. A future reader scanning `firmware/main/main.cpp` for
+"how does the gate avoid crushing people" reads `SafetyBeam` and
+knows where the safety logic lives. With a single shared class,
+the same intent would be hidden inside a config struct.
+
+The implementations are 90 % copy of `LimitSwitch` — that's fine.
+The DRY win isn't worth the readability loss; if a future bug
+fix needs to apply to both, grep handles it.
+
+#### Failsafe wiring assumption
+
+The default `active_high_when_blocked = true` matches the standard
+"open-collector beam receiver with pull-up" wiring used by virtually
+every commercial gate beam set:
+
+- Beam clear → receiver pulls input LOW.
+- Beam blocked or sensor unpowered/unplugged → input floats HIGH
+  (via the internal pull-up) → reads as blocked → gate refuses to
+  close.
+
+This is the right failsafe direction: a fault makes the system
+*more* cautious, never less. Hardware that wires the opposite
+sense (a dedicated "fault output" that asserts when the sensor is
+healthy) should override the flag — but that wiring is rare and
+the override is one config field away.
+
+#### LED pattern timing
+
+100 ms tick was chosen because:
+
+- `kAuthFlash` and `kDenyFlash` (3× flash) need to feel snappy
+  but visible. 100 ms on / 100 ms off / repeat 3× = 600 ms total
+  pattern. Faster reads as a single blink; slower drags out the
+  feedback past the point where a guard at the gate notices.
+- `kFaultSlow` and `kOtaPulse` need a 1 Hz cadence — that's 5
+  ticks on, 5 ticks off, repeating, at 100 ms tick.
+- `kBootOk` is "solid green for 2 s" — 20 ticks then off.
+
+Picking a single tick rate that satisfies all six patterns means
+one timer, one state machine, one place the LED logic lives. A
+WS2812 strip (addressable RGB) would let us do gradients and
+fades, but the schematic uses three discrete indicators which
+keeps the BOM cheaper and the driver Stack-overflow-safe.
+
+#### Render semantics — interrupt rather than queue
+
+`render(Pattern::kDenyFlash)` mid-AUTH-flash immediately switches
+to the deny pattern from frame 0. There's no queue of pending
+animations. Reasoning:
+
+- The dashboard is the source of truth for what the LED should
+  show *right now*. A queued AUTH-then-DENY would mean "the
+  guard pressed open then deny — finish the open animation
+  first" — confusing operational behavior.
+- The proto's `GateCommand` carries a `LedPattern led_pattern`
+  field on the *command*, with no notion of pattern history.
+  The implementation matches the contract.
+
+The implementation uses an atomic `restart_requested_` flag set
+by `render()` and consumed by the timer callback — so the next
+tick after a render() call resets `step_ = 0` cleanly. No race
+between render() and an in-flight tick.
+
+#### Verified compile
+
+```
+$ idf.py build
+…
+Successfully created ESP32-S3 image.
+gate_firmware.bin binary size 0x53000 bytes (332 KB), 78% of the
+1.5 MB OTA slot free.
+```
+
+All six driver `.cpp.obj` files present:
+`version`, `relay`, `limit_switch`, `safety_beam`, `status_led`,
+`ethernet`. Image size unchanged from 4.4.3 because `safety_beam`
+and `status_led` aren't yet referenced from `main.cpp` — same
+linker-garbage-collection situation as the relay/limit_switch in
+4.4.2. They get pulled into the binary in 4.5 when the state
+machine instantiates them with site-specific pin configs.
+
+All four new files compile clean under `-Wall -Wextra -Werror`
+and pass clang-format with the project's `.clang-format` profile.
+
+#### What's intentionally not here
+
+- **No ISR-based beam input.** The polling design at 1 ms tick
+  matches the safety latency requirement (~6 ms worst case)
+  without ISR-safety constraints. Edge-triggered ISRs would be
+  faster on paper but the gate motor inertia (100 ms+ to start
+  reversing) absorbs the difference, and the simpler code is
+  easier to audit for safety.
+- **No PWM brightness control on the LEDs.** Three discrete
+  on/off LEDs are sufficient for the six patterns the proto
+  defines. PWM would require LEDC peripheral wiring and channel
+  allocation — easy to add later if a richer dashboard demands
+  it.
+
+---
+
+## Previous milestone — Phase 4.4.3: W5500 SPI-ethernet driver wrapper
 
 > **Completed 2026-04-26.** New component header in
 > [`gate_drivers/include/gate_drivers/ethernet.hpp`](firmware/components/gate_drivers/include/gate_drivers/ethernet.hpp),

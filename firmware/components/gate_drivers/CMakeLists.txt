@@ -12,6 +12,8 @@ idf_component_register(
         "src/version.cpp"
         "src/relay.cpp"
         "src/limit_switch.cpp"
+        "src/safety_beam.cpp"
+        "src/status_led.cpp"
         "src/ethernet.cpp"
     INCLUDE_DIRS
         "include"
