@@ -32,3 +32,8 @@ endif()
 if(TARGET gate_fusion)
     add_subdirectory(fusion)
 endif()
+
+# Dashboard broadcaster tests — gate_dash needs only gate_proto.
+if(TARGET gate_dash)
+    add_subdirectory(dash)
+endif()

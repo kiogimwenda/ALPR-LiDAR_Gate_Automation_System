@@ -23,3 +23,8 @@ endif()
 if(TARGET gate_auth)
     add_subdirectory(fusion)
 endif()
+
+# dash/ depends only on gate_proto. Same gating model.
+if(TARGET gate_proto)
+    add_subdirectory(dash)
+endif()

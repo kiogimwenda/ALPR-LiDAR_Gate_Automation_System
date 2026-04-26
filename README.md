@@ -93,7 +93,7 @@ release on GitHub.
 | **4.3** | **Server RPC + fusion engine** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.1 | Allowlist + blocklist store (SQLite) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.3.3 | Dashboard event broadcaster | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.3 | Dashboard event broadcaster | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ⏳ Pending |
@@ -106,7 +106,144 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.3.2: Fusion engine (verdict ladder)
+## Latest accomplishment — Phase 4.3.3: Dashboard event broadcaster
+
+> **Completed 2026-04-26.** Library in
+> [`server/dash/`](server/dash/), tests in
+> [`tests/dash/event_broadcaster_test.cpp`](tests/dash/event_broadcaster_test.cpp).
+
+### What I built
+
+`gate_dash` — the server-side fan-out hub that the gRPC
+`DashboardService::Subscribe` RPC will stream from. Every interesting
+event the server produces (an `AuthDecision`, a firmware `Telemetry`
+beat, a `FaultEvent`, an `OtaProgress` beat, a guard-issued
+`GateCommand`, a `CommandAck`) is published here, and any number of
+dashboard subscribers receive their own filtered, ordered stream.
+
+| Artifact | Purpose |
+|---|---|
+| `server/dash/include/dash/event_broadcaster.hpp` | Public API: `EventBroadcaster{ring_capacity, per_sub_capacity}`, six typed `publish_*` builders, `subscribe(DashboardSubscription)` returning a move-only `Subscription` handle with `next(timeout)` / `drain_now()` / `close()`, plus `stop()`, `subscriber_count()`, `last_event_id()`, and a free `filter_matches()` helper. |
+| `server/dash/src/event_broadcaster.cpp` | Implementation: monotonic per-server-boot `event_id` counter, two-level queueing (broadcaster ring buffer + per-subscriber bounded queue), drop-oldest back-pressure, pthread-backed condition variables, `weak_ptr`-based subscriber tracking with auto-reaping. |
+| `server/dash/CMakeLists.txt` | `gate_dash` (static), depends on `gate_proto` and `Threads::Threads`. No TensorRT / CUDA / OpenCV / SQLite linkage. |
+| `tests/dash/event_broadcaster_test.cpp` | 15 Catch2 cases / 56 assertions covering id assignment, every filter dimension (site, gate, kind, replay), ring eviction, per-sub drop-oldest, `stop()` waking blocked waiters, post-stop publish/subscribe rejection, and dead-subscriber reaping. |
+| `tests/dash/CMakeLists.txt` | `test_dash_event_broadcaster` binary, gated on `TARGET gate_dash`. |
+| `server/CMakeLists.txt`, `tests/CMakeLists.txt` (updated) | `dash/` added when `gate_proto` exists; tests added when `gate_dash` exists. |
+
+### Technical detail
+
+#### Why not just std::queue<DashboardEvent>
+
+The dashboard subscription contract has three properties that a single
+queue can't satisfy together:
+
+1. **Replay-since-event-id.** A reconnecting dashboard sends its last
+   seen `event_id`; the broadcaster has to ship the gap before the
+   live stream starts. That requires keeping recent history *separate
+   from* live delivery state.
+2. **Per-subscriber filters.** Every subscriber wants its own slice
+   (this site, those gates, only decisions and faults). Filtering at
+   delivery time means each subscriber sees only what matches.
+3. **Slow consumers must not block fast publishers.** A dashboard tab
+   in a backgrounded browser must not delay the next `AuthDecision`
+   from reaching firmware.
+
+Two-level queueing solves all three:
+
+- **Ring buffer (broadcaster level)** stores the last *N* events
+  (default 4096) for replay. When `subscribe()` is called with a
+  `since_event_id`, the broadcaster drains matching events from the
+  ring into the new subscriber's queue before any live events flow.
+  Old events fall off the back when the ring is full — the dashboard
+  won't be able to replay arbitrarily far back, which matches the
+  "best-effort live view" semantic.
+- **Per-subscriber queue** (default 1024 events) is the staging area
+  the subscriber's `next()` call drains. When that queue would
+  overflow, the broadcaster drops the *oldest* event in *that
+  queue only* and increments the subscriber's `dropped_events()`
+  counter. The publisher is never blocked.
+
+#### Filter rules — what made it into the proto and what didn't
+
+The proto's `DashboardSubscription` has four `include_*` flags
+(`decisions`, `telemetry`, `faults`, `ota`) but no flags for
+`GateCommand` or `CommandAck`. Two reasonable interpretations:
+
+- "If it's not in the proto, drop it." Simple, but means a
+  decisions-only subscription wouldn't see a guard manually opening
+  the gate — surprising and wrong.
+- "Commands and acks are guard actions; always show them when the
+  kind filter is in effect." This is what the implementation does;
+  the rationale is documented in `filter_matches()`. A
+  fully-defaulted subscription (all flags false) is treated as
+  "everything" so a freshly-instantiated client doesn't silently
+  drop all events.
+
+`filter_matches()` is exposed from the header so the gRPC handler
+(4.3.4) and the integration tests (4.3.6) can apply the same rule
+without duplicating logic.
+
+#### Where each event's gate_id comes from
+
+The proto-level types each carry a `gate_id` field except
+`OtaProgress` (keyed by `command_id`) and `CommandAck` (keyed by
+`command_id`). The `publish_*` builders extract `gate_id` from the
+payload where it exists and require the caller to supply it where it
+doesn't. This keeps filter routing data in one place — the
+`EventEnvelope` stored in the ring — without the broadcaster having
+to know about every payload's schema.
+
+#### Lifecycle and threading
+
+`Subscription` is move-only and holds a `shared_ptr<Subscription::Impl>`.
+The broadcaster keeps `weak_ptr` references in a `std::list` and
+prunes dead ones on every `publish()`. That gives clean
+"client-disconnected" semantics:
+
+- The gRPC handler holds a `unique_ptr<Subscription>` for the life of
+  the server-streaming RPC.
+- When the client disconnects, the handler returns; the
+  `unique_ptr` destructor calls `close()` which sets the closed flag
+  and notifies the per-sub CV.
+- The next `publish()` sees an expired `weak_ptr` and erases it from
+  the broadcaster's list — no explicit unsubscribe needed.
+
+`stop()` is the explicit shutdown path: it flips an atomic, takes the
+broadcaster lock once to snapshot all live subscribers (lifting them
+to `shared_ptr`), then walks the snapshot outside the lock to set
+each subscriber's closed flag and notify. Holding the broadcaster
+lock across the per-subscriber `notify_all()` would risk inverting
+lock order with subscribers iterating their own queue.
+
+#### What `drain_now()` is for vs `next()`
+
+The gRPC streaming handler will mostly call `next()` with a 1-second
+timeout (so it can periodically check whether the gRPC writer has
+been cancelled). On replay though — right after `subscribe()` — the
+handler can call `drain_now()` to scoop up whatever the broadcaster
+already pre-loaded into the queue, write them to the stream, then
+fall into the `next()` loop. That keeps the streaming start-up fast
+without burning a wait on each replay event.
+
+#### Verified run
+
+```
+$ ninja gate_dash test_dash_event_broadcaster
+[10/10] Linking CXX executable tests/dash/test_dash_event_broadcaster
+
+$ ./tests/dash/test_dash_event_broadcaster
+Randomness seeded to: 787514901
+===============================================================================
+All tests passed (56 assertions in 15 test cases)
+```
+
+The full server-side suite is now 53 cases / 300 assertions across
+inference, auth, fusion, and dash — under one second on a development
+workstation. No prior tests regressed.
+
+---
+
+## Previous milestone — Phase 4.3.2: Fusion engine (verdict ladder)
 
 > **Completed 2026-04-26.** Library in
 > [`server/fusion/`](server/fusion/), tests in
@@ -1446,7 +1583,8 @@ gate-automation/
 ├── server/                # 🔵 Phase 4.2/4.3 — ALPR + LiDAR inference + fusion
 │   ├── inference/         # ✅ Phase 4.2 — TensorRT engines + ALPR pipeline
 │   ├── auth/              # ✅ Phase 4.3.1 — allowlist + blocklist store
-│   └── fusion/            # ✅ Phase 4.3.2 — verdict-ladder decision engine
+│   ├── fusion/            # ✅ Phase 4.3.2 — verdict-ladder decision engine
+│   └── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
 ├── firmware/              # ⏳ Phase 4.4 — ESP-IDF field controller firmware
 ├── simulation/            # ⏳ Phase 4.6 — virtual gate harness
 ├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
@@ -1455,7 +1593,8 @@ gate-automation/
 │   ├── proto/             # ✅ Phase 4.1 — proto contract tests
 │   ├── inference/         # ✅ Phase 4.2.6 — host-side algorithm tests
 │   ├── auth/              # ✅ Phase 4.3.1 — allowlist store tests
-│   └── fusion/            # ✅ Phase 4.3.2 — fusion engine tests
+│   ├── fusion/            # ✅ Phase 4.3.2 — fusion engine tests
+│   └── dash/              # ✅ Phase 4.3.3 — broadcaster fan-out tests
 ├── scripts/bootstrap/     # Reproducible WSL2 dev environment scripts
 └── .github/workflows/     # CI: build, test, lint, codeql, commitlint, proto
 ```
