@@ -99,7 +99,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ✅ Complete |
 | **4.4** | **Firmware drivers (W5500, relays, sensors)** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.1 | ESP-IDF project skeleton + hello-world build | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.4.2 | GPIO drivers: relays + limit switches | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.2 | GPIO drivers: relays + limit switches | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam interrupt + LED status driver | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ⏳ Pending |
@@ -111,7 +111,111 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.4.1: ESP-IDF firmware skeleton + hello-world build
+## Latest accomplishment — Phase 4.4.2: relay + limit-switch GPIO drivers
+
+> **Completed 2026-04-26.** New components in
+> [`firmware/components/gate_drivers/`](firmware/components/gate_drivers/).
+
+### What I built
+
+The first hardware-touching code in the firmware: two C++ classes that
+sit on top of ESP-IDF's `esp_driver_gpio` and `esp_timer` and deliver
+exactly the operations the proto's `CommandKind` enum implies.
+
+| Artifact | Purpose |
+|---|---|
+| `gate_drivers/include/gate_drivers/relay.hpp` + `src/relay.cpp` | `Relay` — single-output relay driver with two operating modes: latched (`set(true)/set(false)`) for `LATCH_OPEN`/`LATCH_CLOSE` proto commands, and pulsed (`pulse(duration)`) for `PULSE_RELAY`/`OPEN_GATE`/`CLOSE_GATE`. `active_high=false` flips polarity for opto-isolated relay boards. Non-copyable, non-movable (esp_timer captures `this`). |
+| `gate_drivers/include/gate_drivers/limit_switch.hpp` + `src/limit_switch.cpp` | `LimitSwitch` — debounced GPIO input. Polls at 200 Hz via `esp_timer`, commits state transitions only after 20 ms of stable readings (configurable). User callback fires from the esp_timer task — not an ISR — so it's safe to do real work. NO/NC polarity abstracted; `is_active()` always reads "true = limit reached". |
+| `gate_drivers/CMakeLists.txt` (updated) | Adds `relay.cpp` + `limit_switch.cpp` to the source list and pulls in `esp_driver_gpio` + `log` as REQUIRES. (ESP-IDF v6 split the legacy `driver` component per-peripheral; the right name is `esp_driver_gpio` now.) |
+
+### Technical detail
+
+#### Why pulse() restarts the timer instead of stacking
+
+A second `pulse(500ms)` while the first 200 ms pulse is still active
+should make the line-on window 500 ms — not the union of the two
+intervals, not the first interval ignored. The implementation
+cancels the in-flight `esp_timer` and re-arms with the new duration:
+"re-arm rather than stack." That matches how a guard rapidly
+double-clicking the dashboard's "open gate" button intuitively
+expects the relay to behave.
+
+`set(false)` mid-pulse cancels the pulse cleanly via the same
+`esp_timer_stop` call. No race window where the timer fires after
+the explicit set.
+
+#### Polling vs interrupt for limit switches
+
+The naive design is "GPIO interrupt on edge → start a debounce
+timer → if pin still in new state after `debounce_ms`, commit".
+That works but makes the constructor leak ISR install state and
+splits debounce logic across two callbacks. The polling design
+trades one esp_timer wake every 5 ms for a single linear state
+machine in `on_poll()`. At 200 Hz across two limit switches per
+gate, the CPU cost is negligible (~2 µs per wake on an ESP32-S3).
+
+The polling-based debounce uses three counters:
+
+- `last_sample_` — the previous raw read. A change re-seeds the
+  stability count.
+- `stable_samples_` — consecutive ticks the new value has been
+  stable. Cleared on a glitch.
+- `samples_to_commit_` — derived once at construction from
+  `debounce_ms / poll_period_ms`.
+
+When `stable_samples_` crosses the threshold, the new state
+commits via an atomic store and the user callback fires. The
+callback runs in the esp_timer task context (not an ISR), so it
+can take mutexes and call any ESP-IDF API safely.
+
+#### NO vs NC polarity
+
+`normally_open=true` (the default and most common configuration
+for end-of-travel limits) means the switch contacts are open when
+the limit is *not* reached; the firmware's input pin reads HIGH
+through the internal pull-up. When the gate reaches the limit,
+the switch closes to ground and the pin reads LOW. `read_active()`
+abstracts this away so the rest of the codebase only ever asks
+"is the limit reached?" without thinking about wiring polarity.
+
+#### Verified compile
+
+```
+$ idf.py build
+…
+Successfully created ESP32-S3 image.
+gate_firmware.bin binary size 0x265c0 bytes. Smallest app
+  partition is 0x180000 bytes. 0x159a40 bytes (90%) free.
+```
+
+`relay.cpp.obj`, `limit_switch.cpp.obj`, and `version.cpp.obj` all
+present in the gate_drivers component build directory. Same image
+size as 4.4.1 because nothing in `main.cpp` references the new
+classes yet — the linker correctly garbage-collects them. They get
+pulled into the binary once Phase 4.5's state machine instantiates
+real `Relay` and `LimitSwitch` objects per the gate_id config.
+
+The drivers build clean under the project's `-Wall -Wextra
+-Werror` and pass clang-format with the project's `.clang-format`
+profile (Google base, ColumnLimit 100, IndentWidth 4).
+
+#### What's intentionally not here
+
+- **No ISR-based limit switch.** Discussed above — polling is
+  sufficient for the rate and gives a single-callback contract.
+- **No relay PWM.** The proto's commands are binary on/off; PWM
+  for pre-actuator soft-start belongs in a future driver if any
+  gate requires it.
+- **No driver-level tests.** Hardware-touching code can't be
+  unit-tested on host without a GPIO mock layer — that's a
+  larger investment that doesn't pay off until we have multiple
+  drivers worth abstracting. The compile under `-Werror` is the
+  current safety net; on-hardware integration testing comes in
+  Phase 4.9.
+
+---
+
+## Previous milestone — Phase 4.4.1: ESP-IDF firmware skeleton + hello-world build
 
 > **Completed 2026-04-26.** Project tree under
 > [`firmware/`](firmware/), build instructions in
