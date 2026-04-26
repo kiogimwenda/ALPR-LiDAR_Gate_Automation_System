@@ -8,10 +8,12 @@
 #include <esp_chip_info.h>
 #include <esp_idf_version.h>
 #include <esp_log.h>
+#include <esp_netif_ip_addr.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include "gate_drivers/ethernet.hpp"
 #include "gate_drivers/version.hpp"
 
 namespace {
@@ -41,8 +43,19 @@ void log_boot_banner() {
 extern "C" void app_main(void) {
     log_boot_banner();
 
-    // Phase 4.4.1 idle loop. Phase 4.5 will replace this with the
-    // gate state-machine task and the gRPC Control stream client.
+    // Bring up the W5500 ethernet driver. The DHCP-bound IP arrives
+    // asynchronously via the on_got_ip callback — we just log it for now;
+    // Phase 4.5 will use this signal to start the gRPC Control stream.
+    gate::drivers::Ethernet::on_got_ip(
+        [](const esp_ip4_addr_t& ip) { ESP_LOGI(kTag, "network ready at " IPSTR, IP2STR(&ip)); });
+    gate::drivers::Ethernet::on_link(
+        [](bool up) { ESP_LOGI(kTag, "link %s", up ? "up" : "down"); });
+    if (gate::drivers::Ethernet::start({}) != ESP_OK) {
+        ESP_LOGE(kTag, "ethernet start failed — running offline");
+    }
+
+    // Phase 4.4 idle loop. Phase 4.5 will replace this with the gate
+    // state-machine task and the gRPC Control stream client.
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

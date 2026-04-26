@@ -12,15 +12,23 @@ idf_component_register(
         "src/version.cpp"
         "src/relay.cpp"
         "src/limit_switch.cpp"
+        "src/ethernet.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES
         # ESP-IDF v6 split the legacy `driver` component into per-
         # peripheral components. `esp_driver_gpio` provides the GPIO
-        # configuration / level / interrupt APIs used here; future
-        # sub-milestones will add esp_driver_ledc (LED PWM), esp_eth
-        # (W5500 ethernet), esp_driver_spi (W5500 transport), etc.
+        # configuration / level / interrupt APIs used here.
         esp_driver_gpio
         esp_timer
         log
+        # Ethernet stack — driver, netif, event-loop, MAC ID helper.
+        # ethernet_init (managed component, see idf_component.yml)
+        # bundles the W5500 PHY+MAC factory functions and reads its
+        # SPI/pin config from Kconfig.
+        esp_eth
+        esp_event
+        esp_netif
+        esp_hw_support     # esp_efuse_mac_get_default
+        ethernet_init
 )

@@ -100,7 +100,7 @@ release on GitHub.
 | **4.4** | **Firmware drivers (W5500, relays, sensors)** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.1 | ESP-IDF project skeleton + hello-world build | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.2 | GPIO drivers: relays + limit switches | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam interrupt + LED status driver | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
@@ -111,7 +111,125 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.4.2: relay + limit-switch GPIO drivers
+## Latest accomplishment — Phase 4.4.3: W5500 SPI-ethernet driver wrapper
+
+> **Completed 2026-04-26.** New component header in
+> [`gate_drivers/include/gate_drivers/ethernet.hpp`](firmware/components/gate_drivers/include/gate_drivers/ethernet.hpp),
+> implementation in
+> [`gate_drivers/src/ethernet.cpp`](firmware/components/gate_drivers/src/ethernet.cpp).
+
+### What I built
+
+The firmware can now talk IP. A thin C++ wrapper around the
+`espressif/ethernet_init` managed component (which handles the W5500
+PHY/MAC factory functions), `esp_netif`, and the IDF event loop.
+Reduces the standard 14-step W5500 bring-up sequence to a one-line
+`Ethernet::start({})` call plus three optional callbacks for link
+state and DHCP IP events.
+
+| Artifact | Purpose |
+|---|---|
+| `gate_drivers/include/gate_drivers/ethernet.hpp` | Public API: `Ethernet::start(Config)`, `on_link / on_got_ip / on_lost_ip` callback registration, `is_up()` + `current_ip()` snapshots. Process-wide singleton — ESP-IDF's event loop and netif are global. |
+| `gate_drivers/src/ethernet.cpp` | Implementation: `esp_netif_init` + `esp_event_loop_create_default` once, `ethernet_init_all()` to spin up the W5500 from Kconfig pins, netif glue attach, MAC derivation from the chip factory ID (locally-administered bit set), event handler registration, `esp_eth_start`. Atomic state for lock-free `is_up`/`current_ip` reads from other tasks. Callbacks fire from the event loop task — not an ISR — so they're safe to do real work. |
+| `gate_drivers/idf_component.yml` | New: declares `espressif/ethernet_init ^1.3.0` as a managed dependency. The component manager downloads this on first `idf.py reconfigure` and pulls in `espressif/w5500` transitively. |
+| `gate_drivers/CMakeLists.txt` (updated) | Adds `ethernet.cpp` to sources; new REQUIRES: `esp_eth + esp_event + esp_netif + esp_hw_support + ethernet_init`. |
+| `firmware/sdkconfig.defaults` (updated) | Pins the W5500 to the project's schematic GPIOs (MOSI=11, MISO=13, SCLK=12, CS=10, INT=9, RST=8), 20 MHz SPI clock, on `SPI2_HOST`. Configurable via `idf.py menuconfig` → *Example Ethernet Configuration*. |
+| `firmware/main/main.cpp` (updated) | `app_main` now starts the driver after the boot banner and registers a `got_ip` log callback. The `link_up` event also logs. Phase 4.5 will use these signals to start the gRPC Control stream. |
+
+### Technical detail
+
+#### Why the `ethernet_init` managed component
+
+ESP-IDF v6.x has split the chip-specific SPI ethernet drivers (W5500,
+DM9051, ENC28J60, etc.) out of the main `esp_eth` component into
+separately-versioned managed components. `espressif/ethernet_init`
+is the umbrella that wraps every one of them behind a Kconfig
+selector and a uniform `ethernet_init_all()` factory. Instead of
+hand-coding `eth_w5500_config_t` + `eth_phy_config_t` plus the SPI
+device init, the wrapper:
+
+1. Reads `CONFIG_ETHERNET_SPI_DEV0_W5500=y` and the
+   `CONFIG_EXAMPLE_ETH_SPI_*_GPIO` pins from sdkconfig.
+2. Builds the right MAC + PHY factory chain.
+3. Returns ready-to-attach `esp_eth_handle_t` instances.
+
+That's the layer of detail this milestone shouldn't be touching.
+Hardware revisions (e.g., switching to a DM9051 for a future board
+spin) are a sdkconfig change, not a code rewrite.
+
+#### Singleton — and why that's the right call here
+
+`Ethernet` is a class with only static methods and a hidden
+function-local `static State&` for storage. Three reasons it's a
+singleton:
+
+- `esp_netif_init` and `esp_event_loop_create_default` install
+  process-wide state; calling them twice errors. Wrapping that as
+  a constructor would force every caller to know about ordering.
+- A typical gate board has *one* ethernet interface. Multi-port
+  setups (e.g., a backup cellular link) would use a different
+  netif type entirely.
+- The IDF event loop callbacks are C function pointers with a
+  `void*` arg — instance-per-handler is awkward. A singleton
+  with a function-local State has zero ordering bugs and matches
+  the IDF idiom.
+
+If we ever need multi-instance support, refactoring is one
+`static State*` per netif handle away.
+
+#### MAC derivation
+
+W5500 has no factory MAC — every board ships with the same
+default. ESP-IDF's chip factory MAC (from efuse) is unique per
+chip; flipping the locally-administered bit (0x02 on byte 0) gives
+us a derived MAC that won't collide with any IEEE-assigned vendor
+range. Callers can override by passing a non-zero `Config::mac`,
+useful when a deployment wants a stable-across-reflashes identity.
+
+#### Why DHCP first, static IP later
+
+The proto's `Telemetry.gate_id` is the routing key the dashboard
+uses to identify a gate; the network address is just transport.
+For v1, DHCP-on-the-LAN is the simplest config — operators don't
+have to coordinate IP allocation per gate, and the dashboard's
+firmware-controller stream (`Control` RPC) handles reconnection
+when the lease changes. A static-IP escape hatch is easy to add
+later by exposing it through `Config::static_ip` and calling
+`esp_netif_dhcpc_stop` + `esp_netif_set_ip_info` from `start()`.
+
+#### Verified compile + image growth
+
+```
+$ idf.py build
+…
+Successfully created ESP32-S3 image.
+gate_firmware.bin binary size 0x53000 bytes. Smallest app
+  partition is 0x180000 bytes. 0x12d000 bytes (78%) free.
+```
+
+Image grew from 152 KB (4.4.1, hello-world) → 332 KB now that the
+W5500 driver, lwIP stack, and DHCP client are actually linked into
+the binary (since `app_main` calls `Ethernet::start()` directly).
+Still 78 % of the 1.5 MB OTA slot free for the gRPC client and
+state machine that land in 4.5.
+
+#### What's intentionally not here
+
+- **No actual hardware verification.** Real W5500 + ethernet
+  cable + DHCP server is on-bench / on-deployment work. The
+  compile + Kconfig wiring is the verification this milestone
+  delivers; the on-hardware smoke test happens in Phase 4.9.
+- **No TLS yet.** The proto's `gate_service.proto` carries a
+  `bytes signature = 9` field on `GateCommand` for ed25519
+  per-message signing, and ADR-009's OTA contract specifies
+  signed images. Channel-level TLS for the gRPC Control stream
+  is a 4.8 deployment concern (cert provisioning) — the
+  `InsecureChannelCredentials` server-side default in 4.3.4 was
+  picked to match.
+
+---
+
+## Previous milestone — Phase 4.4.2: relay + limit-switch GPIO drivers
 
 > **Completed 2026-04-26.** New components in
 > [`firmware/components/gate_drivers/`](firmware/components/gate_drivers/).
