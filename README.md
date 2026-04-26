@@ -92,7 +92,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ✅ Complete |
 | **4.3** | **Server RPC + fusion engine** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.1 | Allowlist + blocklist store (SQLite) | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.3 | Dashboard event broadcaster | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ⏳ Pending |
@@ -106,7 +106,172 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.3.1: Allowlist + blocklist store (SQLite)
+## Latest accomplishment — Phase 4.3.2: Fusion engine (verdict ladder)
+
+> **Completed 2026-04-26.** Library in
+> [`server/fusion/`](server/fusion/), tests in
+> [`tests/fusion/fusion_engine_test.cpp`](tests/fusion/fusion_engine_test.cpp).
+
+### What I built
+
+The decision brain of the server: `gate_fusion` consumes an
+`AuthorizeRequest` (a `DetectionFrame` from the ALPR + LiDAR pipelines
+plus the site context) and returns an `AuthDecision` — the verdict the
+firmware acts on and the dashboard logs. The verdict ladder follows
+[`docs/diagrams/04-fusion-decision.mmd`](docs/diagrams/04-fusion-decision.mmd)
+literally; nothing about the rules lives anywhere else in the codebase.
+
+| Artifact | Purpose |
+|---|---|
+| `server/fusion/include/fusion/fusion_engine.hpp` | Public API: `FusionEngine{store, cfg}`, `decide(req)` (system-time path), `decide_at(req, now_unix, now_local)` (deterministic path), `set_override(gate_id, state)` for guard latches, plus a free `generate_uuidv4()` for decision IDs. |
+| `server/fusion/src/fusion_engine.cpp` | Implementation: ten-step verdict ladder, multi-plate top-confidence picker, per-gate override map under a mutex, hand-rolled RFC 4122 UUIDv4 (no extra dep). |
+| `server/fusion/CMakeLists.txt` | `gate_fusion` static library; public deps on `gate_proto` and `gate_auth`, no TensorRT/CUDA/OpenCV linkage. |
+| `tests/fusion/fusion_engine_test.cpp` | 15 Catch2 cases / 148 assertions covering each branch of the ladder, the UUIDv4 format, and the multi-plate selection rule. |
+| `tests/fusion/CMakeLists.txt` | `test_fusion_engine` binary, gated on `TARGET gate_fusion`. |
+| `server/CMakeLists.txt`, `tests/CMakeLists.txt` (updated) | Same `if(TARGET …)` pattern as `auth/` — fusion is added when `gate_auth` exists, tests are added when `gate_fusion` exists. |
+
+### Technical detail
+
+#### Why a separate library, not part of `gate_auth`
+
+The two are functionally orthogonal: `gate_auth` is a *data store*
+(plates in / plates out, plus a pure validity helper), `gate_fusion` is
+a *policy engine* (combines two probabilistic signals, applies overrides,
+disambiguates failure modes). Splitting them means:
+
+- The gRPC `AdminService` (4.3.4) can link only `gate_auth` — it has no
+  business reading fusion config or override state.
+- The `FusionEngine` can be unit-tested with an in-memory store and
+  hand-built `AuthorizeRequest`s, without ever touching the dashboard
+  service or the gRPC layer.
+- A future replacement of the verdict ladder (e.g. a learned policy)
+  swaps `gate_fusion` without disturbing the data layer or the API
+  surface.
+
+#### The verdict ladder, exactly
+
+The ten steps run in this order; the first one to fire short-circuits.
+The order matters — different orderings change semantics.
+
+1. **Force-close override** → `DENIED (FORCE_CLOSE)`. A guard's
+   lockdown beats every data-layer signal, including a guard's own
+   later force-open if they conflict.
+2. **No plate detected** → `DENIED (NO_PLATE_FOUND)`. Frame had a
+   vehicle but no readable plate — surface as a distinct reason so
+   the dashboard can show "ALPR retry needed."
+3. **Pick best plate** by `detection_conf`. Multi-plate frames (rare
+   on residential gates, common on parking-lot wide-angles) collapse
+   to a single candidate here. Normalize via
+   `gate::auth::normalize_plate()` and record on the decision.
+4. **Pick best vehicle** by `class_conf`, default to
+   `VEHICLE_CLASS_UNKNOWN` and the configured
+   `lidar_missing_confidence` (default 0) when no vehicle was
+   classified. Always record `matched_class`.
+5. **Compute combined confidence** as `w1 * mean(detection, ocr) +
+   w2 * lidar_class_conf`. The ALPR side is the *mean* of detection
+   and OCR — a strong YOLO box around an unreadable plate is a poor
+   match, and so is a clean OCR over a low-confidence detection.
+6. **Force-open override** → `AUTHORIZED ("force-open override active")`.
+   Runs *after* the plate is matched so the audit log records what was
+   under the camera, not just "the guard latched the gate."
+7. **Confidence floor** → `LOW_CONFIDENCE` with the more informative
+   sub-reason: whichever side dragged the score down. A reason text
+   includes the actual numbers (`combined=0.625, alpr=0.30, lidar=0.95,
+   threshold=0.70`) so a guard reading the dashboard knows whether to
+   reposition the camera or service the LiDAR.
+8. **Blocklist** → `DENIED (BLOCKLISTED)`. Wins over the allowlist by
+   construction; even a `override_allowlist=true` guard request cannot
+   defeat a blocklist hit. (Force-open *can*, deliberately — see
+   below.)
+9. **Guard manual override (`override_allowlist`)** → `AUTHORIZED
+   ("guard manual override")`. Bypasses the allowlist lookup but not
+   the blocklist. Used when a visitor calls the intercom and the guard
+   approves them through.
+10. **Allowlist lookup**. If miss → `DENIED (NOT_ON_ALLOWLIST)`.
+11. **Time-window + class restriction**. If
+    `gate::auth::is_allowed_now()` denies, disambiguate the failure:
+    - Wrong class → `MANUAL_REVIEW (CLASS_MISMATCH)`. Surfaces in the
+      dashboard as "guard please decide" — a delivery van arriving at
+      a sedan-only entry might still be legitimate.
+    - Outside time window → `DENIED (OUTSIDE_WINDOW)`. Hard deny;
+      time-windows are typically a hard contract (e.g. cleaning crew
+      is *only* allowed Tuesday mornings).
+12. Otherwise → `AUTHORIZED ("plate + class match")`.
+
+Why force-open *can* defeat the blocklist (step 1 ahead of step 8) but
+guard-`override_allowlist=true` *cannot* (step 9 after step 8):
+
+- Force-open is a physical gate state ("gate stays up until I unlatch
+  it") — a guard standing at the gate has already made the decision
+  with full visual context. Pretending the data store still has a veto
+  would be confusing operational behavior.
+- `override_allowlist=true` is a *per-request* approval from the
+  dashboard, often issued without seeing the vehicle. Letting a
+  blocklisted plate through on a per-request approval is exactly the
+  scenario blocklists exist to prevent.
+
+#### Per-gate override state
+
+Overrides are kept in an in-memory `std::unordered_map<gate_id,
+OverrideState>` under a `std::mutex`. Three reasons not to persist them:
+
+- They reflect **physical gate state**, which the firmware reports
+  via `Telemetry`. The fusion engine's view should follow firmware,
+  not lead it; persisting here would create a divergence risk.
+- The dashboard is the source of truth for *requested* state. On
+  server restart, the dashboard re-issues the latch.
+- A locked-down gate after a multi-day server outage is almost never
+  what operators want — re-confirmation by a human is better than a
+  silent re-latch from a stale row.
+
+The mutex is held for microseconds — the contention story is identical
+to `AllowlistStore`'s. `set_override(gate_id, OverrideState::kNone)`
+erases the entry rather than storing the kNone state, keeping the map
+small.
+
+#### Decision IDs — UUIDv4 by hand
+
+Every `AuthDecision` carries a `decision_id` (per the proto), which the
+dashboard uses to deduplicate replays and the firmware echoes on its
+ack. The proto comment specifies UUIDv4. Rather than pull in a UUID
+library, the engine generates them with `std::mt19937` seeded once per
+thread from `std::random_device`, then sets the version (top nibble of
+byte 6 = `0x4`) and variant (top two bits of byte 8 = `10`) bits per
+RFC 4122. 122 bits of entropy per ID is plenty for a deployment that
+issues at most a few decisions per second.
+
+The implementation lives in the same TU as the engine; a unit test
+matches 50 generated IDs against the canonical regex
+`[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}`.
+
+#### Two `decide` paths — production and deterministic
+
+The public API exposes both `decide(req)` and `decide_at(req, now_unix,
+now_local)`. The first delegates to the second after filling
+`std::time(nullptr)` and `localtime_r(...)`. Tests always use the
+deterministic path with hand-built `std::tm` for the day-of-week and
+minute-of-day fields. This is the same pattern the inference layer
+uses — pure code receives time as a parameter; the system-time
+convenience wrapper lives at the API edge.
+
+#### Verified run
+
+```
+$ ninja gate_fusion test_fusion_engine
+[20/20] Linking CXX executable tests/fusion/test_fusion_engine
+
+$ ./tests/fusion/test_fusion_engine --reporter compact
+RNG seed: 2651663747
+All tests passed (148 assertions in 15 test cases)
+```
+
+Combined with the prior milestones, the server-side test suite is now
+38 cases / 244 assertions, all running under one second. Every prior
+test still passes — the fusion library extends rather than replaces.
+
+---
+
+## Previous milestone — Phase 4.3.1: Allowlist + blocklist store (SQLite)
 
 > **Completed 2026-04-25.** Library in
 > [`server/auth/`](server/auth/), tests in
@@ -1280,7 +1445,8 @@ gate-automation/
 │   └── include/           # Shared C++ headers
 ├── server/                # 🔵 Phase 4.2/4.3 — ALPR + LiDAR inference + fusion
 │   ├── inference/         # ✅ Phase 4.2 — TensorRT engines + ALPR pipeline
-│   └── auth/              # ✅ Phase 4.3.1 — allowlist + blocklist store
+│   ├── auth/              # ✅ Phase 4.3.1 — allowlist + blocklist store
+│   └── fusion/            # ✅ Phase 4.3.2 — verdict-ladder decision engine
 ├── firmware/              # ⏳ Phase 4.4 — ESP-IDF field controller firmware
 ├── simulation/            # ⏳ Phase 4.6 — virtual gate harness
 ├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
@@ -1288,7 +1454,8 @@ gate-automation/
 ├── tests/                 # Catch2 unit + contract tests
 │   ├── proto/             # ✅ Phase 4.1 — proto contract tests
 │   ├── inference/         # ✅ Phase 4.2.6 — host-side algorithm tests
-│   └── auth/              # ✅ Phase 4.3.1 — allowlist store tests
+│   ├── auth/              # ✅ Phase 4.3.1 — allowlist store tests
+│   └── fusion/            # ✅ Phase 4.3.2 — fusion engine tests
 ├── scripts/bootstrap/     # Reproducible WSL2 dev environment scripts
 └── .github/workflows/     # CI: build, test, lint, codeql, commitlint, proto
 ```

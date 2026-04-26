@@ -25,3 +25,10 @@ endif()
 if(TARGET gate_auth)
     add_subdirectory(auth)
 endif()
+
+# Fusion-engine tests link against gate_fusion (which transitively requires
+# gate_proto and gate_auth). Same gating model — CPU-only proto builds get
+# the full verdict-ladder coverage with no TensorRT cost.
+if(TARGET gate_fusion)
+    add_subdirectory(fusion)
+endif()

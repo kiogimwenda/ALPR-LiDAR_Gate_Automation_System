@@ -17,3 +17,9 @@ add_subdirectory(inference)
 if(TARGET gate_proto)
     add_subdirectory(auth)
 endif()
+
+# fusion/ depends on both gate_proto and gate_auth — the verdict ladder needs
+# the proto types and the allowlist store. Same gating rationale as auth/.
+if(TARGET gate_auth)
+    add_subdirectory(fusion)
+endif()
