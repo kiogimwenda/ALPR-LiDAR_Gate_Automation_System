@@ -82,6 +82,25 @@ Status DashboardServiceImpl::IssueCommand(ServerContext* /*ctx*/, const GateComm
     const std::string command_id = command.command_id();
     const std::string gate_id = command.gate_id();
 
+    // Latch commands change the fusion engine's per-gate override state
+    // immediately — before publishing, so a dashboard subscriber that
+    // races the publication and re-Authorizes still sees the right
+    // override. (Authorize and the bus both lock independently; this is
+    // a happens-before guarantee for the override map.)
+    switch (command.kind()) {
+        case gate::v1::CommandKind::COMMAND_KIND_LATCH_OPEN:
+            fusion_.set_override(gate_id, gate::fusion::OverrideState::kForceOpen);
+            break;
+        case gate::v1::CommandKind::COMMAND_KIND_LATCH_CLOSE:
+            fusion_.set_override(gate_id, gate::fusion::OverrideState::kForceClose);
+            break;
+        case gate::v1::CommandKind::COMMAND_KIND_RELEASE_LATCH:
+            fusion_.set_override(gate_id, gate::fusion::OverrideState::kNone);
+            break;
+        default:
+            break;  // Non-latch commands don't touch override state.
+    }
+
     // Publish the command itself (fan-out so other dashboards see it).
     bus_.publish_command(default_site_id_, std::move(command));
 

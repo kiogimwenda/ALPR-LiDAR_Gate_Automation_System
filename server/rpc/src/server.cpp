@@ -10,8 +10,12 @@ namespace gate::rpc {
 
 Server::Server(gate::auth::AllowlistStore& store, gate::fusion::FusionEngine& fusion,
                gate::dash::EventBroadcaster& bus, ServerConfig cfg)
-    : cfg_(std::move(cfg)), admin_(store), dashboard_(bus, fusion, cfg_.default_site_id) {
+    : cfg_(std::move(cfg)),
+      admin_(store),
+      dashboard_(bus, fusion, cfg_.default_site_id),
+      field_(bus, fusion, cfg_.default_site_id) {
     dashboard_.set_subscribe_poll_interval(cfg_.subscribe_poll_interval);
+    field_.set_subscribe_poll_interval(cfg_.subscribe_poll_interval);
 }
 
 Server::~Server() {
@@ -27,6 +31,7 @@ bool Server::start() {
                              &selected_port);
     builder.RegisterService(&admin_);
     builder.RegisterService(&dashboard_);
+    builder.RegisterService(&field_);
     server_ = builder.BuildAndStart();
     if (!server_)
         return false;

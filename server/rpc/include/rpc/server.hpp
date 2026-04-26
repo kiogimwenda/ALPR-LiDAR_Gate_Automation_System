@@ -23,6 +23,7 @@
 #include "fusion/fusion_engine.hpp"
 #include "rpc/admin_service.hpp"
 #include "rpc/dashboard_service.hpp"
+#include "rpc/field_controller_service.hpp"
 
 namespace gate::rpc {
 
@@ -65,6 +66,7 @@ private:
     ServerConfig cfg_;
     AdminServiceImpl admin_;
     DashboardServiceImpl dashboard_;
+    FieldControllerServiceImpl field_;
     std::unique_ptr<grpc::Server> server_;
     std::string bound_address_;
 };

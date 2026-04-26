@@ -95,7 +95,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.3 | Dashboard event broadcaster | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ⏳ Pending |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
@@ -106,7 +106,183 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.3.4: gRPC server + Dashboard/Admin services
+## Latest accomplishment — Phase 4.3.5: FieldControllerService + gate-server daemon
+
+> **Completed 2026-04-26.** New service in
+> [`server/rpc/{include/rpc,src}/field_controller_service.{hpp,cpp}`](server/rpc/),
+> daemon entry point in [`server/src/main.cpp`](server/src/main.cpp).
+
+### What I built
+
+The third gRPC service from `gate.v1` — `FieldControllerService` — and
+the daemon binary that brings everything online: `gate-server`. The
+firmware can now connect (or rather, will connect once Phase 4.4 ships
+firmware), the dashboard can subscribe and issue commands, the admin
+can manage the allowlist, and a SIGTERM drains the whole stack
+cleanly.
+
+| Artifact | Purpose |
+|---|---|
+| `server/rpc/include/rpc/field_controller_service.hpp` + `src/field_controller_service.cpp` | `FieldControllerServiceImpl` — `Control` (bidi stream — Telemetry/Ack/Fault from firmware → bus, GateCommand from bus → firmware via a writer thread per connection), `SubmitDetection` (firmware-side ALPR shortcut: `DetectionFrame` → `FusionEngine::decide` → `AuthDecision`), `DeliverOta` and `ReportOtaProgress` returning `UNIMPLEMENTED` until Phase 4.5. |
+| `server/src/main.cpp` | The composition root. CLI11 for arg parsing, spdlog for logging, opens the SQLite allowlist, constructs the fusion engine and broadcaster, registers the three services via `gate::rpc::Server`, installs `SIGINT`/`SIGTERM` handlers using async-signal-safe `sig_atomic_t` polling, drains the broadcaster + gRPC server on shutdown. |
+| `server/CMakeLists.txt` (updated) | New `gate-server` executable target — builds only when `gate_rpc` is available. Links `gate_rpc + CLI11::CLI11 + spdlog::spdlog`. |
+| `server/rpc/CMakeLists.txt`, `include/rpc/server.hpp`, `src/server.cpp` (updated) | Register the new service alongside Admin and Dashboard, mirror the configurable poll interval into the field controller. |
+| `server/rpc/src/dashboard_service.cpp` (updated) | `IssueCommand` now wires `LATCH_OPEN` / `LATCH_CLOSE` / `RELEASE_LATCH` to `FusionEngine::set_override` *before* publishing the command — happens-before guarantee for races between issue+authorize. |
+| `tests/rpc/field_controller_service_test.cpp` | 4 cases / 13 assertions: `SubmitDetection` round-trip, validation, both OTA stubs return `UNIMPLEMENTED`. |
+| `tests/rpc/dashboard_service_test.cpp` (updated) | New regression case for the LATCH-override wiring (8 sub-assertions). |
+| Daemon smoke verified: `gate-server --listen 127.0.0.1:0 --db-path /tmp/test.db`, then `kill -TERM` → exits 0 with "Shutdown requested — draining…" + "gate-server stopped." in the log. |
+
+### Technical detail
+
+#### Bidi Control stream — one writer thread per firmware connection
+
+gRPC's synchronous server model gives each RPC its own thread. For
+unidirectional RPCs that's fine, but bidi `Control` needs to read
+from the firmware *and* write to it concurrently. The clean pattern
+is one extra thread for the writer side:
+
+- Read the first envelope (must be `Telemetry`) to learn the
+  firmware's `gate_id`. Without that we don't know how to route
+  commands; we'd be guessing every payload's owner.
+- Subscribe to the broadcaster filtered to that gate, with the
+  command kind bit set so non-command events drop out before the
+  writer-thread check.
+- Spawn a writer thread that polls `sub->next(poll_)`, drops
+  non-Command events as a defensive layer, and writes `Command`
+  envelopes to the stream until the client disconnects or the
+  context is cancelled.
+- Reader loop runs on the gRPC handler thread: dispatches each
+  `Telemetry`/`CommandAck`/`FaultEvent` to the broadcaster.
+  `Command` payloads from the firmware side are server-only and
+  silently dropped.
+- On reader exit (firmware disconnected), set the writer's
+  shutdown flag and join.
+
+Two threads per connection scales to dozens of gates per server —
+plenty for the residential and small-commercial deployments this
+project targets. A high-fanout site with hundreds of gates would
+want async/callback-based gRPC; that's a future call out, not a
+problem for v1.
+
+#### Why Telemetry-first as the gate identifier
+
+Every other payload type either has no `gate_id` (`OtaProgress`,
+`CommandAck`) or could plausibly arrive *after* a reconnect with
+stale state. Forcing the firmware to send `Telemetry` first means:
+
+- The server learns the gate identity from a payload designed to
+  carry it (the `Telemetry` message has `gate_id` as field 1).
+- A reconnecting firmware re-identifies itself unambiguously.
+- A misbehaving client that sends `FaultEvent` first gets an
+  immediate `INVALID_ARGUMENT` rather than a fuzzy "no gate" error
+  later.
+
+The first telemetry is published to the broadcaster too, so the
+dashboard sees the connection via the same event stream as later
+beats.
+
+#### Where LATCH commands change override state
+
+A force-open or force-close override is *physical state* — the gate
+stays open or stays closed until the guard releases the latch. Two
+places could update `FusionEngine::set_override`:
+
+1. `DashboardService::IssueCommand` (where the command is born).
+2. `FieldControllerService::Control` writer (just before delivery to
+   firmware).
+
+This milestone wires it in (1). Reasoning:
+
+- The override is an *immediate* effect of the dashboard's decision.
+  A subsequent `Authorize` that races the publication should see
+  the new state.
+- It works even if no firmware is connected — useful for tests, dev
+  mode, and during firmware reboot windows.
+- Centralizing it at the point of authorization keeps the control
+  flow legible: the dashboard writes the command, the engine state
+  updates, the bus carries the command, the firmware (when
+  connected) executes it.
+
+A LATCH command with no firmware listener still updates fusion
+state, which is the right behavior — a guard locking down at 2 AM
+shouldn't depend on the gate's network being up.
+
+#### Daemon lifecycle and signal handling
+
+The earlier draft of `main.cpp` used `std::condition_variable::notify_all()`
+inside a `std::signal` handler. That's undefined behavior — POSIX
+permits only async-signal-safe operations from a true signal context,
+and `pthread_cond_signal` (which `notify_all` ultimately calls) isn't
+on the list. The fix is the canonical pattern:
+
+```cpp
+volatile std::sig_atomic_t g_shutdown_requested = 0;
+void handle_signal(int) { g_shutdown_requested = 1; }
+// In main:
+while (g_shutdown_requested == 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+}
+```
+
+Setting a `sig_atomic_t` is one of the very few operations the
+standard guarantees safe from a signal handler. The 100 ms poll
+adds at most one tenth of a second to shutdown latency — negligible
+for a daemon, and the cost is purely on the shutdown path.
+
+Verified clean exit on `SIGTERM`: process logs "Shutdown requested
+— draining…", calls `bus.stop()` (wakes every `Subscribe` RPC),
+calls `server.shutdown(deadline)` (drains in-flight RPCs),
+returns 0 from main.
+
+#### CLI surface
+
+`gate-server --help` (rendered):
+
+```
+gate-automation server: gRPC + ALPR + LiDAR fusion daemon
+OPTIONS:
+  --listen TEXT [0.0.0.0:50051]
+  --site-id TEXT [default]
+  --db-path TEXT [allowlist.db]
+  --log-level TEXT [info]
+  --shutdown-deadline UINT [5]
+```
+
+CLI11's `default_str` puts the current default in square brackets
+on the help page — important for ops engineers grepping
+`--help` to figure out where the database lives.
+
+#### Verified run
+
+```
+$ ninja gate-server test_rpc_admin test_rpc_dashboard test_rpc_field test_rpc_server
+[31/31] Linking CXX executable server/gate-server
+
+$ ./tests/rpc/test_rpc_admin
+All tests passed (24 assertions in 4 test cases)
+$ ./tests/rpc/test_rpc_dashboard
+All tests passed (33 assertions in 5 test cases)
+$ ./tests/rpc/test_rpc_field
+All tests passed (13 assertions in 4 test cases)
+$ ./tests/rpc/test_rpc_server
+All tests passed (4 assertions in 2 test cases)
+
+$ ./server/gate-server --listen 127.0.0.1:0 --db-path /tmp/x.db &
+[info] gRPC server listening on 127.0.0.1:41037
+$ kill -TERM $!; wait
+[info] Shutdown requested — draining...
+[info] gate-server stopped.
+exit code: 0
+```
+
+The full server-side suite is now **67 cases / 374 assertions** across
+inference + auth + fusion + dash + rpc + the new field service. The
+server binary is ~7 MB stripped, links statically against everything
+except the system runtime, and starts in under 5 ms.
+
+---
+
+## Previous milestone — Phase 4.3.4: gRPC server + Dashboard/Admin services
 
 > **Completed 2026-04-26.** Library in
 > [`server/rpc/`](server/rpc/), tests in

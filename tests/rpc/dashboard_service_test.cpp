@@ -122,6 +122,36 @@ TEST_CASE("DashboardService::Authorize delegates to fusion engine and publishes 
     REQUIRE(evs[0].decision().decision_id() == resp.decision_id());
 }
 
+TEST_CASE("DashboardService::IssueCommand wires LATCH commands to fusion override",
+          "[rpc][dashboard][command][override]") {
+    AllowlistStore store = AllowlistStore::open(":memory:");
+    FusionEngine fusion{store};
+    EventBroadcaster bus;
+    DashboardServiceImpl svc{bus, fusion, "site-a"};
+    grpc::ServerContext ctx;
+
+    GateCommand cmd;
+    cmd.set_gate_id("gate-north");
+    cmd.set_kind(CommandKind::COMMAND_KIND_LATCH_OPEN);
+    CommandAck ack;
+    REQUIRE(svc.IssueCommand(&ctx, &cmd, &ack).ok());
+    REQUIRE(fusion.override_for("gate-north") == gate::fusion::OverrideState::kForceOpen);
+
+    cmd.set_kind(CommandKind::COMMAND_KIND_LATCH_CLOSE);
+    REQUIRE(svc.IssueCommand(&ctx, &cmd, &ack).ok());
+    REQUIRE(fusion.override_for("gate-north") == gate::fusion::OverrideState::kForceClose);
+
+    cmd.set_kind(CommandKind::COMMAND_KIND_RELEASE_LATCH);
+    REQUIRE(svc.IssueCommand(&ctx, &cmd, &ack).ok());
+    REQUIRE(fusion.override_for("gate-north") == gate::fusion::OverrideState::kNone);
+
+    // Non-latch commands leave override state alone.
+    fusion.set_override("gate-north", gate::fusion::OverrideState::kForceOpen);
+    cmd.set_kind(CommandKind::COMMAND_KIND_OPEN_GATE);
+    REQUIRE(svc.IssueCommand(&ctx, &cmd, &ack).ok());
+    REQUIRE(fusion.override_for("gate-north") == gate::fusion::OverrideState::kForceOpen);
+}
+
 TEST_CASE("DashboardService::Authorize rejects request missing site_id or gate_id",
           "[rpc][dashboard][authorize][validation]") {
     AllowlistStore store = AllowlistStore::open(":memory:");
