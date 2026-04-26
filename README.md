@@ -94,7 +94,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.1 | Allowlist + blocklist store (SQLite) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.3 | Dashboard event broadcaster | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ⏳ Pending |
 | 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
@@ -106,7 +106,152 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.3.3: Dashboard event broadcaster
+## Latest accomplishment — Phase 4.3.4: gRPC server + Dashboard/Admin services
+
+> **Completed 2026-04-26.** Library in
+> [`server/rpc/`](server/rpc/), tests in
+> [`tests/rpc/`](tests/rpc/).
+
+### What I built
+
+The first piece of the server that speaks to the outside world: a
+`grpc::Server` lifecycle wrapper plus two of the three services from
+the `gate.v1` proto contract — `DashboardService` (for the web UI
+backend) and `AdminService` (for allowlist CRUD). The third service,
+`FieldControllerService`, requires a bidi stream and a stitch-up to
+the ALPR pipeline; it lands in 4.3.5 alongside `main.cpp`.
+
+| Artifact | Purpose |
+|---|---|
+| `server/rpc/include/rpc/server.hpp` + `src/server.cpp` | `gate::rpc::Server` — owns `grpc::Server`, registers services, exposes `start()` / `wait()` / `shutdown(deadline)` / `bound_address()`. Built with health-check enabled and `InsecureServerCredentials`; TLS is a deployment concern handled in 4.8. |
+| `server/rpc/include/rpc/admin_service.hpp` + `src/admin_service.cpp` | `AdminServiceImpl` — three unary RPCs (`UpsertAllowlist`, `ListAllowlist`, `DeleteAllowlist`) that adapt protobuf shapes to the `AllowlistStore` C++ API. Empty `site_id` → `INVALID_ARGUMENT`; store exceptions → `INTERNAL`. |
+| `server/rpc/include/rpc/dashboard_service.hpp` + `src/dashboard_service.cpp` | `DashboardServiceImpl` — `Subscribe` (server-streaming → broadcaster), `IssueCommand` (publishes the command + a synthesized "received" ack to the bus), `Authorize` (delegates to `FusionEngine::decide` and publishes the result). |
+| `server/rpc/CMakeLists.txt` | `gate_rpc` static library; public deps on `gate_proto + gate_auth + gate_fusion + gate_dash`. Carries no system or runtime deps of its own — gRPC and Threads come transitively via `gate_proto` and `gate_dash`. |
+| `tests/rpc/admin_service_test.cpp` | 4 cases / 24 assertions: round-trip upsert→lookup→delete, paginated list, validation errors. |
+| `tests/rpc/dashboard_service_test.cpp` | 4 cases / 25 assertions: `IssueCommand` stamps id+ts and publishes both command and ack to the bus, `Authorize` delegates to fusion and publishes the decision, validation errors on missing fields. |
+| `tests/rpc/server_lifecycle_test.cpp` | 2 cases / 4 assertions: real `grpc::Server` binds an ephemeral port and reports the resolved address; binding port 1 unprivileged correctly fails. |
+| `tests/rpc/CMakeLists.txt` | Three test binaries, all gated on `TARGET gate_rpc`. |
+| `server/CMakeLists.txt`, `tests/CMakeLists.txt` (updated) | rpc subdir gated on `TARGET gate_fusion AND TARGET gate_dash`; tests on `TARGET gate_rpc`. |
+
+### Technical detail
+
+#### Why split AdminService into a thin proxy
+
+`AdminServiceImpl` does almost nothing of its own — it copies entries
+from the request's repeated field into a `std::vector`, calls
+`AllowlistStore::upsert`, and copies the stats back. The temptation
+was to skip the wrapper entirely and have the gRPC stub speak to the
+store directly. Three reasons it's still worth its weight:
+
+- **Validation lives at the gRPC boundary**, not in the data store.
+  The store enforces invariants on what it stores; the service rejects
+  malformed *requests* (empty `site_id`) with `INVALID_ARGUMENT`. That
+  separation lets the store be reused by future non-gRPC callers
+  (CLI bulk import, simulation harness) without re-deciding what
+  "valid" means.
+- **Status-code translation** is a service responsibility. The store
+  throws `AuthDbException` on SQLite failures; the service catches
+  and surfaces `INTERNAL`. Keeping that catch in the service means
+  the store layer can change its exception type without leaking into
+  every RPC handler.
+- **Tests are the same shape as production**: the test calls
+  `svc.UpsertAllowlist(&ctx, &req, &resp)` exactly as gRPC will. No
+  mocks, no fakes, no glue.
+
+The proto reuses `UpsertAllowlistResponse` for `DeleteAllowlist`'s
+return — the count of removed rows lands in the `updated` field with
+`inserted = 0`. That's documented in the impl comment so future
+readers don't grep for a missing `DeleteAllowlistResponse` message.
+
+#### IssueCommand: synthesized "received" ack now, real completion ack later
+
+The dashboard's `IssueCommand` RPC is unary — it returns a single
+`CommandAck`. But the *real* ack — the one that says "the firmware
+actually pulsed the relay" — comes back via `FieldControllerService`
+(which 4.3.5 delivers) and from there flows out the same dashboard
+event bus to every other dashboard subscriber. So `IssueCommand`'s
+direct response is necessarily synthetic: `received_ts` set to now,
+`completed = false`, `success = false`. The dashboard knows to wait
+for the *completion* ack via its `Subscribe` stream.
+
+Two events go on the bus per `IssueCommand` call:
+
+1. The command itself — so other dashboards see "guard:alice issued
+   OPEN_GATE on gate-north." The command_id is filled in if the
+   caller didn't supply one (most won't), via the shared
+   `gate::fusion::generate_uuidv4()` from 4.3.2.
+2. The synthesized "received" ack — so a dashboard that subscribed
+   *before* issuing also gets the receipt-confirmation event,
+   without having to special-case "I'm the one who issued this."
+
+When the firmware later completes the command, 4.3.5's
+`FieldControllerService` will publish the *completion* ack to the
+same bus, with the same `command_id` and `completed=true`.
+
+#### Subscribe: cancellation requires polling
+
+gRPC's server-streaming `ServerWriter::Write()` returns `false` when
+the client has gone away, but there's no "wake me when the writer
+cancels" primitive that composes with our broadcaster's condition
+variable. So the handler runs a poll loop:
+
+- Drain any replayed events first (no wait — they were preloaded
+  into the per-sub queue at `subscribe()` time).
+- Loop on `sub->next(subscribe_poll_interval)`, default 500ms. On
+  timeout, re-check `ctx->IsCancelled()` and `bus_.stopped()`.
+- On a real event, call `writer->Write(ev)`; bail if it fails.
+
+500ms is the right tradeoff for this product: a dashboard tab that
+closes is detected within 500ms (well under typical user perception
+of "instant"), while idle-bus CPU is one wakeup every 500ms per
+subscriber — negligible.
+
+#### The Server lifecycle
+
+`grpc::Server` is built via `ServerBuilder` with health-check enabled
+(satisfies the standard `grpc.health.v1.Health` service automatically;
+operators get `grpc_health_probe`-friendly endpoints for free).
+`AddListeningPort()` accepts a pointer-out parameter for the resolved
+port; passing `:0` gives an ephemeral port and we mirror the resolved
+address back via `bound_address()` for tests.
+
+`shutdown()` is the graceful-stop path: it computes a deadline from
+the configured `deadline` parameter (default 2 seconds) and calls
+`grpc::Server::Shutdown(deadline)`. In-flight RPCs get the deadline to
+finish; new RPCs are rejected immediately. The destructor calls
+`shutdown()` if `start()` was ever called, so leaving scope is a clean
+shutdown by default.
+
+#### Dependency direction stays one-way
+
+The CMake gate model now reads top-to-bottom: `gate_proto` →
+`{gate_auth, gate_dash}` → `gate_fusion` (depends on auth + proto) →
+`gate_rpc` (depends on all four). No cycle, no transitive reach
+across the graph. This matters because the next milestone (4.3.5)
+adds a thin `main.cpp` that links *only* `gate_rpc` plus
+`gate_inference` for the ALPR pipeline — adding the field controller
+service doesn't reshape the rest of the tree.
+
+#### Verified run
+
+```
+$ ninja gate_rpc test_rpc_admin test_rpc_dashboard test_rpc_server
+[25/25] Linking CXX executable tests/rpc/test_rpc_admin
+
+$ ./tests/rpc/test_rpc_admin
+All tests passed (24 assertions in 4 test cases)
+$ ./tests/rpc/test_rpc_dashboard
+All tests passed (25 assertions in 4 test cases)
+$ ./tests/rpc/test_rpc_server
+All tests passed (4 assertions in 2 test cases)
+```
+
+The full server-side suite is now **63 cases / 353 assertions** across
+inference + auth + fusion + dash + rpc, all passing.
+
+---
+
+## Previous milestone — Phase 4.3.3: Dashboard event broadcaster
 
 > **Completed 2026-04-26.** Library in
 > [`server/dash/`](server/dash/), tests in
@@ -1584,7 +1729,8 @@ gate-automation/
 │   ├── inference/         # ✅ Phase 4.2 — TensorRT engines + ALPR pipeline
 │   ├── auth/              # ✅ Phase 4.3.1 — allowlist + blocklist store
 │   ├── fusion/            # ✅ Phase 4.3.2 — verdict-ladder decision engine
-│   └── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
+│   ├── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
+│   └── rpc/               # ✅ Phase 4.3.4 — gRPC server + Dashboard/Admin services
 ├── firmware/              # ⏳ Phase 4.4 — ESP-IDF field controller firmware
 ├── simulation/            # ⏳ Phase 4.6 — virtual gate harness
 ├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
@@ -1594,7 +1740,8 @@ gate-automation/
 │   ├── inference/         # ✅ Phase 4.2.6 — host-side algorithm tests
 │   ├── auth/              # ✅ Phase 4.3.1 — allowlist store tests
 │   ├── fusion/            # ✅ Phase 4.3.2 — fusion engine tests
-│   └── dash/              # ✅ Phase 4.3.3 — broadcaster fan-out tests
+│   ├── dash/              # ✅ Phase 4.3.3 — broadcaster fan-out tests
+│   └── rpc/               # ✅ Phase 4.3.4 — service handler + lifecycle tests
 ├── scripts/bootstrap/     # Reproducible WSL2 dev environment scripts
 └── .github/workflows/     # CI: build, test, lint, codeql, commitlint, proto
 ```

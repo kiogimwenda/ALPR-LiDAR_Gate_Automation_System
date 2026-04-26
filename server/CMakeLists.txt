@@ -28,3 +28,9 @@ endif()
 if(TARGET gate_proto)
     add_subdirectory(dash)
 endif()
+
+# rpc/ depends on gate_proto + gate_auth + gate_fusion + gate_dash.
+# Gate on the strictest of those (fusion implies the others).
+if(TARGET gate_fusion AND TARGET gate_dash)
+    add_subdirectory(rpc)
+endif()

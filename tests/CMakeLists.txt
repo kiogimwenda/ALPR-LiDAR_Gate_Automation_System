@@ -37,3 +37,8 @@ endif()
 if(TARGET gate_dash)
     add_subdirectory(dash)
 endif()
+
+# RPC service handler + lifecycle tests.
+if(TARGET gate_rpc)
+    add_subdirectory(rpc)
+endif()
