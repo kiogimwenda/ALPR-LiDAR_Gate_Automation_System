@@ -90,14 +90,14 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ✅ Complete |
-| **4.3** | **Server RPC + fusion engine** | 🔵 **In progress** |
+| **4.3** | **Server RPC + fusion engine** | ✅ **Complete** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.1 | Allowlist + blocklist store (SQLite) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.3 | Dashboard event broadcaster | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ⏳ Pending |
-| 4.4 | Firmware drivers (W5500, relays, sensors) | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ✅ Complete |
+| **4.4** | **Firmware drivers (W5500, relays, sensors)** | 🔵 **In progress — next** |
 | 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
 | 4.7 | Dashboard backend + frontend | ⏳ Pending |
@@ -106,7 +106,172 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.3.5: FieldControllerService + gate-server daemon
+## Latest accomplishment — Phase 4.3 complete: end-to-end gRPC server delivered
+
+> **Completed 2026-04-26.** Final sub-milestone (4.3.6) tests in
+> [`tests/integration/grpc_roundtrip_test.cpp`](tests/integration/grpc_roundtrip_test.cpp).
+
+### What I built
+
+The capstone of Phase 4.3: end-to-end integration tests over real
+gRPC channels, plus the closure sweep that retires Phase 4.3 in the
+master timeline. Every layer of the server is now exercised both in
+isolation (unit tests) and through the wire (integration tests).
+
+| Artifact | Purpose |
+|---|---|
+| `tests/integration/grpc_roundtrip_test.cpp` | 7 cases / 55 assertions: a `ServerHarness` that spins up `gate::rpc::Server` on `127.0.0.1:0`, builds real client stubs, and runs the four RPC services through their paces — Admin CRUD over the wire, Dashboard `Authorize`, `IssueCommand`+`Subscribe` event-stream, FieldController `SubmitDetection`, and the bidi `Control` stream forwarding a command + accepting an ack. |
+| `tests/integration/CMakeLists.txt` | `test_integration_grpc_roundtrip` binary, gated on `TARGET gate_rpc`, with a 30s `catch_discover_tests` timeout for the server-startup overhead. |
+| `tests/CMakeLists.txt` (updated) | Adds the `integration/` subdir alongside `rpc/`. |
+| README master timeline | Phase 4.3 → ✅ Complete; Phase 4.4 (Firmware drivers) → 🔵 In progress — next. |
+
+### Technical detail
+
+#### Why a separate integration tier — not just bigger unit tests
+
+The handler-level tests in `tests/rpc/` exercise each service's
+proto adapter and validation logic by calling the methods directly
+with synthetic `ServerContext` objects. They run in microseconds and
+form the bulk of test coverage. But they can't catch:
+
+- **HTTP/2 framing and gRPC channel mechanics.** Did the
+  `AddListeningPort` succeed? Does `BuildAndStart()` actually
+  produce a server that accepts connections? Does the Channel
+  resolve `127.0.0.1:0` to the right port?
+- **The bidi `Control` stream.** The handler-level test for
+  `Control` would need a fake `ServerReaderWriter`, which is
+  awkward and error-prone — the real one has subtle blocking
+  semantics that affect cancellation.
+- **Server-streaming `Subscribe`.** Same issue: the writer's
+  cancellation behavior under client disconnect is a property of
+  the gRPC layer, not the handler code.
+
+The integration tier is the only place those cross-layer behaviors
+live. It runs after every other tier passes — if a unit test fails,
+that's where the bug is; if an integration test fails on a passing
+unit suite, the wire layer is the suspect.
+
+#### `ServerHarness` — one server per test, ephemeral port
+
+Each `TEST_CASE` constructs its own `ServerHarness`:
+
+```cpp
+class ServerHarness {
+    AllowlistStore store_ = AllowlistStore::open(":memory:");
+    FusionEngine fusion_{store_};
+    EventBroadcaster bus_;
+    Server server_{store_, fusion_, bus_, makeConfig()};
+    std::shared_ptr<grpc::Channel> channel_;
+public:
+    ServerHarness() {
+        REQUIRE(server_.start());
+        channel_ = grpc::CreateChannel(server_.bound_address(),
+                                       grpc::InsecureChannelCredentials());
+    }
+    ~ServerHarness() {
+        bus_.stop();
+        server_.shutdown(std::chrono::milliseconds{500});
+    }
+};
+```
+
+Two design choices worth flagging:
+
+- **`127.0.0.1:0` ephemeral port.** Lets cases run in parallel
+  without port collisions. The harness reads
+  `server_.bound_address()` after `start()` — that field carries
+  the resolved port, exactly the pattern the lifecycle test in
+  4.3.4 already exercised.
+- **`bus_.stop()` *before* `server_.shutdown()`** in the destructor.
+  If we shut down the server first, in-flight `Subscribe` RPCs
+  would block on `next()` until their poll fired — `bus_.stop()`
+  flips the closed flag and the next `next()` returns `nullopt`,
+  letting the handler exit immediately. Cleanest teardown order.
+
+#### The bidi `Control` test — the one that proves it all works
+
+This is the test the whole architecture had to be designed to
+make possible:
+
+1. Open `Control(ctx)`. The client gets a `ClientReaderWriter`.
+2. Client writes `Telemetry{gate_id="gate-north"}` to identify
+   itself.
+3. Test sleeps 100 ms (so the server's writer thread starts up
+   and the broadcaster subscription is registered before the
+   next event), then publishes a `GateCommand` directly to the
+   bus targeted at `gate-north`.
+4. Client reads the next envelope from the stream — must be the
+   forwarded command.
+5. Client writes a `CommandAck{completed=true}` back to the
+   server.
+6. Test starts a separate `Subscribe` RPC and waits for the ack
+   to appear on the dashboard event stream — proving the reader
+   side of `Control` correctly published the ack via the bus.
+
+If this case passes, the full server-side data plane works:
+firmware → server reads, server bus fan-out, server writes →
+firmware. Failure modes for this test are mostly thread-ordering
+issues; the 100 ms grace is the safety margin against subscription
+registration races.
+
+#### The complete server-side test surface
+
+| Tier | Binary | Cases | Assertions |
+|---|---|---|---|
+| Inference (CPU algos) | `test_inference_cpu_algorithms` | 11 | 38 |
+| Auth (allowlist store) | `test_auth_allowlist_store` | 12 | 58 |
+| Fusion (verdict ladder) | `test_fusion_engine` | 15 | 148 |
+| Dash (event broadcaster) | `test_dash_event_broadcaster` | 15 | 56 |
+| RPC handlers — Admin | `test_rpc_admin` | 4 | 24 |
+| RPC handlers — Dashboard | `test_rpc_dashboard` | 5 | 33 |
+| RPC handlers — Field | `test_rpc_field` | 4 | 13 |
+| RPC server lifecycle | `test_rpc_server` | 2 | 4 |
+| Integration (gRPC wire) | `test_integration_grpc_roundtrip` | 7 | 55 |
+| **Total** | | **75** | **429** |
+
+The whole suite runs in well under 5 seconds on a development
+workstation. Every layer below the gRPC wire is reachable from
+production code paths, so the unit tests cover what production
+runs; the integration tier confirms the wire layer agrees.
+
+#### What Phase 4.3 delivered
+
+The user-visible artifact is one binary — `gate-server` — that
+exposes a complete `gate.v1` gRPC surface:
+
+- **AdminService** — allowlist CRUD with CRUD + paginated list.
+- **DashboardService** — `Authorize` (run a frame through the
+  fusion engine and get a verdict), `IssueCommand` (latch / pulse
+  / open / close, with side effects on fusion override state),
+  `Subscribe` (stream all events with site/gate/kind filters and
+  replay-since-event-id).
+- **FieldControllerService** — `Control` bidi stream for
+  firmware ↔ server, `SubmitDetection` for dev-mode ALPR
+  shortcut, `DeliverOta` and `ReportOtaProgress` stubbed for
+  Phase 4.5.
+
+The binary takes a SQLite path, an address to bind, and a site id;
+it logs via spdlog and shuts down cleanly on `SIGTERM`. The full
+data-plane works end-to-end: a dashboard can issue a command, the
+firmware (when Phase 4.4 lands) will receive it via `Control`,
+ack it, and that ack flows back out the dashboard's `Subscribe`
+stream — all without any code in `main.cpp` knowing about the
+specifics of either side.
+
+#### What Phase 4.4 will need
+
+The next milestone (firmware drivers) will need to consume this
+gRPC surface from the ESP-IDF side. The contract is fixed in
+`shared/proto/gate_service.proto`; the wire is verified by these
+integration tests. Phase 4.4's job is the W5500 ethernet driver,
+the relay-control GPIOs, the limit-switch and safety-beam GPIOs,
+the LED strip driver, and the small Telemetry beat that opens
+`Control`. The fusion engine's overrides will start lighting up
+gates the moment Phase 4.4 lands.
+
+---
+
+## Previous milestone — Phase 4.3.5: FieldControllerService + gate-server daemon
 
 > **Completed 2026-04-26.** New service in
 > [`server/rpc/{include/rpc,src}/field_controller_service.{hpp,cpp}`](server/rpc/),
@@ -1901,12 +2066,13 @@ gate-automation/
 ├── shared/
 │   ├── proto/             # ✅ Phase 4.1 — gRPC wire contract
 │   └── include/           # Shared C++ headers
-├── server/                # 🔵 Phase 4.2/4.3 — ALPR + LiDAR inference + fusion
+├── server/                # ✅ Phase 4.2/4.3 — ALPR + LiDAR inference + fusion + RPC
 │   ├── inference/         # ✅ Phase 4.2 — TensorRT engines + ALPR pipeline
 │   ├── auth/              # ✅ Phase 4.3.1 — allowlist + blocklist store
 │   ├── fusion/            # ✅ Phase 4.3.2 — verdict-ladder decision engine
 │   ├── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
-│   └── rpc/               # ✅ Phase 4.3.4 — gRPC server + Dashboard/Admin services
+│   ├── rpc/               # ✅ Phase 4.3.4/5 — gRPC services + lifecycle wrapper
+│   └── src/main.cpp       # ✅ Phase 4.3.5 — gate-server daemon entry point
 ├── firmware/              # ⏳ Phase 4.4 — ESP-IDF field controller firmware
 ├── simulation/            # ⏳ Phase 4.6 — virtual gate harness
 ├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
@@ -1917,7 +2083,8 @@ gate-automation/
 │   ├── auth/              # ✅ Phase 4.3.1 — allowlist store tests
 │   ├── fusion/            # ✅ Phase 4.3.2 — fusion engine tests
 │   ├── dash/              # ✅ Phase 4.3.3 — broadcaster fan-out tests
-│   └── rpc/               # ✅ Phase 4.3.4 — service handler + lifecycle tests
+│   ├── rpc/               # ✅ Phase 4.3.4/5 — service handler + lifecycle tests
+│   └── integration/       # ✅ Phase 4.3.6 — end-to-end gRPC roundtrip tests
 ├── scripts/bootstrap/     # Reproducible WSL2 dev environment scripts
 └── .github/workflows/     # CI: build, test, lint, codeql, commitlint, proto
 ```

@@ -42,3 +42,8 @@ endif()
 if(TARGET gate_rpc)
     add_subdirectory(rpc)
 endif()
+
+# End-to-end integration tests over real gRPC channels.
+if(TARGET gate_rpc)
+    add_subdirectory(integration)
+endif()
