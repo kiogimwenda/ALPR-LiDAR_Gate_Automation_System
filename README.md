@@ -97,13 +97,13 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.4 | gRPC server + Dashboard / Admin services | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.5 | FieldControllerService + main.cpp | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.6 | Integration tests + Phase 4.3 closure | ✅ Complete |
-| **4.4** | **Firmware drivers (W5500, relays, sensors)** | 🔵 **In progress** |
+| **4.4** | **Firmware drivers (W5500, relays, sensors)** | ✅ **Complete** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.1 | ESP-IDF project skeleton + hello-world build | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.2 | GPIO drivers: relays + limit switches | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam input + LED status driver | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ⏳ Pending |
-| 4.5 | Firmware app (state machine, gRPC client, OTA) | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ✅ Complete |
+| **4.5** | **Firmware app (state machine, gRPC client, OTA)** | 🔵 **In progress — next** |
 | 4.6 | Simulation harness | ⏳ Pending |
 | 4.7 | Dashboard backend + frontend | ⏳ Pending |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
@@ -111,7 +111,146 @@ release on GitHub.
 
 ---
 
-## Latest accomplishment — Phase 4.4.4: safety-beam input + LED status driver
+## Latest accomplishment — Phase 4.4 complete: firmware CI + driver suite delivered
+
+> **Completed 2026-04-27.** Final sub-milestone (4.4.5) workflow at
+> [`.github/workflows/firmware.yml`](.github/workflows/firmware.yml).
+
+### What I built
+
+The capstone of Phase 4.4: a GitHub Actions workflow that builds the
+firmware for the ESP32-S3 target on every push, plus the closure
+sweep that retires Phase 4.4 in the master timeline. The five driver
+classes built across this phase (`Relay`, `LimitSwitch`, `SafetyBeam`,
+`StatusLed`, `Ethernet`) are now exercised by CI on every commit.
+
+| Artifact | Purpose |
+|---|---|
+| `.github/workflows/firmware.yml` | New workflow — uses Espressif's official `espressif/esp-idf-ci-action@v1` to install ESP-IDF v5.4 in a Docker image, fetch managed components (the W5500 driver via `ethernet_init`), and run `idf.py build` for the `esp32s3` target. Path-filtered to firmware/ changes so server-side commits don't burn the runner. |
+| `firmware.yml` artifact upload | The workflow persists `bootloader.bin`, `partition-table.bin`, `gate_firmware.bin`, `gate_firmware.elf`, and `flash_args` for 14 days on each run, so a future release workflow can pull them without recompiling and a CI failure can be diagnosed without re-running. |
+| README master timeline | Phase 4.4 → ✅ Complete; Phase 4.5 (Firmware app — state machine, gRPC client, OTA) → 🔵 In progress — next. |
+
+### Technical detail
+
+#### Why a separate workflow, not a job in build.yml
+
+`build.yml` is the **host** build matrix — gcc-13/14 + clang-17/18 ×
+Debug/Release × `-DENABLE_GPU=OFF`. It builds `server/` and `tests/`
+on the host architecture. Bolting an ESP-IDF build onto that matrix
+would multiply the runner cost by 8× for no benefit; firmware
+changes are uncorrelated with toolchain matrix coverage.
+
+The new `firmware.yml` is single-job, single-target, scoped to
+firmware/ paths. A change that doesn't touch firmware (which is
+most server-side commits) skips the firmware runner entirely via
+`paths` filtering. That keeps total CI time predictable as the
+codebase grows.
+
+#### ESP-IDF v5.4 vs the local v6.1-dev install
+
+Local development uses the rolling `v6.1-dev` checkout because
+that's what `~/esp/esp-idf` points at on the dev workstation. CI
+pins to **v5.4** (the latest stable release) — what production
+deployments will actually be built against.
+
+The two versions agree on every API the firmware drivers use:
+
+- `chip.revision` is present in both (v5.4 added it as uint16
+  alongside the older uint8 `revision`; v6.x removed
+  `full_revision` so `revision` is the only field). The boot
+  banner's `revision / 100` + `% 100` math works on both.
+- `esp_driver_gpio` was added in v5.2 and is the canonical name
+  in v5.4 + later. The legacy `driver` umbrella is still
+  available as a fallback.
+- `espressif/ethernet_init ^1.3.0` is compatible with v5.0+ per
+  the component's `idf_component.yml` constraint.
+
+If a future API divergence between the two versions makes one
+side unworkable, the action exposes `esp_idf_version: v6.0`
+(or `v6.1` once released) as a one-line update.
+
+#### Path-filter mechanics
+
+The workflow declares `paths: ['firmware/**', '.github/workflows/firmware.yml']`
+on both `push` and `pull_request` triggers. GitHub Actions evaluates
+this against the changed files in each event:
+
+- A server-side change → no firmware files touched → workflow not
+  triggered → no Docker image pull, no compile.
+- A firmware code change → workflow triggered → full IDF build.
+- A change to `firmware.yml` itself → workflow triggered (so
+  workflow edits get tested before merging).
+
+The matched-path-but-skipped-job semantics from earlier YAMLs are
+not in play here — this is a single-job workflow with first-class
+path filtering on the trigger.
+
+#### Why the ESP-IDF action over manual install
+
+The Espressif-maintained action runs the build inside an
+`espressif/idf:release-v5.4` Docker image that already has:
+
+- The xtensa toolchain at the right version
+- The Python environment with `idf-component-manager`
+- Every native dependency the toolchain needs
+
+Manually installing ESP-IDF in a CI step is ~1.5 GB of clones +
+a Python venv setup + a long warm-up. The Docker image pulls in
+~30 s on a warm GitHub runner cache, vs. ~3 min for a fresh
+install. That cost difference matters when the workflow runs
+on every PR.
+
+#### Phase 4.4 — what shipped
+
+The five drivers delivered across 4.4.1–4.4.4, all building clean
+under `-Wall -Wextra -Werror` and passing the project's
+`.clang-format` profile:
+
+- **Relay** (4.4.2) — single-output relay with latched `set()`
+  and pulsed `pulse(duration)` modes, mapping directly to the
+  proto's `LATCH_OPEN` / `LATCH_CLOSE` / `PULSE_RELAY` /
+  `OPEN_GATE` / `CLOSE_GATE` commands.
+- **LimitSwitch** (4.4.2) — debounced GPIO input with 5 ms poll
+  + 20 ms debounce, NO/NC polarity abstraction, callback fires
+  from the timer task.
+- **SafetyBeam** (4.4.4) — same poll+debounce primitive tuned
+  for safety: 1 ms poll + 5 ms debounce (~6 ms detection
+  latency), failsafe-aligned default polarity.
+- **StatusLed** (4.4.4) — three-color LED pattern renderer with
+  six modes matching the proto's `LedPattern` enum (off,
+  auth/deny flashes, fault/OTA blinks, boot-OK solid).
+- **Ethernet** (4.4.3) — W5500 SPI driver wrapper using the
+  `espressif/ethernet_init` managed component; one-shot
+  `start()` brings up DHCP and surfaces link/IP callbacks.
+
+The `gate-firmware` binary is **332 KB**, occupying 22 % of the
+1.5 MB OTA partition — leaving comfortable room for the gRPC
+client (~400 KB), state machine (~50 KB), and OTA update
+machinery (~80 KB) that Phase 4.5 will bring online.
+
+#### What Phase 4.5 will need
+
+The state machine in 4.5 will instantiate one `Relay` (or two for
+dual-leaf swing gates), two `LimitSwitch` (open + closed), one
+`SafetyBeam`, one `StatusLed`, and call `Ethernet::start()` to
+bring up the network. The gate's pin map will live in a
+configuration header so the state machine can be reused across
+physical board layouts.
+
+The gRPC client side (consuming the `Control` bidi stream from
+4.3.5) is the big new piece in 4.5 — protobuf-c + nanopb-grpc
+or `gRPC for ESP-IDF` (which uses HTTP/2 over LWIP TCP). The
+firmware will open the `Control` stream on `Ethernet::on_got_ip`,
+send `Telemetry` heartbeats, receive `GateCommand`s, and ack
+each one back via the same stream.
+
+OTA delivery (the `DeliverOta` and `ReportOtaProgress` RPCs that
+returned `UNIMPLEMENTED` in Phase 4.3.5) becomes real in 4.5,
+backed by ESP-IDF's `esp_https_ota` over the same gRPC channel.
+
+---
+
+## Previous milestone — Phase 4.4.4: safety-beam input + LED status driver
 
 > **Completed 2026-04-26.** Two new drivers in
 > [`gate_drivers/`](firmware/components/gate_drivers/):

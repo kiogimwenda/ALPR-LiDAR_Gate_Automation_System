@@ -1,0 +1,52 @@
+name: Firmware
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/firmware.yml'
+
+jobs:
+  build:
+    name: Build (esp32s3, idf v5.4)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Espressif's official ESP-IDF action handles toolchain install,
+      # Python environment, the IDF component manager (so the
+      # espressif/ethernet_init managed dependency is fetched), and
+      # `idf.py build` for the requested target. The action runs inside
+      # a Docker image (espressif/idf:release-vX.Y), so the host runner
+      # only needs Docker available — no manual ESP-IDF install in CI.
+      - name: Build firmware for ESP32-S3
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32s3
+          path: 'firmware'
+
+      # Persist the build artifacts so a CI failure can be diagnosed
+      # without re-running the workflow, and so a future "release"
+      # workflow can pull the bootloader + partition table + app image
+      # without recompiling. Retention is short — these are just dev
+      # artifacts, not signed releases (Phase 4.8 deployment work).
+      - name: Upload firmware artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-firmware-esp32s3-${{ github.sha }}
+          path: |
+            firmware/build/bootloader/bootloader.bin
+            firmware/build/partition_table/partition-table.bin
+            firmware/build/gate_firmware.bin
+            firmware/build/gate_firmware.elf
+            firmware/build/flash_args
+          retention-days: 14
+          if-no-files-found: warn
