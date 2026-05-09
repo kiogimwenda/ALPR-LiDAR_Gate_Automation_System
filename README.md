@@ -113,8 +113,9 @@ release on GitHub.
 
 ## Latest accomplishment — Phase 4.4 complete: firmware CI + driver suite delivered
 
-> **Completed 2026-04-27.** Final sub-milestone (4.4.5) workflow at
+> **Completed 2026-05-09.** Final sub-milestone (4.4.5) workflow at
 > [`.github/workflows/firmware.yml`](.github/workflows/firmware.yml).
+> Final green commit: [`9f09ba9`](../../commit/9f09ba9).
 
 ### What I built
 
@@ -124,10 +125,18 @@ sweep that retires Phase 4.4 in the master timeline. The five driver
 classes built across this phase (`Relay`, `LimitSwitch`, `SafetyBeam`,
 `StatusLed`, `Ethernet`) are now exercised by CI on every commit.
 
+Getting the workflow green was a four-commit journey — the initial
+workflow file (`bcf26f6`) failed three different ways before the
+component manager, the IDF version, and the project's `sdkconfig`
+all agreed on the same world. The "[Three CI fixes](#three-ci-fixes-that-landed-phase-44)"
+section below captures each failure and the underlying cause.
+
 | Artifact | Purpose |
 |---|---|
-| `.github/workflows/firmware.yml` | New workflow — uses Espressif's official `espressif/esp-idf-ci-action@v1` to install ESP-IDF v5.4 in a Docker image, fetch managed components (the W5500 driver via `ethernet_init`), and run `idf.py build` for the `esp32s3` target. Path-filtered to firmware/ changes so server-side commits don't burn the runner. |
+| `.github/workflows/firmware.yml` | New workflow — uses Espressif's official `espressif/esp-idf-ci-action@v1` to install ESP-IDF v5.5 in a Docker image, fetch managed components (the W5500 driver via `ethernet_init`), and run `idf.py build` for the `esp32s3` target. Path-filtered to firmware/ changes so server-side commits don't burn the runner. |
 | `firmware.yml` artifact upload | The workflow persists `bootloader.bin`, `partition-table.bin`, `gate_firmware.bin`, `gate_firmware.elf`, and `flash_args` for 14 days on each run, so a future release workflow can pull them without recompiling and a CI failure can be diagnosed without re-running. |
+| `firmware/components/gate_drivers/idf_component.yml` | `ethernet_init` pinned to `==1.0.0` (last release before the 1.1.0+ Kconfig solver bug — see fix #2 below). Locked tight so a future patch-version bug can't slip past. |
+| `firmware/sdkconfig.defaults` | SPI Kconfig prefix corrected from `EXAMPLE_ETH_SPI_*` (legacy example component) to `ETHERNET_SPI_*` (what `ethernet_init` v1.0.0 actually reads), plus the `CONFIG_ETHERNET_SPI_SUPPORT=y` master gate that was silently defaulting to `n` (see fix #3). |
 | README master timeline | Phase 4.4 → ✅ Complete; Phase 4.5 (Firmware app — state machine, gRPC client, OTA) → 🔵 In progress — next. |
 
 ### Technical detail
@@ -146,28 +155,112 @@ most server-side commits) skips the firmware runner entirely via
 `paths` filtering. That keeps total CI time predictable as the
 codebase grows.
 
-#### ESP-IDF v5.4 vs the local v6.1-dev install
+#### ESP-IDF v5.5 vs the local v6.1-dev install
 
 Local development uses the rolling `v6.1-dev` checkout because
 that's what `~/esp/esp-idf` points at on the dev workstation. CI
-pins to **v5.4** (the latest stable release) — what production
-deployments will actually be built against.
+pins to **v5.5** — what production deployments will be built
+against, and the lowest stable version that satisfies the pinned
+managed components.
 
 The two versions agree on every API the firmware drivers use:
 
-- `chip.revision` is present in both (v5.4 added it as uint16
+- `chip.revision` is present in both (v5.4+ added it as uint16
   alongside the older uint8 `revision`; v6.x removed
   `full_revision` so `revision` is the only field). The boot
   banner's `revision / 100` + `% 100` math works on both.
 - `esp_driver_gpio` was added in v5.2 and is the canonical name
-  in v5.4 + later. The legacy `driver` umbrella is still
+  in v5.5 + later. The legacy `driver` umbrella is still
   available as a fallback.
-- `espressif/ethernet_init ^1.3.0` is compatible with v5.0+ per
-  the component's `idf_component.yml` constraint.
+- `espressif/ethernet_init ==1.0.0` (idf >=5.4) is compatible
+  with both. The `~1.3` constraint that ships in the action's
+  template would have worked on idf >=5.4.3, but its Kconfig
+  manifest crashes the version solver — see fix #2 below.
 
 If a future API divergence between the two versions makes one
 side unworkable, the action exposes `esp_idf_version: v6.0`
 (or `v6.1` once released) as a one-line update.
+
+<a id="three-ci-fixes-that-landed-phase-44"></a>
+#### Three CI fixes that landed Phase 4.4
+
+The initial Firmware workflow (`bcf26f6`) failed on its first run.
+Each of the three follow-up commits surfaced a deeper layer of the
+ESP-IDF build pipeline:
+
+**Fix 1 — IDF version floor (`6c3df3e`).**
+The first failure happened during the component manager's version
+solve. `espressif/ethernet_init` v1.3.0 (the latest release on
+2026-05-09) declares `idf_version: ">=5.4.3, !=5.5.0, !=5.5.1"`,
+but the action's `release-v5.4` Docker tag tracks v5.4.0 — below
+the floor. Querying Docker Hub confirmed that `release-v5.X.Y`
+patch tags are not published; only minor-version `release-v5.4`
+and `release-v5.5` exist. `release-v5.5` (last re-tagged
+2026-04-07, after v5.5.4 was published 2026-03-27) sits inside
+the satisfiable range, so bumping `esp_idf_version` from `v5.4` to
+`v5.5` cleared the floor.
+
+**Fix 2 — pin around the component-manager Kconfig bug (`73d0407`).**
+With the version floor satisfied, the solver got further but
+crashed with:
+
+    idf_component_tools.errors.MissingKconfigError: ETHERNET_SPI_USE_CH390
+
+`ethernet_init` v1.1.0 (2025-10-20) added optional transitive
+dependencies on individual PHY components (`ch390`, `dm9051`,
+`enc28j60`, …) gated by `if: $CONFIG{ETHERNET_SPI_USE_*}` clauses.
+The component manager evaluates those clauses **during** version
+solving — before any component's Kconfig has been registered with
+the build system. Any reference to a not-yet-defined symbol
+crashes the solver before cmake even starts.
+
+This is upstream's bug, not ours. The workaround is to pin to the
+last release before the regression: `==1.0.0` (2025-09-24), whose
+manifest has zero `$CONFIG{...}` if-clauses — every dependency is
+either unconditional or rules-based on `idf_version`/`target`.
+v1.0.0 still supports W5500 over SPI on idf >=5.4 and is fully
+compatible with the pin map this project uses.
+
+**Fix 3 — Kconfig prefix mismatch + the silent master gate (`9f09ba9`).**
+With v1.0.0 fetched and compiling, the build progressed deep into
+the IDF tree (1060 / 1083 objects) before failing with:
+
+    ethernet_init.c:728: error: array subscript i is outside array
+    bounds of 'eth_device[0]' [-Werror=array-bounds=]
+    note: while referencing 'eth_instance_g'
+    static eth_device eth_instance_g[CONFIG_ETHERNET_INTERNAL_SUPPORT
+                                   + CONFIG_ETHERNET_SPI_NUMBER];
+
+Both Kconfigs evaluated to 0, so the static array was zero-length
+and any indexed read tripped the compiler's bounds checker. The
+`sdkconfig.defaults` had two problems:
+
+1. **Missing master gate.** `CONFIG_ETHERNET_SPI_SUPPORT` defaults
+   to `n`, and every `ETHERNET_SPI_*` sub-symbol lives inside
+   `if ETHERNET_SPI_SUPPORT`. With the gate off, even
+   `ETHERNET_SPI_DEV0_W5500=y` was inert and `ETHERNET_SPI_NUMBER`
+   fell back to 0.
+2. **Wrong prefix on the pin/host/clock symbols.**
+   `ethernet_init` v1.0.0 reads `CONFIG_ETHERNET_SPI_HOST`,
+   `CONFIG_ETHERNET_SPI_SCLK_GPIO`, `CONFIG_ETHERNET_SPI_MOSI_GPIO`,
+   etc. The defaults file had the legacy
+   `CONFIG_EXAMPLE_ETH_SPI_*` prefix from the older
+   `example_eth_init` example component — those settings were
+   silently ignored, leaving the pin map at IDF defaults instead
+   of this project's W5500 schematic (SCLK=12 / MOSI=11 / MISO=13 /
+   CS=10 / INT=9 / RST=8 on `SPI2_HOST` at 20 MHz).
+
+The fix renames the prefixes and adds the master gate. After this,
+the firmware workflow went green and all 14 CI checks landed
+clean on `9f09ba9`.
+
+The shape of these failures is worth recording: each one looked
+like a different bug (IDF version, transitive dep, code error),
+but all three were really the component manager's version-solve
+phase running ahead of the system that defines its inputs. Pinning
+the component aggressively and aligning Kconfig symbols with the
+component's actual schema is the cure; chasing each surface error
+in isolation would have rolled forward into v1.4 of the same bug.
 
 #### Path-filter mechanics
 
