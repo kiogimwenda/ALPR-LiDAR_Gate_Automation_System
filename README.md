@@ -111,11 +111,347 @@ release on GitHub.
 
 ---
 
-What follows is the chronological log of every Phase 4 sub-milestone
-from the first proto contract through the latest closure. Each section
+What follows is the chronological log of every milestone — Phase 0
+(environment bootstrap) through the latest closure. Each section
 captures what shipped, why the design decisions were made, and what was
 deliberately left for later. Read top-to-bottom for the build story; the
 newest entry is at the bottom.
+
+---
+
+## Phase 0 — Environment bootstrap
+
+> **Completed 2026-04-19.** Audit at
+> [`docs/env-audit.md`](docs/env-audit.md); install scripts in
+> [`scripts/bootstrap/`](scripts/bootstrap/).
+
+### What I built
+
+A reproducible install of the entire C++/CUDA/ML toolchain on WSL2
+Debian, audited end-to-end with a `smoke_test.cu` that compiles for
+both `sm_120` (the dev box's RTX 5060) and `sm_89` (the production
+RTX 4060) and runs a CUDA kernel under each — proving the install
+isn't just present but actually executes on the target architectures.
+
+| Artifact | Purpose |
+|---|---|
+| `scripts/bootstrap/01-toolchain.sh` | Installs the C/C++ toolchain — GCC 14, Clang 19, CMake ≥3.28, Ninja, ccache, mold, pkg-config, git-lfs. Idempotent: re-runs are a no-op. |
+| `scripts/bootstrap/02-gpu-stack.sh` | Installs the NVIDIA stack — CUDA 13.1 toolkit, cuDNN 9.19, TensorRT 10.15 dev. Verifies `nvcc -arch=sm_120` and `sm_89` both compile and run. |
+| `scripts/bootstrap/03-ml-tools.sh` | Builds OpenCV 4.14 from source with the CUDA modules (`cudaarithm`, `cudaimgproc`, `cudafilters`, `cudacodec`) installed to `/usr/local/lib/`. Pip's OpenCV package is fine for export scripts but unusable for the inference path. |
+| `scripts/bootstrap/04-vcpkg.sh` | Pins vcpkg to a specific commit and primes the binary cache at `~/.cache/vcpkg`. |
+| `scripts/bootstrap/smoke_test.cu` | The execution proof — a CUDA kernel built for both target archs and run on the dev box. Without this, "TensorRT 10.15 installed" is unverified marketing. |
+
+### Technical detail
+
+#### Why source-build OpenCV instead of the pip wheel
+
+The pip `opencv-contrib-python` wheel ships with no CUDA modules at
+all — every `cv::cuda::*` symbol resolves to a stub that throws
+"OpenCV was built without CUDA support". The inference pipeline
+copies camera frames into GPU memory and runs detection / classification
+on-device, so CUDA OpenCV is non-negotiable. The bootstrap script
+clones OpenCV + opencv_contrib at the same tag, configures with
+`-D WITH_CUDA=ON -D OPENCV_DNN_CUDA=ON -D CUDA_ARCH_BIN="8.9;12.0"`,
+and installs the resulting `.so`s to `/usr/local/lib/`. The vcpkg
+manifest then finds them via system pkg-config.
+
+The pip Python build remains useful for the `tools/export-models/`
+scripts (those convert ONNX → TensorRT engines on the host CPU + Python's
+`tensorrt` module), so both coexist intentionally.
+
+#### Two CUDA architectures
+
+`sm_120` is the dev box's Blackwell (RTX 5060 Laptop), `sm_89` is the
+production Ada Lovelace (RTX 4060 server). Compiling for both means
+the same engine binary will load on either GPU without a JIT step.
+TensorRT engine plans, by contrast, are arch-specific and will be
+re-built on the production server in Phase 4.2.5 — that's expected.
+
+The smoke test compiles **and runs** under each arch, not just compiles.
+A failed install would compile cleanly then crash at kernel launch with
+"no kernel image is available for execution"; the runtime check catches
+that before it bites in Phase 4.
+
+#### nvidia-smi vs nvcc version drift
+
+`nvidia-smi` reports CUDA 13.2 (driver capability); `nvcc` is 13.1
+(toolkit installed). The driver supports up to 13.2 but the toolkit is
+the one that compiles code, so the audit treats `nvcc --version` as
+the source of truth. This shows up in the env-audit table and is
+called out so future engineers don't chase a phantom mismatch.
+
+#### What's intentionally not bootstrapped
+
+- ESP-IDF toolchain — installed once at `~/esp/esp-idf` outside the
+  repo because it's a 1.5 GB clone and changing IDF versions is a
+  rare, manual operation.
+- KiCad 9.0 — desktop tool, installed via the OS package manager.
+- Python venvs — `~/ml-env/` is created out-of-band and activated by
+  the user's `.bashrc`. The repo's `tools/` and `scripts/` work inside
+  whichever venv is active.
+
+---
+
+## Phase 1 — Clarifications & decisions
+
+> **Completed 2026-04-19.** Decisions logged in conversation memory
+> and applied as design constraints from Phase 2 onward.
+
+### What I built
+
+Twelve project-defining questions, answered up front. The point of
+Phase 1 isn't to write a document — it's to make every later phase
+buildable without coming back and asking "wait, does this need to
+support boom barriers too?" or "is the dashboard internet-facing?"
+Defaults were accepted on every question with one deliberate override
+(actuator type), and the answers became binding constraints for
+Phase 2's architecture work.
+
+| Question | Decision |
+|---|---|
+| **1. Site profile** | Single residential estate gate (prototype), scaling later to multi-gate deployments. |
+| **2. Vehicle classes** | Cars + SUVs/pickups primary; trucks secondary; motorbikes excluded from this prototype. |
+| **3. Plate format** | Kenyan NTSA only — both the new generation (white background, black text) and the legacy yellow rear plates. |
+| **4. Auth model** | Allowlist + blocklist + time windows + visitor pre-registration + guard manual override. Standalone (no central directory dependency). |
+| **5. Power-loss behavior** | Fail-safe — gate **opens** on power loss. (Residential safety requirement; commercial deployments may invert this.) |
+| **6. Gate actuator** | **Override:** sliding gates and dual-leaf swing gates (residential Kenya pattern), **not** boom barriers. Boom barriers added later for commercial/industrial sites. |
+| **7. Network** | Same LAN as the GPU server, dedicated VLAN, sub-millisecond latency assumed. |
+| **8. Budget** | ~150,000 KES per gate (~USD 1,150) + ~200,000 KES for the central server (~USD 1,550). |
+| **9. Regulatory** | Local-only storage, 90-day retention, hashed plates in long-term audit logs, Subject Access Request endpoint. |
+| **10. Simulation** | All three modes — replay (recorded camera + LiDAR), synthetic (procedurally generated), hardware-in-the-loop. |
+| **11. OTA** | Self-hosted HTTPS + ed25519 signing, atomic flash with rollback. (No vendor cloud, no app-store update flow.) |
+| **12. Dashboard auth** | LAN-only, HTTP basic auth over TLS with self-signed certificates. |
+
+### Technical detail
+
+#### Why the actuator override matters
+
+The default question template assumed boom barriers — single-arm
+counterweighted gates common at parking-lot entries. Residential Kenya
+uses sliding gates (single-rail or telescopic) and dual-leaf swing
+gates almost exclusively. The override flipped six downstream
+decisions:
+
+- **Limit-switch count** — sliders/swings need 2 (open + closed) per
+  leaf; booms need 1.
+- **Relay count** — dual-leaf swings need 2 outputs (one per leaf,
+  with a synchronization delay); sliders and booms need 1.
+- **Safety-beam placement** — across the path of travel, not at the
+  arm pivot.
+- **Motor type** — Centurion D5 (slider) or R5 (swing), not a Faac
+  boom kit. Mains AC, not 24 V DC.
+- **Travel time** — 8–15 s for a 4 m slider vs. 1–2 s for a boom.
+  This is what made `relay::pulse(duration)` and the limit-switch
+  poll interval worth getting right in Phase 4.4.2.
+- **Fail-safe semantics** — sliders and swings can be physically
+  pushed open during power loss (residents' expectation in KE);
+  booms cannot.
+
+The override was applied to all subsequent phases. Phase 4.4's
+driver suite (Relay, LimitSwitch, SafetyBeam) has the dual-leaf
+case as a first-class scenario, not an afterthought.
+
+#### What "defaults accepted" actually means
+
+Every other question's default came from the same mental model — a
+self-hosted, on-prem, LAN-only system aimed at a Kenyan residential
+estate or small commercial site with no reliable internet uplink.
+Accepting the defaults was a deliberate ratification, not skipping
+the questions: the bandwidth assumption (Q7), the budget cap (Q8),
+the on-device storage (Q9), and the LAN-only dashboard (Q12) all
+hang together. Changing one would force re-answering several others.
+
+#### Why this lives in memory, not a doc file
+
+The clarification answers are durable design constraints, not
+versionable documents. They were saved to project memory so every
+future Claude Code session in this repo loads them automatically and
+applies them as constraints — without the user having to re-explain
+"sliding gates, not booms" every time a new phase opens.
+
+A `docs/clarifications.md` file would have been a one-time write
+that immediately falls out of sync with the actual decisions baked
+into ADRs. Keeping the answers in memory makes them living context.
+
+---
+
+## Phase 2 — Architecture
+
+> **Completed 2026-04-19.** Diagrams in
+> [`docs/diagrams/`](docs/diagrams/) (7 Mermaid files); decisions
+> in [`docs/decisions/`](docs/decisions/) (11 ADRs); CI workflows
+> in [`.github/workflows/`](.github/workflows/).
+
+### What I built
+
+The spine that every later phase hangs off: subsystem flowcharts,
+eleven Architecture Decision Records that pin every framework /
+hardware choice with reasoning and alternatives, the full repo
+directory scaffold, the vcpkg + CMake-presets build skeleton, and
+six CI workflows wired up before any feature code shipped — so the
+first commit of real logic in Phase 4 already had `-Werror` and
+`clang-format` enforced from line one.
+
+| Artifact | Purpose |
+|---|---|
+| `docs/diagrams/01-system-level.mmd` | Top-level data flow: cameras / LiDAR → GPU server → ESP32 field PCB → gate motor. |
+| `docs/diagrams/02-alpr-subsystem.mmd` | YOLOv9 detection → ROI crop → PaddleOCR → plate normalization → fusion engine input. |
+| `docs/diagrams/03-lidar-subsystem.mmd` | Unitree L1 frame → point cloud filtering → bounding box → vehicle classification → fusion input. |
+| `docs/diagrams/04-fusion-decision.mmd` | The verdict ladder: allow / deny / require-second-source / hold-for-guard. |
+| `docs/diagrams/05-gate-state-machine.mmd` | IDLE → AUTHORIZING → OPENING → OPEN → CLOSING → FAULT, with safety-beam interrupts. |
+| `docs/diagrams/06-ota-update.mmd` | DeliverOta chunk stream → flash inactive partition → verify → mark-bootable → reboot. |
+| `docs/diagrams/07-simulation-mode.mmd` | Replay / synthetic / HIL paths and how each plugs into the same fusion + RPC code. |
+| `docs/decisions/ADR-000…ADR-010` | Eleven decision records — license, package manager, RPC, web framework, frontend, MCU, LiDAR, camera, actuator interface, OTA, model licensing. |
+| `.github/workflows/{build,test,lint,proto,codeql,commitlint}.yml` | Six CI workflows — host build matrix, sanitizer tests, clang-format / clang-tidy / cppcheck, proto descriptor validator, GitHub CodeQL security scan, conventional-commit lint. |
+| `vcpkg.json` + `CMakePresets.json` | Locked dependency manifest + named build presets (`gcc-debug`, `gcc-release`, `clang-debug`, `clang-release`). |
+
+### Technical detail
+
+#### Why ADRs, not a wiki
+
+Eleven ADRs sit in `docs/decisions/` as immutable, dated, numbered
+markdown files. Each one names the decision, the alternatives
+considered, the consequences, and (where relevant) what would force
+revisiting it. ADRs survive when the wiki gets archived; they live
+next to the code in version control and review under the same PR
+gate. The ADR set:
+
+- **000** — License (GPL-3.0 — chosen because YOLOv9's GPL-3.0 weights propagate; full reasoning in ADR-010).
+- **001** — Package manager (vcpkg, not Conan or Hunter — manifest mode + binary cache + better Windows story).
+- **002** — RPC mechanism (gRPC, not REST or raw TCP — bidi streams for telemetry, schema-first, language coverage).
+- **003** — Web framework for dashboard backend (Drogon C++ — same toolchain as the inference server, no Node runtime in the deploy).
+- **004** — Frontend framework (SvelteKit — small bundle, server-rendered fallbacks for edge devices).
+- **005** — MCU / SoC choice (ESP32-S3 — dual-core 240 MHz Xtensa, PSRAM option, mature ESP-IDF).
+- **006** — LiDAR sensor (Unitree L1 PM — 4D 360° × 90° at the price point that fits the budget).
+- **007** — ALPR camera (Hikvision DS-2CD2043G2-I — 4 MP IR with PoE, available on Luthuli Avenue).
+- **008** — Gate actuator interface (relay outputs, not Modbus / RS-485 — every Centurion D5/R5 controller has dry-contact inputs).
+- **009** — OTA strategy (self-hosted HTTPS + ed25519 — no vendor cloud, atomic with rollback).
+- **010** — Model licensing (YOLOv9 GPL-3.0 implications drove the project license choice in ADR-000).
+
+#### Why CI before features
+
+The six workflows landed in commit `c242943` — before any first-party
+C++ code. That ordering is deliberate: by the time Phase 4.1 shipped
+the first proto file, the lint workflow was already enforcing
+clang-format, the build workflow already had the gcc/clang × debug/release
+matrix, and the proto workflow already validated the descriptor. Every
+feature commit since then has had to pass that same gate from the
+moment it was authored — there's no "we'll add CI later" technical
+debt in this repo.
+
+The matrix isn't decorative: gcc-13 + gcc-14 + clang-17 + clang-18,
+each in Debug and Release, eight builds per push. Different compilers
+flag different bugs (gcc finds use-after-move, clang finds switch-coverage
+gaps); running both has caught real issues across Phase 4.
+
+#### Directory scaffold up front
+
+`server/`, `firmware/`, `dashboard/`, `simulation/`, `hardware/`,
+`docs/`, `scripts/`, `tools/`, `tests/`, `shared/proto/`, `deployment/` —
+all present at the end of Phase 2 with placeholder `README.md` files and
+empty subdirectories. New work goes into a known location. There has
+not been a single "where should this file live?" question across all
+of Phase 4.
+
+#### Mermaid for diagrams
+
+`.mmd` files render natively on GitHub and re-render automatically when
+the markdown is edited. PNG / SVG diagrams would lock the source to
+whoever has the design tool installed; Mermaid lets a future contributor
+edit the architecture from a text editor and see the result in the PR
+diff. The seven flowcharts haven't drifted from the implementation
+because editing the Mermaid is part of the PR workflow.
+
+---
+
+## Phase 3 — Hardware research & build guides
+
+> **Completed 2026-04-20.** Component guides + master build book in
+> [`docs/hardware/`](docs/hardware/); BOM at
+> [`hardware/bom/prototype-bom.md`](hardware/bom/prototype-bom.md);
+> 48-page PCB design guide at
+> [`docs/hardware/10-pcb-design-kicad9.pdf`](docs/hardware/10-pcb-design-kicad9.pdf).
+
+### What I built
+
+Nine per-component build guides, one master build book that walks
+through full system assembly, a complete bill of materials with both
+KES and USD pricing tied to actual Nairobi suppliers, and a
+48-page KiCad 9.0 design guide for the custom 4-layer field PCB.
+Phase 3 turned the architecture decisions from Phase 2 into
+buildable parts lists — by the end of it, every component had a
+specific model number, a known supplier, a wiring diagram, and a
+documented gotcha list.
+
+| Artifact | Purpose |
+|---|---|
+| `docs/hardware/01-esp32-s3-devkit.md` | DevKitC-1-N16R8 setup — pinout, USB-C vs UART, flashing recipe, current draw. |
+| `docs/hardware/02-w5500-ethernet.md` | W5500 SPI module — pinout, 3.3 V vs 5 V level shifting, MAC byte fuse. |
+| `docs/hardware/03-unitree-l1-lidar.md` | Unitree L1 PM — Ethernet config, ROS driver vs raw UDP, mounting angle for vehicle classification. |
+| `docs/hardware/04-hikvision-camera.md` | DS-2CD2043G2-I — PoE wiring, RTSP URL pattern, focal-length math for plate readability at gate distance. |
+| `docs/hardware/05-relay-module.md` | 4-channel optoisolated relay — coil current, contact rating vs gate-motor inrush, wiring to Centurion D5/R5 dry-contact inputs. |
+| `docs/hardware/06-safety-sensors.md` | Photoelectric beam pair (TX+RX) + magnetic reed limit switches — failsafe wiring, NO vs NC, IP rating notes. |
+| `docs/hardware/07-power-supply.md` | 12V/2A enclosed PSU + LM2596 12V→5V buck — derating, ripple, fuse sizing. |
+| `docs/hardware/08-network-switch.md` | TP-Link TL-SG1005P PoE — VLAN config (per ADR-008's dedicated VLAN constraint), PoE budget math. |
+| `docs/hardware/09-gpu-server.md` | Production server BOM — RTX 4060, Ryzen 5, 32 GB RAM, NVMe — and why this combination fits the inference workload at the budget. |
+| `docs/hardware/BUILD_BOOK.md` | Master assembly walkthrough — unboxing → first power-on → smoke test, in order. |
+| `docs/hardware/10-pcb-design-kicad9.{html,pdf}` | 48-page step-by-step KiCad 9.0 guide for the custom 4-layer field PCB — schematic capture, footprint selection, layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
+| `hardware/bom/prototype-bom.md` | Per-line BOM with KES + USD pricing, supplier names, and a single-gate subtotal. |
+
+### Technical detail
+
+#### Why source from Luthuli Avenue + AliExpress
+
+Luthuli Avenue is the electronics-heavy commercial street in Nairobi
+where every component on the BOM is physically buyable today. AliExpress
+fills the gaps for items the local market doesn't stock (Unitree L1,
+specific Hikvision SKUs). This sourcing constraint was set in Phase 1
+(Q8: budget) and Phase 1 (Q9: deployment in Kenya) and shaped every
+component choice — the W5500 module is the cheap one because that's
+what Luthuli stocks; the LiDAR is Unitree because Velodyne / Ouster
+sit at 10× the price; the camera is a Hikvision DS-2CD2043G2-I because
+that's what every CCTV shop on Luthuli has on the shelf.
+
+A different deployment context (US, EU, datacenter) would pick
+different parts. The BOM lives in version control specifically so a
+fork can rewrite it without forking the rest of the project.
+
+#### Why a custom PCB instead of a perfboard
+
+The prototype could in principle be wired on a perfboard — every
+component is module-format with header pins. The PCB exists for
+three reasons:
+
+1. **EMI on the SPI lines.** The W5500's 25 MHz SPI clock pulls
+   current spikes that couple into adjacent unshielded jumpers; the
+   PCB lays them as controlled-impedance traces on an inner layer
+   between ground planes.
+2. **Mechanical durability.** Header-pin connections vibrate loose
+   in an enclosure mounted on a moving slider gate. The PCB uses
+   screw terminals for everything that leaves the enclosure (relay
+   outputs, limit-switch inputs, safety-beam, 12 V power).
+3. **Repairability.** ADR-008 commits to "every solder joint
+   accessible with a 30 W iron." The 48-page design guide bakes
+   that constraint in — through-hole for the high-current paths
+   (relay outputs, 12 V rail), SMD only for the small-signal stuff
+   (W5500, ESP32 footprint).
+
+#### What's not in Phase 3
+
+- **No PCB ordered yet** — the design guide produces the gerbers but
+  the prototype is currently breadboarded. PCB fab + assembly is in
+  Phase 4.9 (end-to-end integration tests on real hardware).
+- **No enclosure CAD** — the IP65 junction box is off-the-shelf.
+  Custom enclosure design (if needed for production) is a Phase 5
+  decision.
+- **No multi-gate BOM** — the prototype BOM is for a single gate.
+  Multi-gate scaling math (PoE switch capacity, GPU inference
+  throughput, dashboard concurrent connections) is a Phase 5 / 4.9
+  topic.
+
+The point of Phase 3 was to make the prototype buildable end-to-end
+on the prototype budget, which it does. Production hardening is
+explicitly downstream.
 
 ---
 
