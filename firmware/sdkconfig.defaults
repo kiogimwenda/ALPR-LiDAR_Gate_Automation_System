@@ -42,21 +42,23 @@ CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 
 # --- Ethernet (W5500 over SPI via espressif/ethernet_init component) -------
-# The ethernet_init component is Kconfig-driven; this block selects the
-# W5500 chip and pins it to the project's schematic. Modify via
-# `idf.py menuconfig → Component config → Example Ethernet Configuration`.
-CONFIG_ETH_USE_SPI_ETHERNET=y
+# The ethernet_init component (pinned to v1.0.0 in the gate_drivers
+# component manifest) is Kconfig-driven. ETHERNET_SPI_SUPPORT defaults to
+# `n`, so it must be set explicitly — without it eth_instance_g[] is sized
+# 0 and the component fails to compile under -Werror=array-bounds.
+# Modify via `idf.py menuconfig → Component config → Ethernet Configuration`.
 CONFIG_ETHERNET_INTERNAL_SUPPORT=n
+CONFIG_ETHERNET_SPI_SUPPORT=y
 CONFIG_ETHERNET_SPI_NUMBER=1
 CONFIG_ETHERNET_SPI_DEV0_W5500=y
-CONFIG_EXAMPLE_ETH_SPI_HOST=1                  # SPI2_HOST = 1 on ESP32-S3
-CONFIG_EXAMPLE_ETH_SPI_CLOCK_MHZ=20            # W5500 max ~80; 20 is safe
-CONFIG_EXAMPLE_ETH_SPI_MISO_GPIO=13
-CONFIG_EXAMPLE_ETH_SPI_MOSI_GPIO=11
-CONFIG_EXAMPLE_ETH_SPI_SCLK_GPIO=12
-CONFIG_EXAMPLE_ETH_SPI_CS0_GPIO=10
-CONFIG_EXAMPLE_ETH_SPI_INT0_GPIO=9
-CONFIG_EXAMPLE_ETH_SPI_PHY_RST0_GPIO=8
-CONFIG_EXAMPLE_ETH_SPI_PHY_ADDR0=1
+CONFIG_ETHERNET_SPI_HOST=1                     # SPI2_HOST = 1 on ESP32-S3
+CONFIG_ETHERNET_SPI_CLOCK_MHZ=20               # W5500 max ~80; 20 is safe
+CONFIG_ETHERNET_SPI_MISO_GPIO=13
+CONFIG_ETHERNET_SPI_MOSI_GPIO=11
+CONFIG_ETHERNET_SPI_SCLK_GPIO=12
+CONFIG_ETHERNET_SPI_CS0_GPIO=10
+CONFIG_ETHERNET_SPI_INT0_GPIO=9
+CONFIG_ETHERNET_SPI_PHY_RST0_GPIO=8
+CONFIG_ETHERNET_SPI_PHY_ADDR0=1
 # LWIP needs a netif slot for ethernet alongside the others.
 CONFIG_LWIP_TCP_MAXRTX=12
