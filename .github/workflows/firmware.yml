@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    name: Build (esp32s3, idf v5.4)
+    name: Build (esp32s3, idf v5.5)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +28,7 @@ jobs:
       - name: Build firmware for ESP32-S3
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.4
+          esp_idf_version: v5.5
           target: esp32s3
           path: 'firmware'
 
