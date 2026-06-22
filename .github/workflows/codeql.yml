@@ -1,12 +1,20 @@
 name: CodeQL
 
+# Code scanning requires GitHub Advanced Security on private repos.
+# This repo is private and GHAS is not enabled, so the automatic triggers
+# (push / pull_request / schedule) would upload SARIF and fail with
+# "Code scanning is not enabled for this repository". The workflow stays
+# in the tree because (a) it still runs locally / on demand via
+# `gh workflow run CodeQL`, and (b) the moment the repo flips public,
+# code scanning is free and we just uncomment the block below.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  schedule:
-    - cron: '0 6 * * 1'  # Weekly Monday 06:00 UTC
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  # pull_request:
+  #   branches: [main]
+  # schedule:
+  #   - cron: '0 6 * * 1'  # Weekly Monday 06:00 UTC
 
 jobs:
   analyze:
