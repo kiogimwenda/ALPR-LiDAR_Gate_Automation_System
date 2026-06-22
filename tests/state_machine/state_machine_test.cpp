@@ -5,12 +5,11 @@
 // reason, action list) after each event — the same surface the driver
 // layer will consume in Phase 4.5.2.
 
-#include <algorithm>
+#include "gate_state_machine/state_machine.hpp"
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_vector.hpp>
-
-#include "gate_state_machine/state_machine.hpp"
 
 namespace sm = gate::state_machine;
 
@@ -31,12 +30,11 @@ TEST_CASE("init helpers transition out of Initializing", "[state_machine][init]"
         const auto out = m.init_closed();
         REQUIRE(m.state() == sm::State::Closed);
         REQUIRE(out.transitioned);
-        REQUIRE_THAT(actions(out),
-                     Catch::Matchers::Equals(std::vector<sm::Action>{
-                         sm::Action::StopMotor,
-                         sm::Action::SetLedClosed,
-                         sm::Action::EmitTelemetryStateChanged,
-                     }));
+        REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                       sm::Action::StopMotor,
+                                       sm::Action::SetLedClosed,
+                                       sm::Action::EmitTelemetryStateChanged,
+                                   }));
     }
 
     SECTION("init_open lands in Open") {
@@ -44,12 +42,11 @@ TEST_CASE("init helpers transition out of Initializing", "[state_machine][init]"
         const auto out = m.init_open();
         REQUIRE(m.state() == sm::State::Open);
         REQUIRE(out.transitioned);
-        REQUIRE_THAT(actions(out),
-                     Catch::Matchers::Equals(std::vector<sm::Action>{
-                         sm::Action::StopMotor,
-                         sm::Action::SetLedOpen,
-                         sm::Action::EmitTelemetryStateChanged,
-                     }));
+        REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                       sm::Action::StopMotor,
+                                       sm::Action::SetLedOpen,
+                                       sm::Action::EmitTelemetryStateChanged,
+                                   }));
     }
 
     SECTION("init_unknown lands in Faulted with LimitSwitchConflict") {
@@ -58,12 +55,11 @@ TEST_CASE("init helpers transition out of Initializing", "[state_machine][init]"
         REQUIRE(m.state() == sm::State::Faulted);
         REQUIRE(m.reason() == sm::Reason::LimitSwitchConflict);
         REQUIRE(out.reason == sm::Reason::LimitSwitchConflict);
-        REQUIRE_THAT(actions(out),
-                     Catch::Matchers::Equals(std::vector<sm::Action>{
-                         sm::Action::StopMotor,
-                         sm::Action::SetLedFault,
-                         sm::Action::EmitTelemetryStateChanged,
-                     }));
+        REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                       sm::Action::StopMotor,
+                                       sm::Action::SetLedFault,
+                                       sm::Action::EmitTelemetryStateChanged,
+                                   }));
     }
 }
 
@@ -75,42 +71,38 @@ TEST_CASE("happy path Closed → Open → Closed", "[state_machine][happy-path]"
     auto out = m.handle(sm::Event::CommandOpen);
     REQUIRE(m.state() == sm::State::Opening);
     REQUIRE(out.transitioned);
-    REQUIRE_THAT(actions(out),
-                 Catch::Matchers::Equals(std::vector<sm::Action>{
-                     sm::Action::DriveMotorOpen,
-                     sm::Action::SetLedOpening,
-                     sm::Action::EmitTelemetryStateChanged,
-                 }));
+    REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                   sm::Action::DriveMotorOpen,
+                                   sm::Action::SetLedOpening,
+                                   sm::Action::EmitTelemetryStateChanged,
+                               }));
 
     // Opening → Open
     out = m.handle(sm::Event::LimitOpenHit);
     REQUIRE(m.state() == sm::State::Open);
-    REQUIRE_THAT(actions(out),
-                 Catch::Matchers::Equals(std::vector<sm::Action>{
-                     sm::Action::StopMotor,
-                     sm::Action::SetLedOpen,
-                     sm::Action::EmitTelemetryStateChanged,
-                 }));
+    REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                   sm::Action::StopMotor,
+                                   sm::Action::SetLedOpen,
+                                   sm::Action::EmitTelemetryStateChanged,
+                               }));
 
     // Open → Closing
     out = m.handle(sm::Event::CommandClose);
     REQUIRE(m.state() == sm::State::Closing);
-    REQUIRE_THAT(actions(out),
-                 Catch::Matchers::Equals(std::vector<sm::Action>{
-                     sm::Action::DriveMotorClose,
-                     sm::Action::SetLedClosing,
-                     sm::Action::EmitTelemetryStateChanged,
-                 }));
+    REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                   sm::Action::DriveMotorClose,
+                                   sm::Action::SetLedClosing,
+                                   sm::Action::EmitTelemetryStateChanged,
+                               }));
 
     // Closing → Closed
     out = m.handle(sm::Event::LimitClosedHit);
     REQUIRE(m.state() == sm::State::Closed);
-    REQUIRE_THAT(actions(out),
-                 Catch::Matchers::Equals(std::vector<sm::Action>{
-                     sm::Action::StopMotor,
-                     sm::Action::SetLedClosed,
-                     sm::Action::EmitTelemetryStateChanged,
-                 }));
+    REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                   sm::Action::StopMotor,
+                                   sm::Action::SetLedClosed,
+                                   sm::Action::EmitTelemetryStateChanged,
+                               }));
 }
 
 TEST_CASE("operator stop from active motion", "[state_machine][stop]") {
@@ -122,12 +114,11 @@ TEST_CASE("operator stop from active motion", "[state_machine][stop]") {
         REQUIRE(m.state() == sm::State::StoppedOpen);
         REQUIRE(m.reason() == sm::Reason::OperatorStop);
         REQUIRE(out.reason == sm::Reason::OperatorStop);
-        REQUIRE_THAT(actions(out),
-                     Catch::Matchers::Equals(std::vector<sm::Action>{
-                         sm::Action::StopMotor,
-                         sm::Action::SetLedStopped,
-                         sm::Action::EmitTelemetryStateChanged,
-                     }));
+        REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                       sm::Action::StopMotor,
+                                       sm::Action::SetLedStopped,
+                                       sm::Action::EmitTelemetryStateChanged,
+                                   }));
     }
 
     SECTION("stop during Closing lands in StoppedClose") {
@@ -160,12 +151,11 @@ TEST_CASE("resume from a Stopped state", "[state_machine][stop][resume]") {
         const auto out = m.handle(sm::Event::CommandOpen);
         REQUIRE(m.state() == sm::State::Opening);
         REQUIRE(m.reason() == sm::Reason::None);
-        REQUIRE_THAT(actions(out),
-                     Catch::Matchers::Equals(std::vector<sm::Action>{
-                         sm::Action::DriveMotorOpen,
-                         sm::Action::SetLedOpening,
-                         sm::Action::EmitTelemetryStateChanged,
-                     }));
+        REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                       sm::Action::DriveMotorOpen,
+                                       sm::Action::SetLedOpening,
+                                       sm::Action::EmitTelemetryStateChanged,
+                                   }));
     }
 
     SECTION("CommandClose from StoppedOpen needs beam clear") {
@@ -195,12 +185,11 @@ TEST_CASE("safety beam during Closing stops the gate", "[state_machine][safety]"
     REQUIRE(m.state() == sm::State::StoppedClose);
     REQUIRE(m.reason() == sm::Reason::SafetyBeamObstacle);
     REQUIRE(out.reason == sm::Reason::SafetyBeamObstacle);
-    REQUIRE_THAT(actions(out),
-                 Catch::Matchers::Equals(std::vector<sm::Action>{
-                     sm::Action::StopMotor,
-                     sm::Action::SetLedStopped,
-                     sm::Action::EmitTelemetryStateChanged,
-                 }));
+    REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                   sm::Action::StopMotor,
+                                   sm::Action::SetLedStopped,
+                                   sm::Action::EmitTelemetryStateChanged,
+                               }));
 }
 
 TEST_CASE("beam latch rejects Close while obstructed", "[state_machine][safety][beam-latch]") {
@@ -214,10 +203,9 @@ TEST_CASE("beam latch rejects Close while obstructed", "[state_machine][safety][
     REQUIRE(rejected.reason == sm::Reason::SafetyBeamObstacle);
     // The rejection emits a telemetry record so the dashboard can show
     // "close attempted while obstructed" without inferring it from state.
-    REQUIRE_THAT(actions(rejected),
-                 Catch::Matchers::Equals(std::vector<sm::Action>{
-                     sm::Action::EmitTelemetryStateChanged,
-                 }));
+    REQUIRE_THAT(actions(rejected), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                        sm::Action::EmitTelemetryStateChanged,
+                                    }));
 
     m.handle(sm::Event::SafetyBeamCleared);
     const auto accepted = m.handle(sm::Event::CommandClose);
@@ -234,12 +222,11 @@ TEST_CASE("motor timeout from active motion → Faulted", "[state_machine][fault
         REQUIRE(m.state() == sm::State::Faulted);
         REQUIRE(m.reason() == sm::Reason::MotorTimeout);
         REQUIRE(out.reason == sm::Reason::MotorTimeout);
-        REQUIRE_THAT(actions(out),
-                     Catch::Matchers::Equals(std::vector<sm::Action>{
-                         sm::Action::StopMotor,
-                         sm::Action::SetLedFault,
-                         sm::Action::EmitTelemetryStateChanged,
-                     }));
+        REQUIRE_THAT(actions(out), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                       sm::Action::StopMotor,
+                                       sm::Action::SetLedFault,
+                                       sm::Action::EmitTelemetryStateChanged,
+                                   }));
     }
 
     SECTION("timeout while Closed is ignored") {
@@ -270,10 +257,9 @@ TEST_CASE("Faulted requires explicit reset", "[state_machine][fault][reset]") {
     REQUIRE(m.state() == sm::State::Initializing);
     REQUIRE(m.reason() == sm::Reason::None);
     REQUIRE(reset.transitioned);
-    REQUIRE_THAT(actions(reset),
-                 Catch::Matchers::Equals(std::vector<sm::Action>{
-                     sm::Action::EmitTelemetryStateChanged,
-                 }));
+    REQUIRE_THAT(actions(reset), Catch::Matchers::Equals(std::vector<sm::Action>{
+                                     sm::Action::EmitTelemetryStateChanged,
+                                 }));
 }
 
 TEST_CASE("Initializing drops events until init_*() is called", "[state_machine][init]") {
@@ -302,9 +288,9 @@ TEST_CASE("to_string covers every enumerator", "[state_machine][telemetry]") {
     // Smoke-check that telemetry-serialisable enums always produce a
     // non-empty string. A future enumerator added without updating
     // to_string would fall through to the "?" sentinel.
-    REQUIRE(sm::to_string(sm::State::Closed)       == "Closed");
-    REQUIRE(sm::to_string(sm::State::Faulted)      == "Faulted");
-    REQUIRE(sm::to_string(sm::Event::CommandOpen)  == "CommandOpen");
-    REQUIRE(sm::to_string(sm::Action::StopMotor)   == "StopMotor");
+    REQUIRE(sm::to_string(sm::State::Closed) == "Closed");
+    REQUIRE(sm::to_string(sm::State::Faulted) == "Faulted");
+    REQUIRE(sm::to_string(sm::Event::CommandOpen) == "CommandOpen");
+    REQUIRE(sm::to_string(sm::Action::StopMotor) == "StopMotor");
     REQUIRE(sm::to_string(sm::Reason::OperatorStop) == "OperatorStop");
 }

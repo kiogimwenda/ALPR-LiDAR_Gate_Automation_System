@@ -61,13 +61,13 @@ extern "C" void app_main(void) {
     // and exists. The instance stays in scope across the idle loop so
     // a heap-corruption regression here would be visible at link time
     // rather than later in a hard-to-trace runtime crash.
-    using gate::state_machine::StateMachine;
     using gate::state_machine::Config;
     using gate::state_machine::GateType;
+    using gate::state_machine::StateMachine;
     static StateMachine gate_sm{Config{
-        .gate_type         = GateType::Sliding,
-        .motor_timeout_ms  = 30'000,
-        .auto_close_ms     = 0,
+        .gate_type = GateType::Sliding,
+        .motor_timeout_ms = 30'000,
+        .auto_close_ms = 0,
     }};
     ESP_LOGI(kTag, "gate state machine ready (state=%.*s, motor_timeout=%ums)",
              static_cast<int>(gate::state_machine::to_string(gate_sm.state()).size()),
