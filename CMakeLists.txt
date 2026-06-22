@@ -53,19 +53,20 @@ if(BUILD_SERVER)
     endif()
 endif()
 
-# Pure firmware modules (e.g. the gate state machine) are mirrored as
-# host static libraries here so the Catch2 test suite can link against
-# them. The ESP-IDF cross-compile of the same sources still happens
-# through firmware/CMakeLists.txt + components/ — this is the host
-# build only, intentionally with no IDF dependency.
-add_subdirectory(firmware/host)
-
 # Tests come last so any optional production targets (gate_proto, gate_inference)
 # are already declared when tests/CMakeLists.txt evaluates `if(TARGET …)` gates.
+#
+# Pure firmware modules (e.g. the gate state machine) are mirrored as host
+# static libraries under firmware/host/ so the Catch2 suite can link them.
+# Both the host-side library and the tests/ tree are added inside the
+# Catch2_FOUND branch — without Catch2 there are no consumers, and adding
+# the targets unconditionally would surface them in compile_commands.json
+# during lint-only configures that intentionally skip vcpkg.
 if(BUILD_TESTS)
     find_package(Catch2 3 CONFIG QUIET)
     if(Catch2_FOUND)
         enable_testing()
+        add_subdirectory(firmware/host)
         add_subdirectory(tests)
     else()
         message(STATUS
