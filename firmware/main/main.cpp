@@ -15,6 +15,7 @@
 
 #include "gate_drivers/ethernet.hpp"
 #include "gate_drivers/version.hpp"
+#include "gate_state_machine/state_machine.hpp"
 
 namespace {
 
@@ -54,7 +55,26 @@ extern "C" void app_main(void) {
         ESP_LOGE(kTag, "ethernet start failed — running offline");
     }
 
-    // Phase 4.4 idle loop. Phase 4.5 will replace this with the gate
+    // Phase 4.5.1 — construct the gate state machine. The driver wiring
+    // (limit-switch ISRs → state-machine events → relay/LED actions)
+    // lands in 4.5.2, so for now we just log that the skeleton booted
+    // and exists. The instance stays in scope across the idle loop so
+    // a heap-corruption regression here would be visible at link time
+    // rather than later in a hard-to-trace runtime crash.
+    using gate::state_machine::StateMachine;
+    using gate::state_machine::Config;
+    using gate::state_machine::GateType;
+    static StateMachine gate_sm{Config{
+        .gate_type         = GateType::Sliding,
+        .motor_timeout_ms  = 30'000,
+        .auto_close_ms     = 0,
+    }};
+    ESP_LOGI(kTag, "gate state machine ready (state=%.*s, motor_timeout=%ums)",
+             static_cast<int>(gate::state_machine::to_string(gate_sm.state()).size()),
+             gate::state_machine::to_string(gate_sm.state()).data(),
+             static_cast<unsigned>(gate_sm.config().motor_timeout_ms));
+
+    // Phase 4.4 idle loop. Phase 4.5.2 will replace this with the gate
     // state-machine task and the gRPC Control stream client.
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(1000));

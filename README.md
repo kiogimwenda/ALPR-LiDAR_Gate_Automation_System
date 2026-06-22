@@ -103,7 +103,13 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam input + LED status driver | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ✅ Complete |
-| **4.5** | **Firmware app (state machine, gRPC client, OTA)** | 🔵 **In progress — next** |
+| **4.5** | **Firmware app (state machine, gRPC client, OTA)** | 🔵 **In progress** |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.1 | Gate state machine skeleton | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.2 | Wire state machine to drivers on ESP32-S3 | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.3 | gRPC client foundation (Control bidi stream) | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
 | 4.7 | Dashboard backend + frontend | ⏳ Pending |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
@@ -2904,7 +2910,7 @@ and pass clang-format with the project's `.clang-format` profile.
 
 ---
 
-## Phase 4.4 complete — firmware CI + driver suite delivered (latest)
+## Phase 4.4 complete — firmware CI + driver suite delivered
 
 > **Completed 2026-05-09.** Final sub-milestone (4.4.5) workflow at
 > [`.github/workflows/firmware.yml`](.github/workflows/firmware.yml).
@@ -3133,6 +3139,150 @@ each one back via the same stream.
 OTA delivery (the `DeliverOta` and `ReportOtaProgress` RPCs that
 returned `UNIMPLEMENTED` in Phase 4.3.5) becomes real in 4.5,
 backed by ESP-IDF's `esp_https_ota` over the same gRPC channel.
+
+---
+
+## Phase 4.5.1 — Gate state machine skeleton (latest)
+
+> **Completed 2026-06-22.** New component at
+> [`firmware/components/gate_state_machine/`](firmware/components/gate_state_machine/).
+> Host tests at [`tests/state_machine/`](tests/state_machine/).
+
+### What I built
+
+A pure C++20 state machine that owns the gate's transition logic
+without touching any ESP-IDF API. Eight states (`Initializing`,
+`Closed`, `Opening`, `Open`, `Closing`, `StoppedOpen`, `StoppedClose`,
+`Faulted`), eleven edge-triggered events, eleven driver actions, and
+five fault/stop reasons that surface in telemetry. The same translation
+unit compiles for the ESP32-S3 (as an IDF component) and for the host
+Catch2 suite (as a vanilla static library) — 11 tests covering the
+happy path, operator stop / resume, the safety-beam latch, motor
+timeout → fault, fault reset, and the `Initializing` drop-everything
+boot state. All green on the first push.
+
+This is the first half of Phase 4.5's split: 4.5.1 keeps the logic
+hardware-agnostic so tests can pin it down; 4.5.2 wires it to the
+real relays, limit switches, safety beam, and LED driver on the
+ESP32-S3.
+
+| Artifact | Purpose |
+|---|---|
+| `firmware/components/gate_state_machine/include/gate_state_machine/state_machine.hpp` | Public API. Defines `State`, `Event`, `Action`, `Reason`, `Config`, `Outputs`, and the `StateMachine` class. No `<esp_*.h>` or FreeRTOS includes — host-clean. |
+| `firmware/components/gate_state_machine/src/state_machine.cpp` | Flat-switch transition table for all 8 × 11 legal `(state, event)` combinations, plus `to_string()` overloads for telemetry/log serialisation. |
+| `firmware/components/gate_state_machine/CMakeLists.txt` | ESP-IDF component registration. No `REQUIRES` — it has no IDF dependencies, which is the point. |
+| `firmware/host/CMakeLists.txt` | New host-side mirror. Declares the `gate_state_machine` static library by pointing `add_library` at the same source file under `firmware/components/`, so on-target and host builds compile the exact same translation unit. |
+| `tests/state_machine/state_machine_test.cpp` | 11 Catch2 cases covering boot init, the happy path, operator stop, resume, beam latch, timeout fault, fault reset, and the `Initializing` drop-events guard. Uses `Catch::Matchers::Equals` on the action list so failures show a readable diff. |
+| `firmware/main/main.cpp` | Constructs a `static StateMachine` in `app_main()` and logs its boot state. Not yet driven by hardware — 4.5.2 wires the event sources. |
+
+### Technical detail
+
+#### Why a pure-C++ module with no ESP-IDF deps
+
+The state machine is the brain of the gate. Embedding `ESP_LOG*`,
+`xQueueSend`, or `esp_timer_get_time` inside it would make every
+transition both untestable on the host and dependent on hardware
+state. The skeleton inverts that: events are pure data, actions are
+pure data, the transition function reads `(state, reason, event,
+beam_clear_)` and returns the next state plus a small action list.
+That gives three immediate wins:
+
+1. **Host unit tests run in the same CI matrix as everything else.**
+   No QEMU emulator, no `esp-idf-test` setup, no flaky timing. The
+   `gate_state_machine` static library links into the existing Catch2
+   binary chain alongside `gate_auth`, `gate_fusion`, `gate_dash`,
+   etc., and runs in microseconds.
+2. **4.5.2 can swap event sources without touching state logic.**
+   The driver layer will produce events from limit-switch ISRs, gRPC
+   `GateCommand`s, and the auto-close timer; the state machine
+   doesn't care where an `Event::CommandOpen` came from.
+3. **Phase 4.7's simulation harness gets the same brain for free.**
+   The simulator can drive the state machine programmatically with no
+   firmware target needed — the same transitions, the same fault
+   handling, the same telemetry.
+
+#### Why timers don't appear in the `Action` enum
+
+A first cut included `StartMotorTimer` / `CancelMotorTimer` /
+`StartAutoCloseTimer` / `CancelAutoCloseTimer` actions. I removed
+them. Reason: the state machine knows *what* state the gate is in
+but does not know *how long* anything should take. The driver layer
+owns hardware timers (`esp_timer`-backed), so it can derive timer
+start/stop from `(new_state, Config)` itself — `Opening` arms the
+runtime watchdog, `Open` arms the auto-close timer if
+`Config::auto_close_ms != 0`, the inverse transitions cancel.
+
+Dropping those four actions also let `kMaxActionsPerStep` shrink from
+4 to 3 (worst case is now `DriveMotor* + SetLed* + EmitTelemetry`),
+which keeps `Outputs` a 6-byte struct + a 3-byte array on the stack —
+small enough that the FreeRTOS event-pump task in 4.5.2 won't need
+to heap-allocate anything per tick.
+
+#### How the safety-beam latch works
+
+The skeleton tracks `beam_clear_` as a private bool that updates on
+every `SafetyBeamTripped` / `SafetyBeamCleared` event, regardless of
+state. The reason it's stateful instead of "look up the IR sensor
+each time": at the state-machine layer there is no sensor — only the
+last edge that the driver layer reported. If the beam breaks mid-`Open`,
+then a `CommandClose` arriving later (e.g. an auto-close timer that
+the driver layer doesn't know about) must be rejected synchronously,
+not after another I/O round-trip. The latch enforces "no Close while
+the last beam edge was Tripped" without needing the driver layer to
+re-poll.
+
+A beam break during `Closing` also stops the gate immediately
+(`StoppedClose`, reason `SafetyBeamObstacle`). The skeleton stops
+only — it does not auto-reverse. Auto-reverse is a deployment-policy
+choice (some installs want it, some don't) and belongs in 4.5.2
+where operator config is available.
+
+#### Why `FaultCleared` returns to `Initializing` instead of the last known state
+
+When a motor timeout faults the gate, the actual physical position is
+unknown — the motor was driving but never hit a limit switch. Could be
+stuck halfway, could be that the limit switch failed, could be a
+wiring fault. Re-entering `Initializing` forces the driver layer to
+re-read both limit switches and call one of `init_closed()`,
+`init_open()`, or `init_unknown()` again before any motion. If both
+limits are released the machine returns to `Faulted` via
+`init_unknown()` with `Reason::LimitSwitchConflict`, which the
+operator sees in telemetry as "you need to physically check the gate".
+
+#### The shape of the host-side mirror
+
+`firmware/host/CMakeLists.txt` is a new directory whose only job is to
+declare `add_library(gate_state_machine STATIC …)` pointing at
+`../components/gate_state_machine/src/state_machine.cpp`. The
+top-level `CMakeLists.txt` pulls it in with
+`add_subdirectory(firmware/host)`, and `tests/CMakeLists.txt` then
+adds the test subdirectory gated on `if(TARGET gate_state_machine)`
+— same defensive pattern the existing `gate_proto` / `gate_auth` /
+`gate_fusion` / `gate_dash` / `gate_rpc` test wiring uses.
+
+That layout means the ESP-IDF build never sees `firmware/host/`
+(its `project.cmake` doesn't walk that path), and the host build
+never imports the IDF component descriptor. Both sides reach the
+same translation unit through different CMake graphs, which is what
+keeps the contract honest: a bug introduced in
+`state_machine.cpp` shows up in CI in the next push, regardless of
+which side broke first.
+
+#### What 4.5.2 will add on top
+
+1. A FreeRTOS task that owns the `StateMachine` instance, pulls
+   events off a queue, and dispatches the returned `Action` list to
+   `Relay::open()` / `Relay::close()` / `StatusLed::set_pattern()`.
+2. Limit-switch / safety-beam ISR handlers that push `Event` values
+   onto that queue (`xQueueSendFromISR`).
+3. Two `esp_timer` handles: one for the motor-runtime watchdog, one
+   for auto-close. Both derive their schedule from `Config`.
+4. A boot-time limit-switch read that decides which of
+   `init_closed()` / `init_open()` / `init_unknown()` to call before
+   the event loop starts pumping.
+5. A `vTaskDelay`-driven heartbeat that logs the current state so the
+   first hardware bring-up has a serial-console signal that the brain
+   is alive.
 
 ---
 

@@ -15,4 +15,5 @@ idf_component_register(
         freertos          # vTaskDelay, xTaskCreate
         # First-party components:
         gate_drivers
+        gate_state_machine
 )

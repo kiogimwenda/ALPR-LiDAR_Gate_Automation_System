@@ -47,3 +47,10 @@ endif()
 if(TARGET gate_rpc)
     add_subdirectory(integration)
 endif()
+
+# Firmware state machine tests link against the host-compiled mirror
+# (declared in firmware/host/CMakeLists.txt). No gRPC / GPU / IDF
+# dependencies — these run in every CI configuration.
+if(TARGET gate_state_machine)
+    add_subdirectory(state_machine)
+endif()
