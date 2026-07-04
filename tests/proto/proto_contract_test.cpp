@@ -235,7 +235,7 @@ TEST_CASE("OtaChunk holds a full ESP32 flash sector worth of data",
     std::string sector(4096, '\xAA');
     c.set_offset(0x10000);
     c.set_data(sector);
-    c.set_final(false);
+    c.set_is_final(false);
 
     std::string wire;
     REQUIRE(c.SerializeToString(&wire));
@@ -244,5 +244,5 @@ TEST_CASE("OtaChunk holds a full ESP32 flash sector worth of data",
     REQUIRE(decoded.ParseFromString(wire));
     REQUIRE(decoded.data().size() == 4096);
     REQUIRE(decoded.offset()      == 0x10000);
-    REQUIRE(decoded.final_()      == false);
+    REQUIRE(decoded.is_final()    == false);
 }

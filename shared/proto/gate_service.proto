@@ -292,9 +292,13 @@ message OtaManifest {
 }
 
 message OtaChunk {
-  uint64 offset = 1;
-  bytes  data   = 2;  // Up to 4096 bytes per chunk (ESP32 flash sector)
-  bool   final  = 3;  // True on last chunk
+  uint64 offset   = 1;
+  bytes  data     = 2;  // Up to 4096 bytes per chunk (ESP32 flash sector)
+  // Named is_final (not `final`): protobuf's C++ keyword-escaping for
+  // `final` changed across protoc versions (final_() → final()), which
+  // makes generated-API stability depend on the toolchain. Same field
+  // number, so the rename is wire-compatible.
+  bool   is_final = 3;  // True on last chunk
 }
 
 message OtaProgress {
