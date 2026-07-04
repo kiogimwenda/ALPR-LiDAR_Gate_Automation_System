@@ -48,6 +48,18 @@ With real hardware attached and the gate parked on its closed limit,
 the same sequence lands in `Closed` and the heartbeat reports
 `limits[open=0 closed=1]`.
 
+Once DHCP completes, the gRPC client dials the server configured via
+`menuconfig → Gate Firmware Configuration` (default 192.168.1.10:50051):
+
+```
+I (…) gate-rpc: started (server=192.168.1.10:50051, gate_id=gate-01)
+I (…) gate-fw: network ready at 192.168.1.42
+I (…) gate-rpc: Control stream opening to 192.168.1.10:50051 (stream=1)
+```
+
+With no server running the client logs the failure and retries with
+exponential backoff (1 s doubling to 30 s) — normal on a bench.
+
 ## Layout
 
 ```
@@ -66,8 +78,12 @@ firmware/
     │                       #   W5500 ethernet, safety beam, status LEDs).
     ├── gate_state_machine/ # Pure C++20 gate transition logic — no IDF deps;
     │                       #   unit-tested on host (tests/state_machine/).
-    └── gate_control/       # GateController: FreeRTOS event-pump task, motor
-                            #   watchdog + auto-close timers, action dispatch.
+    ├── gate_control/       # GateController: FreeRTOS event-pump task, motor
+    │                       #   watchdog + auto-close timers, action dispatch.
+    └── gate_rpc/           # gRPC Control-stream client: nanopb messages,
+                            #   framing codec (host-tested), nghttp2 h2c pump.
+                            #   src/pb/ is committed generator output —
+                            #   regenerate via scripts/gen-nanopb.sh (ADR-011).
 ```
 
 ## Build target

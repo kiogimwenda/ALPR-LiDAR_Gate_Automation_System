@@ -16,5 +16,6 @@ idf_component_register(
         # First-party components:
         gate_control
         gate_drivers
+        gate_rpc
         gate_state_machine  # main.cpp names GateType directly
 )

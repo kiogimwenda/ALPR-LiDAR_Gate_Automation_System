@@ -106,7 +106,7 @@ release on GitHub.
 | **4.5** | **Firmware app (state machine, gRPC client, OTA)** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.1 | Gate state machine skeleton | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.2 | Wire state machine to drivers on ESP32-S3 | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.5.3 | gRPC client foundation (Control bidi stream) | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.3 | gRPC client foundation (Control bidi stream) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ⏳ Pending |
@@ -3286,7 +3286,7 @@ which side broke first.
 
 ---
 
-## Phase 4.5.2 — Wiring the state machine to the drivers (latest)
+## Phase 4.5.2 — Wiring the state machine to the drivers
 
 Phase 4.5.1 built a brain with no body: a pure state machine that
 turns Events into Actions but touches no hardware and reads no clock.
@@ -3445,12 +3445,99 @@ was designed around.
 
 ---
 
+## Phase 4.5.3 — gRPC client foundation (latest)
+
+The plan said "gRPC client" and the honest engineering answer was
+that ADR-002's consequence line — *"both server and firmware link
+against `grpc++`"* — was written before anyone tried to fit `grpc++`
+(plus abseil, re2, c-ares, and the full protobuf runtime) into an
+MCU with 4 MB of flash. It does not fit, and there is no ESP-IDF
+port. What *does* fit is gRPC the **protocol**, which is just three
+well-specified layers. This sub-milestone implements all three and
+opens a real `FieldControllerService/Control` bidi stream against the
+unmodified server. **ADR-011** documents the deviation and supersedes
+that one line of ADR-002.
+
+### The three-layer stack
+
+| Layer | gRPC needs | Firmware answer |
+|---|---|---|
+| Messages | protobuf encode/decode | **nanopb 0.4.9** (`livekit/nanopb` managed component): plain-C runtime, statically-allocated structs sized by `shared/proto/gate_service.options` |
+| Framing | 5-byte prefix per message (compressed flag + big-endian length) | first-party codec in `gate_rpc` — pure C++20, host-mirrored, 9 Catch2 tests |
+| Transport | HTTP/2 | **nghttp2** (`espressif/nghttp`) over a plain lwIP socket — the server listens with `InsecureServerCredentials`, i.e. cleartext h2c, so the client preface goes straight onto the TCP connection with no TLS and no Upgrade dance |
+
+`espressif/sh2lib` was evaluated for the transport layer and rejected:
+it hardwires esp-tls with ALPN `h2`, which cannot produce an h2c
+connection. The replacement is ~150 lines of socket + poll() pump in
+`control_client.cpp`, and dropping esp-tls from the dependency chain
+is why the whole stack costs ~114 KB of flash (0x556f0 → 0x71490,
+with 70 % of the OTA slot still free).
+
+### Artifacts
+
+| Artifact | What it does |
+|---|---|
+| `docs/decisions/ADR-011-firmware-grpc-transport.md` | The transport decision: options table, why sidecar bridges and grpc-web lost, the TLS/mTLS upgrade path. |
+| `shared/proto/gate_service.options` | nanopb static sizing for every firmware-touched message (Telemetry, GateCommand, CommandAck, FaultEvent, Ota*). Fields without sizes fall back to callback type at zero RAM cost — the firmware never touches those messages. |
+| `scripts/gen-nanopb.sh` | Deterministic regeneration: venv-pinned `nanopb==0.4.9` (matching the runtime component; `PB_PROTO_HEADER_VERSION` fails the build on drift), system protoc, well-known types from `/usr/include`. Output is **committed** so CI and clean checkouts build with no Python toolchain. |
+| `firmware/components/gate_rpc/src/pb/` | The committed generator output: `gate_service.pb.{h,c}` + timestamp/duration/empty. Excluded from the clang-format CI sweep — machine-formatted, not ours to style. |
+| `firmware/components/gate_rpc/{include/gate_rpc/grpc_framing.hpp, src/grpc_framing.cpp}` | `make_frame_header()` + incremental `FrameAssembler`: caller-supplied buffer, re-entrant `push()` across arbitrary DATA-chunk boundaries, poisoned-until-reset on the two protocol violations (compressed flag, oversize declaration). |
+| `tests/rpc_framing/` | 9 host tests: byte-at-a-time delivery, chunk boundary inside the 5-byte header, three messages in one chunk, empty message, poison/reset, oversize-rejected-before-buffering. Host target is `gate_rpc_framing` (`gate_rpc` was already the server-side RPC library). |
+| `firmware/components/gate_rpc/{include/gate_rpc/control_client.hpp, src/control_client.cpp}` | `ControlClient`: the "gate_rpc" task (8 KB stack, priority 4 — below gate_ctrl, RPC yields to safety), connect → stream → pump loop, exponential-backoff reconnect (1 s → 30 s, reset after any session that got response HEADERS), thread-safe `send_envelope()` through a FreeRTOS queue, `to_wire_state()` mapping `sm::State` → proto `GateState`. |
+| `firmware/main/Kconfig.projbuild` | `GATE_ID`, `GATE_SERVER_HOST`, `GATE_SERVER_PORT` — server address is deployment config, not code. |
+| `firmware/main/main.cpp` (updated) | Constructs the client before ethernet start (no got-ip edge can slip past the wiring), `on_got_ip → notify_network_up()`, link-down → `notify_network_down()`. |
+| `shared/proto/gate_service.proto` + 5 C++ users (own commit) | `VehicleDetection.class` renamed to `vehicle_class` — `class` is a C++ keyword, so protoc escapes it (`class_()`) and nanopb, which doesn't escape at all, emitted a header that wasn't valid C++. Same field number, wire-compatible; same disease and cure as `OtaChunk.final` in 4.5.2. |
+
+### How the pump works
+
+One long-lived HTTP/2 session per connection, one gRPC stream per
+session, everything on the gate_rpc task (nghttp2 sessions are not
+thread-safe; the queue is the only cross-thread boundary):
+
+1. Block on an event-group bit until DHCP delivers an address.
+2. `getaddrinfo` → `connect()` → `TCP_NODELAY` → non-blocking.
+3. `nghttp2_submit_settings` + `nghttp2_submit_request` with the gRPC
+   headers (`:method POST`, `:path /gate.v1.FieldControllerService/
+   Control`, `content-type: application/grpc`, `te: trailers`).
+4. Queue the **hello Telemetry** envelope (gate_id, mapped state,
+   uptime, heap stats, fw version, seq) so it rides out right behind
+   the HEADERS frame.
+5. Pump: `poll()` at 250 ms; inbound bytes → `nghttp2_session_mem_recv`
+   → DATA chunks → `FrameAssembler` → nanopb decode → today, a log
+   line per received `GateCommand`. Outbound: the data-provider
+   callback drains the current frame and returns `DEFERRED` when dry;
+   the pump resumes the stream when the queue refills.
+6. Any exit — GOAWAY, stream close, socket error, framing violation —
+   tears the session down and re-enters the backoff loop.
+
+Two deliberate holds for 4.5.4: `sent_ts` stays unset until SNTP
+exists (a zero timestamp is worse than an absent one), and Stopped*
+states report `GATE_STATE_UNKNOWN` because the wire enum has no
+mid-travel value — extending the contract is a server-side modelling
+decision, not something the firmware should improvise.
+
+### Verification
+
+- `idf.py build` clean (esp32s3, nghttp 1.69 + nanopb 0.4.9 fetched as
+  managed components); binary 0x71490, 70 % OTA headroom.
+- Host suite: 30/30 (state machine 11, framing 9, proto contract),
+  descriptor validator green after the field rename.
+
+#### What 4.5.4 will add on top
+
+The wire goes live end-to-end: SNTP + real `sent_ts`, the 1 Hz
+telemetry cadence with limit/beam snapshots from `GateController`,
+`GateCommand` dispatch into the `command_*()` entry points, and
+`CommandAck` (received + completed) flowing back.
+
+---
+
 ## Repository layout
 
 ```
 gate-automation/
 ├── docs/                  # ADRs, diagrams, hardware build guides, env audit
-│   ├── decisions/         # 11 ADRs (ADR-000 through ADR-010)
+│   ├── decisions/         # 12 ADRs (ADR-000 through ADR-011)
 │   ├── diagrams/          # 7 Mermaid flowcharts
 │   └── hardware/          # 9 component guides + master build book + KiCad PDF
 ├── hardware/
@@ -3470,7 +3557,8 @@ gate-automation/
 │   ├── components/
 │   │   ├── gate_drivers/  # ✅ Phase 4.4.2-4.4.4 — relay/limit/eth/safety/LED drivers
 │   │   ├── gate_state_machine/ # ✅ Phase 4.5.1 — pure C++20 transition logic (host-tested)
-│   │   └── gate_control/  # ✅ Phase 4.5.2 — event pump task, timers, action dispatch
+│   │   ├── gate_control/  # ✅ Phase 4.5.2 — event pump task, timers, action dispatch
+│   │   └── gate_rpc/      # ✅ Phase 4.5.3 — gRPC Control client (nanopb + nghttp2 h2c)
 │   ├── host/              # Host-side static-lib mirror so Catch2 links the state machine
 │   ├── partitions.csv     # Two-OTA 4 MB layout (nvs, otadata, ota_0/1, spiffs)
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)

@@ -12,10 +12,12 @@
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <sdkconfig.h>
 
 #include "gate_control/gate_controller.hpp"
 #include "gate_drivers/ethernet.hpp"
 #include "gate_drivers/version.hpp"
+#include "gate_rpc/control_client.hpp"
 
 namespace {
 
@@ -44,17 +46,6 @@ void log_boot_banner() {
 extern "C" void app_main(void) {
     log_boot_banner();
 
-    // Bring up the W5500 ethernet driver. The DHCP-bound IP arrives
-    // asynchronously via the on_got_ip callback — we just log it for now;
-    // Phase 4.5 will use this signal to start the gRPC Control stream.
-    gate::drivers::Ethernet::on_got_ip(
-        [](const esp_ip4_addr_t& ip) { ESP_LOGI(kTag, "network ready at " IPSTR, IP2STR(&ip)); });
-    gate::drivers::Ethernet::on_link(
-        [](bool up) { ESP_LOGI(kTag, "link %s", up ? "up" : "down"); });
-    if (gate::drivers::Ethernet::start({}) != ESP_OK) {
-        ESP_LOGE(kTag, "ethernet start failed — running offline");
-    }
-
     // Phase 4.5.2 — construct and start the gate controller. The
     // constructor configures every gate GPIO (relays off, inputs
     // pulled up) and start() resolves the boot position from the limit
@@ -77,8 +68,45 @@ extern "C" void app_main(void) {
     }};
     ESP_ERROR_CHECK(gate_ctrl.start());
 
-    // Idle loop — all gate work happens on the gate_ctrl task; the gRPC
-    // Control stream client (Phase 4.5.3) will land here.
+    // Phase 4.5.3 — gRPC Control-stream client (nanopb + nghttp2 h2c,
+    // ADR-011). The telemetry filler runs on the gate_rpc task and
+    // reads only the controller's lock-free snapshots. Constructed
+    // before ethernet start so no got-ip edge can slip past the
+    // notify wiring below.
+    using gate::rpc::ControlClient;
+    static ControlClient control_client{
+        ControlClient::Config{
+            .host = CONFIG_GATE_SERVER_HOST,
+            .port = CONFIG_GATE_SERVER_PORT,
+            .gate_id = CONFIG_GATE_ID,
+            .fw_version = gate::drivers::kVersion,
+        },
+        [](gate_v1_Telemetry& t) {
+            t.gate_state = gate::rpc::to_wire_state(gate_ctrl.state());
+            // Limit/beam booleans join in 4.5.4 when GateController
+            // grows input snapshots; state is the load-bearing field.
+        },
+    };
+
+    // Bring up the W5500 ethernet driver. DHCP completion gates the
+    // Control stream: the client connects on got-ip and backs off
+    // while the link is down.
+    gate::drivers::Ethernet::on_got_ip([](const esp_ip4_addr_t& ip) {
+        ESP_LOGI(kTag, "network ready at " IPSTR, IP2STR(&ip));
+        control_client.notify_network_up();
+    });
+    gate::drivers::Ethernet::on_link([](bool up) {
+        ESP_LOGI(kTag, "link %s", up ? "up" : "down");
+        if (!up) {
+            control_client.notify_network_down();
+        }
+    });
+    if (gate::drivers::Ethernet::start({}) != ESP_OK) {
+        ESP_LOGE(kTag, "ethernet start failed — running offline");
+    }
+    ESP_ERROR_CHECK(control_client.start());
+
+    // Idle loop — gate work happens on gate_ctrl, RPC on gate_rpc.
     while (true) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

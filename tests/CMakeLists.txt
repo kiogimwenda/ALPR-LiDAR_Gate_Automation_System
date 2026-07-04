@@ -54,3 +54,9 @@ endif()
 if(TARGET gate_state_machine)
     add_subdirectory(state_machine)
 endif()
+
+# gRPC framing codec tests — the pure layer of the firmware's gRPC
+# stack (ADR-011), mirrored to host the same way.
+if(TARGET gate_rpc_framing)
+    add_subdirectory(rpc_framing)
+endif()

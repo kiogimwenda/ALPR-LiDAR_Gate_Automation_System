@@ -1,0 +1,26 @@
+menu "Gate Firmware Configuration"
+
+    config GATE_ID
+        string "Gate identifier"
+        default "gate-01"
+        help
+            Site-unique gate name; carried in every Telemetry message
+            and echoed by the server in audit logs and the dashboard.
+
+    config GATE_SERVER_HOST
+        string "Inference server host or IPv4"
+        default "192.168.1.10"
+        help
+            Address of the GPU inference / decision server exposing
+            gate.v1.FieldControllerService. On the reference field LAN
+            this is a static lease; a hostname resolves via DNS.
+
+    config GATE_SERVER_PORT
+        int "Inference server gRPC port"
+        range 1 65535
+        default 50051
+        help
+            Cleartext (h2c) gRPC port — must match the server's
+            --listen address (default 0.0.0.0:50051, ADR-011).
+
+endmenu
