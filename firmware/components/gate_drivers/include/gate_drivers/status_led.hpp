@@ -3,12 +3,21 @@
 // Drives three discrete LEDs (red, green, yellow) and renders animated
 // patterns matching the proto's `LedPattern` enum:
 //
-//   kOff        — all off, timer stopped.
-//   kAuthFlash  — 3× green flash @ 100 ms on/off, then off.
-//   kDenyFlash  — 3× red flash   @ 100 ms on/off, then off.
-//   kFaultSlow  — 1 Hz red blink, indefinite.
-//   kOtaPulse   — 1 Hz yellow blink, indefinite.
-//   kBootOk     — solid green for 2 s on boot, then off.
+//   kOff         — all off, timer stopped.
+//   kAuthFlash   — 3× green flash @ 100 ms on/off, then off.
+//   kDenyFlash   — 3× red flash   @ 100 ms on/off, then off.
+//   kFaultSlow   — 1 Hz red blink, indefinite.
+//   kOtaPulse    — 1 Hz yellow blink, indefinite.
+//   kBootOk      — solid green for 2 s on boot, then off.
+//   kGateMoving  — 2.5 Hz yellow blink while the gate travels, indefinite.
+//   kGateOpen    — solid green while the gate is held open, indefinite.
+//   kGateStopped — alternating red/yellow @ 1 Hz, paused mid-travel.
+//
+// Values 0–5 mirror the proto's LedPattern enum one-to-one so a
+// COMMAND_KIND_LED_PATTERN payload maps by direct cast. Values 6+ are
+// firmware-local gate-state patterns driven by the gate state machine;
+// they are never sent over the wire, so they deliberately live outside
+// the proto range.
 //
 // `render(pattern)` is non-blocking: it stamps the new pattern, restarts
 // the animation from frame 0, and returns. The 100 ms periodic esp_timer
@@ -37,6 +46,10 @@ public:
         kFaultSlow = 3,
         kOtaPulse = 4,
         kBootOk = 5,
+        // Firmware-local (not in the proto LedPattern enum):
+        kGateMoving = 6,
+        kGateOpen = 7,
+        kGateStopped = 8,
     };
 
     struct Config {

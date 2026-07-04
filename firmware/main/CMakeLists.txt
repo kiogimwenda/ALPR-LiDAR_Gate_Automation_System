@@ -14,6 +14,7 @@ idf_component_register(
         log               # ESP_LOG*
         freertos          # vTaskDelay, xTaskCreate
         # First-party components:
+        gate_control
         gate_drivers
-        gate_state_machine
+        gate_state_machine  # main.cpp names GateType directly
 )

@@ -30,6 +30,24 @@ I (303) gate-fw: gate-firmware 0.0.1 starting (idf v6.1.0)
 I (303) gate-fw: chip: esp32s3 rev 0.2, 2 cores, WiFi BLE embedded-flash
 ```
 
+On a bare bench board (no switches or beam wired) the gate controller
+then boots straight into `Faulted` — by design, not by accident:
+unwired normally-open limit inputs read "not at either limit" (unknown
+position) and the unwired beam input reads "blocked" (failsafe), so
+expect:
+
+```
+W (…) gate-ctrl: safety beam blocked at boot — close commands will be rejected
+E (…) gate-ctrl: cannot resolve position (open=0 closed=0) — mid-travel: operator must reset
+I (…) gate-ctrl: state -> Faulted (reason=LimitSwitchConflict)
+I (…) gate-ctrl: started (state=Faulted, reverse_on_beam=1, auto_close=0ms)
+I (…) gate-ctrl: heartbeat: state=Faulted reason=LimitSwitchConflict beam=blocked limits[open=0 closed=0]
+```
+
+With real hardware attached and the gate parked on its closed limit,
+the same sequence lands in `Closed` and the heartbeat reports
+`limits[open=0 closed=1]`.
+
 ## Layout
 
 ```
@@ -40,10 +58,16 @@ firmware/
 │                           #   logging, watchdog, partitions)
 ├── main/                   # app_main() entry component
 │   ├── CMakeLists.txt
-│   └── main.cpp            # Boot banner + idle task; replaced by Phase 4.5.
+│   └── main.cpp            # Boot banner, ethernet bring-up, GateController start.
+├── host/                   # Host-side static-lib mirror of pure components so
+│                           #   the Catch2 suite links them (built by root CMake).
 └── components/
-    └── gate_drivers/       # First-party hardware drivers (relays, GPIOs,
-                            #   W5500 ethernet, safety beam, LEDs).
+    ├── gate_drivers/       # First-party hardware drivers (relays, GPIOs,
+    │                       #   W5500 ethernet, safety beam, status LEDs).
+    ├── gate_state_machine/ # Pure C++20 gate transition logic — no IDF deps;
+    │                       #   unit-tested on host (tests/state_machine/).
+    └── gate_control/       # GateController: FreeRTOS event-pump task, motor
+                            #   watchdog + auto-close timers, action dispatch.
 ```
 
 ## Build target

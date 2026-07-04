@@ -105,7 +105,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ✅ Complete |
 | **4.5** | **Firmware app (state machine, gRPC client, OTA)** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.1 | Gate state machine skeleton | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.5.2 | Wire state machine to drivers on ESP32-S3 | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.2 | Wire state machine to drivers on ESP32-S3 | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.3 | gRPC client foundation (Control bidi stream) | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ⏳ Pending |
@@ -3142,7 +3142,7 @@ backed by ESP-IDF's `esp_https_ota` over the same gRPC channel.
 
 ---
 
-## Phase 4.5.1 — Gate state machine skeleton (latest)
+## Phase 4.5.1 — Gate state machine skeleton
 
 > **Completed 2026-06-22.** New component at
 > [`firmware/components/gate_state_machine/`](firmware/components/gate_state_machine/).
@@ -3286,6 +3286,165 @@ which side broke first.
 
 ---
 
+## Phase 4.5.2 — Wiring the state machine to the drivers (latest)
+
+Phase 4.5.1 built a brain with no body: a pure state machine that
+turns Events into Actions but touches no hardware and reads no clock.
+This sub-milestone is the body — a new `gate_control` component whose
+single class, `GateController`, owns the drivers, the event queue, the
+timers, and the FreeRTOS task that pumps them. `app_main` now
+constructs the controller, calls `start()`, and gets out of the way:
+from that point the gate is fully reactive to its limit switches,
+safety beam, and command entry points.
+
+### Artifacts
+
+| Artifact | What it does |
+|---|---|
+| `firmware/components/gate_control/include/gate_control/gate_controller.hpp` | `GateController` — public API: `start()`, thread-safe `command_open()` / `command_close()` / `command_stop()` / `clear_fault()` entry points, and lock-free `state()` / `reason()` snapshots. Carries the reference DevKitC-1 pin map as `Pins` defaults. |
+| `firmware/components/gate_control/src/gate_controller.cpp` | The event pump task, the Action dispatcher (relays / LED / telemetry-log), the motor watchdog + auto-close timers, boot-time position resolution, and the two driver-layer policies (reverse-on-beam, auto-close retry). |
+| `firmware/components/gate_control/CMakeLists.txt` | IDF component registration. ESP-IDF-only by design — the hardware-agnostic logic stays in `gate_state_machine`, which is what the host Catch2 suite exercises. |
+| `firmware/components/gate_drivers/{include/gate_drivers/status_led.hpp, src/status_led.cpp}` (updated) | Three new firmware-local LED patterns: `kGateMoving` (2.5 Hz yellow), `kGateOpen` (solid green, timer parked), `kGateStopped` (1 Hz red/yellow alternation). Values 0–5 still mirror the proto `LedPattern` one-to-one; the new values start at 6, outside the wire range. |
+| `firmware/main/main.cpp` (updated) | Replaces the 4.5.1 "construct and log" placeholder with a `static GateController` + `ESP_ERROR_CHECK(start())`. Config: sliding gate, 30 s motor watchdog, auto-close off until remote config lands (4.5.4), reverse-on-beam on. |
+| `shared/proto/gate_service.proto` + `tests/proto/proto_contract_test.cpp` (updated) | Drive-by durability fix (own commit): `OtaChunk.final` renamed to `is_final`. protobuf's C++ keyword-escaping for `final` changed across protoc versions (`final_()` → `final()`), so the generated API depended on the toolchain. Same field number — wire-compatible. |
+
+### The threading model: five producers, one consumer, zero locks
+
+Every input converges on a single FreeRTOS queue drained by one task
+(`gate_ctrl`, 4 KB stack, priority 5):
+
+1. **Limit switches** — `LimitSwitch` edge callbacks post
+   `LimitOpenHit/Released`, `LimitClosedHit/Released`.
+2. **Safety beam** — `SafetyBeam` edge callbacks post
+   `SafetyBeamTripped/Cleared`.
+3. **Motor watchdog** — an `esp_timer` one-shot posts `MotorTimeout`.
+4. **Auto-close** — a second one-shot posts a plain `CommandClose`.
+5. **Command entry points** — `command_*()` / `clear_fault()`, callable
+   from any task (today `app_main`; in 4.5.4, the gRPC stream task).
+
+The 4.5.1 README predicted ISR handlers and `xQueueSendFromISR`; the
+actual drivers made that unnecessary. `LimitSwitch` and `SafetyBeam`
+debounce by polling from the **esp_timer task** — their callbacks are
+ordinary task context, and `esp_timer` expiry callbacks run there too,
+so every producer uses plain `xQueueSend` and the "ISR-safe" API never
+appears. Because only the pump task ever touches the `StateMachine`,
+the machine needs no mutex; the `state()`/`reason()` snapshots other
+tasks read are a pair of relaxed atomics the pump refreshes after
+every step.
+
+Queue depth is 16 for five producers of edge-triggered events — a full
+queue means something is deeply wrong, so `post()` logs the drop rather
+than blocking (a blocked esp_timer task would stall every debouncer in
+the system).
+
+### Timer ownership, made concrete
+
+4.5.1 deliberately kept wall-clock time out of the state machine; this
+is the other half of that contract. `manage_timers()` runs after every
+transition:
+
+- **Motor watchdog** — armed with the full `motor_timeout_ms` budget on
+  every entry into `Opening`/`Closing` (a resume from `Stopped*` gets
+  the full budget again; travel from mid-position is strictly shorter,
+  so the bound still holds), cancelled the moment motion ends. Expiry
+  posts `MotorTimeout`, which the state machine turns into
+  `Faulted`/`MotorTimeout` — the "gate jammed on a stone" path.
+- **Auto-close** — armed on entering `Open` when
+  `Config::sm.auto_close_ms > 0`, cancelled on leaving it. It fires a
+  plain `CommandClose` through the same queue as an operator command,
+  so it hits the same beam-latch rejection.
+
+### Boot: the gate never moves from an unverified position
+
+`start()` sleeps 50 ms (covers the slowest debounce commit: 20 ms at a
+5 ms poll), pre-latches the beam (`SafetyBeamTripped` is recorded even
+in `Initializing`, so a boot-time obstruction rejects the first close),
+then reads both limit switches once:
+
+- closed asserted, open not → `init_closed()`
+- open asserted, closed not → `init_open()`
+- **anything else** → `init_unknown()` → `Faulted`. Both-asserted is a
+  wiring fault; neither-asserted means the gate sat mid-travel through
+  a reboot. Either way an operator must `clear_fault()`, and the pump
+  task answers `FaultCleared → Initializing` by re-running the same
+  resolution — so there is exactly one code path that can ever declare
+  a position, and it always reads the physical switches first.
+
+Edge callbacks are registered *after* resolution so the queue starts
+from a clean slate, and the pump task is spawned last.
+
+### Policies live in the driver layer, not the state machine
+
+Two operator-policy decisions that 4.5.1 explicitly deferred land here,
+in `apply_policies()`:
+
+- **Reverse-on-beam** (default **on**, matching UL 325
+  entrapment-protection expectations for residential operators): when
+  the beam trips during `Closing`, the state machine stops the motor
+  (`StoppedClose`/`SafetyBeamObstacle`); the controller then posts
+  `CommandOpen`, and the ordinary `StoppedClose → Opening` transition
+  drives the gate away from the obstruction. Opening with the beam
+  still blocked is legal by design — the machine only gates *closing*
+  on the latch.
+- **Auto-close retry**: an auto-close `CommandClose` that arrives while
+  the beam is blocked is rejected (gate stays `Open`, no transition) —
+  but the one-shot has already burned. Without a re-arm the gate would
+  stay open forever, so the controller re-arms the countdown for
+  another full period and the retry loop ends when a close finally
+  goes through.
+
+Both are pure driver-layer behaviours: the state machine's transition
+table is untouched, and the 21-test host suite still passes unchanged.
+
+### Action dispatch details worth keeping
+
+- **Break-before-make relay interlock**: `DriveMotorOpen` drops the
+  close contactor before picking the open one (and vice versa), so the
+  two coils are never energised together regardless of the Action
+  order the state machine emitted.
+- **LED mapping**: `SetLedClosed → kOff` (an idle secured gate shows no
+  light), `SetLedOpening/Closing → kGateMoving` (2.5 Hz yellow — fast
+  enough to read as "in motion" next to the 1 Hz `kOtaPulse`),
+  `SetLedOpen → kGateOpen` (solid green; the renderer parks its 100 ms
+  timer since a steady colour needs no animation), `SetLedStopped →
+  kGateStopped` (red/yellow alternation: attention, not fault),
+  `SetLedFault → kFaultSlow` (pure red, 1 Hz).
+- **Telemetry placeholder**: `EmitTelemetryStateChanged` logs
+  `state -> X (reason=Y)` on the serial console until the gRPC Control
+  stream (4.5.3/4.5.4) gives it a wire to ride.
+- **Heartbeat**: the pump's `xQueueReceive` timeout doubles as the
+  heartbeat — every 5 s of quiet it logs state, reason, beam status,
+  and both limit readings, so first hardware bring-up has a pulse to
+  watch before any wiring is proven.
+
+### Why the proto fix rode along
+
+Configuring the host build fresh for this milestone surfaced that the
+local vcpkg toolchain had drifted to protobuf 6.33, whose generated
+accessor for a field named `final` changed from `final_()` to
+`final()` — breaking `tests/proto` locally while CI (which builds the
+C++ test tree only when the vcpkg toolchain is present) stayed green.
+Renaming the field to `is_final` removes the keyword collision for
+every protoc version at once and is wire-compatible (field number
+unchanged). It shipped as its own commit so the contract change is
+visible in history rather than buried in a firmware diff.
+
+### Verification
+
+- `idf.py build` (ESP-IDF v6.1, esp32s3): clean; binary at 0x556f0
+  bytes, 78 % of the smallest OTA app partition still free.
+- Host suite: 21/21 Catch2 tests green (11 state-machine + proto
+  contract), descriptor validator green.
+
+#### What 4.5.3 will add on top
+
+The gRPC client foundation: a Control bidi-stream connection to the
+server, brought up when `Ethernet`'s `on_got_ip` fires, feeding
+`GateCommand`s into the same `command_*()` entry points the RPC layer
+was designed around.
+
+---
+
 ## Repository layout
 
 ```
@@ -3306,10 +3465,13 @@ gate-automation/
 │   ├── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
 │   ├── rpc/               # ✅ Phase 4.3.4/5 — gRPC services + lifecycle wrapper
 │   └── src/main.cpp       # ✅ Phase 4.3.5 — gate-server daemon entry point
-├── firmware/              # 🔵 Phase 4.4 — ESP-IDF field controller firmware (ESP32-S3)
-│   ├── main/              # ✅ Phase 4.4.1 — app_main entry component
+├── firmware/              # 🔵 Phase 4.4-4.5 — ESP-IDF field controller firmware (ESP32-S3)
+│   ├── main/              # ✅ app_main — boot banner, ethernet up, GateController start
 │   ├── components/
-│   │   └── gate_drivers/  # 🔵 Phase 4.4.2-4.4.4 — relay/limit/eth/safety/LED drivers
+│   │   ├── gate_drivers/  # ✅ Phase 4.4.2-4.4.4 — relay/limit/eth/safety/LED drivers
+│   │   ├── gate_state_machine/ # ✅ Phase 4.5.1 — pure C++20 transition logic (host-tested)
+│   │   └── gate_control/  # ✅ Phase 4.5.2 — event pump task, timers, action dispatch
+│   ├── host/              # Host-side static-lib mirror so Catch2 links the state machine
 │   ├── partitions.csv     # Two-OTA 4 MB layout (nvs, otadata, ota_0/1, spiffs)
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)
 ├── simulation/            # ⏳ Phase 4.6 — virtual gate harness

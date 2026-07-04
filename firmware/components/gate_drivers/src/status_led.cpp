@@ -18,6 +18,7 @@ constexpr std::uint32_t kAuthFlashFrames = 6;  // 3× on/off pairs
 constexpr std::uint32_t kDenyFlashFrames = 6;
 constexpr std::uint32_t kBootOkFrames = 20;     // 20 × 100 ms = 2 s
 constexpr std::uint32_t kSlowBlinkPeriod = 10;  // 10 × 100 ms = 1 s ⇒ 1 Hz
+constexpr std::uint32_t kFastBlinkPeriod = 4;   // 4 × 100 ms = 400 ms ⇒ 2.5 Hz
 
 }  // namespace
 
@@ -125,6 +126,31 @@ void StatusLed::on_tick() {
 
         case Pattern::kOtaPulse:
             set_color(false, false, (step_ % kSlowBlinkPeriod) < (kSlowBlinkPeriod / 2));
+            break;
+
+        case Pattern::kGateMoving:
+            // Fast yellow blink — visually distinct from the slower
+            // 1 Hz kOtaPulse so an observer can tell "gate travelling"
+            // from "firmware updating" at a glance.
+            set_color(false, false, (step_ % kFastBlinkPeriod) < (kFastBlinkPeriod / 2));
+            break;
+
+        case Pattern::kGateOpen:
+            // Steady green needs no animation — latch the colour and
+            // stop ticking. render() restarts the timer on the next
+            // pattern change.
+            set_color(false, true, false);
+            stop_timer();
+            return;
+
+        case Pattern::kGateStopped:
+            // Red/yellow alternation: attention-needed but not a fault
+            // (fault is pure red at 1 Hz).
+            if ((step_ % kSlowBlinkPeriod) < (kSlowBlinkPeriod / 2)) {
+                set_color(true, false, false);
+            } else {
+                set_color(false, false, true);
+            }
             break;
     }
     ++step_;
