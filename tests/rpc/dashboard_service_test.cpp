@@ -106,7 +106,7 @@ TEST_CASE("DashboardService::Authorize delegates to fusion engine and publishes 
     p->set_detection_conf(0.9f);
     p->set_ocr_conf(0.85f);
     auto* v = f->add_vehicles();
-    v->set_class_(VehicleClass::VEHICLE_CLASS_SEDAN);
+    v->set_vehicle_class(VehicleClass::VEHICLE_CLASS_SEDAN);
     v->set_class_conf(0.95f);
 
     grpc::ServerContext ctx;

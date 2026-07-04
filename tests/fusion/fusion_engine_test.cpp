@@ -48,7 +48,7 @@ PlateDetection make_plate(const std::string& text, float det_conf, float ocr_con
 
 VehicleDetection make_vehicle(VehicleClass cls, float conf) {
     VehicleDetection v;
-    v.set_class_(cls);
+    v.set_vehicle_class(cls);
     v.set_class_conf(conf);
     return v;
 }

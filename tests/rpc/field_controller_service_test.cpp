@@ -50,7 +50,7 @@ TEST_CASE("FieldControllerService::SubmitDetection delegates to fusion + publish
     p->set_detection_conf(0.9f);
     p->set_ocr_conf(0.85f);
     auto* v = frame.add_vehicles();
-    v->set_class_(VehicleClass::VEHICLE_CLASS_SEDAN);
+    v->set_vehicle_class(VehicleClass::VEHICLE_CLASS_SEDAN);
     v->set_class_conf(0.95f);
 
     grpc::ServerContext ctx;

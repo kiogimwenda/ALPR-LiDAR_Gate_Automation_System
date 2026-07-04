@@ -164,7 +164,10 @@ message PlateDetection {
 
 // Single LiDAR detection.
 message VehicleDetection {
-  VehicleClass  class           = 1;
+  // Named vehicle_class (not `class`): the C++ keyword forces protoc
+  // into escaped class_() accessors and breaks nanopb's C++-consumed
+  // headers outright. Same field number — wire-compatible rename.
+  VehicleClass  vehicle_class   = 1;
   float         class_conf      = 2;  // [0.0, 1.0]
   BoundingBox3D box             = 3;
   Point3D       velocity_mps    = 4;  // Tracked velocity, m/s

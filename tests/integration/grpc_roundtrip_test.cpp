@@ -177,7 +177,7 @@ TEST_CASE("integration: DashboardService::Authorize end-to-end with allowlist hi
     p->set_detection_conf(0.9f);
     p->set_ocr_conf(0.85f);
     auto* v = f->add_vehicles();
-    v->set_class_(VehicleClass::VEHICLE_CLASS_SEDAN);
+    v->set_vehicle_class(VehicleClass::VEHICLE_CLASS_SEDAN);
     v->set_class_conf(0.95f);
 
     AuthDecision resp;
@@ -258,7 +258,7 @@ TEST_CASE("integration: FieldControllerService::SubmitDetection over gRPC",
     p->set_detection_conf(0.92f);
     p->set_ocr_conf(0.88f);
     auto* v = frame.add_vehicles();
-    v->set_class_(VehicleClass::VEHICLE_CLASS_SEDAN);
+    v->set_vehicle_class(VehicleClass::VEHICLE_CLASS_SEDAN);
     v->set_class_conf(0.95f);
 
     AuthDecision resp;
@@ -411,7 +411,7 @@ TEST_CASE("integration: Authorize over allowlist hit shows up on dashboard subsc
     p->set_detection_conf(0.9f);
     p->set_ocr_conf(0.85f);
     auto* v = f->add_vehicles();
-    v->set_class_(VehicleClass::VEHICLE_CLASS_SEDAN);
+    v->set_vehicle_class(VehicleClass::VEHICLE_CLASS_SEDAN);
     v->set_class_conf(0.95f);
 
     grpc::ClientContext auth_ctx;

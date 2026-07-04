@@ -135,7 +135,7 @@ AuthDecision FusionEngine::decide_at(const AuthorizeRequest& req, std::time_t no
     if (const int v = pick_best_vehicle(req); v >= 0) {
         const auto& vd = req.frame().vehicles(v);
         lidar_conf = vd.class_conf();
-        vehicle_class = vd.class_();
+        vehicle_class = vd.vehicle_class();
     }
     out.set_matched_class(vehicle_class);
 
