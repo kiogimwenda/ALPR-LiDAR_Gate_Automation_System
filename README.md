@@ -115,7 +115,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.1 | Backend foundation: Drogon app + gRPC bridge + health | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.2 | REST API: commands, allowlist CRUD | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream + status snapshot | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ⏳ Pending |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
 | 4.9 | End-to-end integration tests | ⏳ Pending |
@@ -4017,7 +4017,7 @@ the deferred `GET /api/status` snapshot on top of that cache.
 
 ---
 
-## Phase 4.7.3 — WebSocket live event stream + status snapshot (latest)
+## Phase 4.7.3 — WebSocket live event stream + status snapshot
 
 The live half of the backend, split along the project's standing
 fault line: everything with policy in it is a pure, host-tested class;
@@ -4084,6 +4084,47 @@ against a gate-sim fleet.
 
 ---
 
+## Phase 4.7.4 — SvelteKit frontend: scaffold + live monitoring (latest)
+
+First pixels. `dashboard/frontend/` is now a real SvelteKit app in
+SPA mode (ADR-004): `adapter-static` with an `index.html` fallback so
+the built site can be served same-origin by the Drogon process — or
+any static server — with client-side routing from there. Svelte 5,
+TypeScript strict, and deliberately **zero runtime dependencies**
+beyond the framework: no component library, no state manager, no
+fetch wrapper. At this surface area they would each cost more than
+they pay.
+
+### Structure
+
+| Piece | What it does |
+|---|---|
+| `src/lib/types.ts` | The presentation schema transcribed for the compiler — the same shapes `tests/dashboard_api/` pins on the C++ side, camelCase fields, enum short names, `{ts, tsMs}` stamps. |
+| `src/lib/live.ts` | The connection layer: one WebSocket to `/ws/events` with 1 s → 15 s reconnect; on every (re)connect the stores re-seed from `GET /api/status`, so the UI converges after a backend restart — the same resume-not-gap philosophy the backend applies to its own upstream. Downstream it's plain Svelte stores (`gates`, `feed`, three connection flags); components stay dumb. |
+| `src/lib/GateTile.svelte` | Per-gate card: state-coloured edge (CLOSED green, OPEN blue, moving amber, FAULT red, LOCKDOWN purple), limit/beam facts with a loud `BEAM BLOCKED`, fw/uptime/data-age footer, and a staleness fade past 10 s without telemetry. |
+| `src/lib/EventRow.svelte` | One feed line per event with a per-type summary (decision → verdict+plate, ack → ✓/✗ with `stateAfter` or error, fault → severity+code); faults and failed acks render red. |
+| `src/routes/+page.svelte` | Header with three honesty badges (backend / event stream / server — the UI distinguishes *its* connection from the backend's upstream), the tile grid, and the capped live feed. |
+| `vite.config.ts` | Dev proxy: `/api` + `/ws` → the Drogon backend, so development is same-origin and `--cors-dev` stays optional. |
+| `.github/workflows/dashboard.yml` | Frontend CI: `npm ci` → `svelte-check` → production build, path-filtered to `dashboard/frontend/**` so JS churn and C++ churn don't burn each other's CI minutes. |
+
+### Verification
+
+- `svelte-check`: 0 errors, 0 warnings across 145 files (TypeScript
+  strict).
+- Production build → static `build/` output; served via
+  `vite preview` and answers `200` with the app shell.
+- The live-data path (tiles moving while a gate-sim fleet feeds the
+  server) is the Phase 4.7.5 closure demo, which is also where
+  command buttons land on the tiles.
+
+#### What 4.7.5 will add on top
+
+Controls and administration: open/close buttons on the tiles wired to
+`POST /api/gates/{id}/command`, the allowlist management page over the
+4.7.2 CRUD, and the Phase 4.7 closure.
+
+---
+
 ## Repository layout
 
 ```
@@ -4117,8 +4158,8 @@ gate-automation/
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)
 ├── simulation/            # ✅ Phase 4.6 — gate-sim virtual field controller
 ├── dashboard/             # 🔵 Phase 4.7 — Drogon backend + SvelteKit frontend
-│   ├── backend/           # 🔵 4.7.1+ — gate-dashboard: Drogon ↔ gRPC bridge
-│   └── frontend/          # ⏳ 4.7.4+ — SvelteKit SPA
+│   ├── backend/           # 🔵 4.7.1-3 — gate-dashboard: Drogon ↔ gRPC bridge
+│   └── frontend/          # 🔵 4.7.4+ — SvelteKit SPA (live monitoring view)
 ├── deployment/            # ⏳ Phase 4.8 — systemd units + install scripts
 ├── tests/                 # Catch2 unit + contract tests
 │   ├── proto/             # ✅ Phase 4.1 — proto contract tests
