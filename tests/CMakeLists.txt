@@ -77,3 +77,8 @@ endif()
 if(TARGET gate_sim_core)
     add_subdirectory(simulation)
 endif()
+
+# Dashboard backend presentation mapping (Phase 4.7).
+if(TARGET gate_dash_json)
+    add_subdirectory(dashboard_api)
+endif()

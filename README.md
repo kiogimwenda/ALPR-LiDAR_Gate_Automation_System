@@ -111,7 +111,12 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ✅ Complete |
 | 4.6 | Simulation harness | ✅ Complete |
-| 4.7 | Dashboard backend + frontend | ⏳ Pending — next |
+| **4.7** | **Dashboard backend + frontend** | 🔵 **In progress** |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.1 | Backend foundation: Drogon app + gRPC bridge + health | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.2 | REST API: commands, allowlist CRUD, status snapshot | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ⏳ Pending |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
 | 4.9 | End-to-end integration tests | ⏳ Pending |
 
@@ -3815,7 +3820,7 @@ contract against the real server.
 
 ---
 
-## Phase 4.6 — Simulation harness: gate-sim (latest)
+## Phase 4.6 — Simulation harness: gate-sim
 
 The 4.5.6 test harness promised on its way out that it would grow up;
 one milestone later it did. `simulation/` ships **gate-sim**, a
@@ -3908,6 +3913,55 @@ waiting for field hardware.
 
 ---
 
+## Phase 4.7.1 — Dashboard backend foundation (latest)
+
+Phase 4.7 opens with the sub-milestone split above and the Drogon
+skeleton everything else hangs off. The backend is deliberately a
+**thin bridge process**: REST + WebSocket southbound to the browser,
+one gRPC channel northbound to the gate-server — no business logic,
+no database; the server owns truth, the dashboard presents it.
+
+### Artifacts
+
+| Artifact | What it does |
+|---|---|
+| `dashboard/backend/CMakeLists.txt` | Three targets: `gate_dash_json` (presentation mapping, Drogon-free), `gate_dash_api` (GrpcBridge, adds Drogon), `gate-dashboard` (executable). Root CMake gates on vcpkg-resolved `gate_proto` + Drogon — the lint-configure-stays-inert invariant again. `BUILD_DASHBOARD` now defaults ON. |
+| `include/dash_api/json_mapping.hpp` + `src/json_mapping.cpp` | The **presentation schema**: proto → camelCase JSON, enum short names (`GATE_STATE_OPEN` → `OPEN`, out-of-range → raw integer, never a crash), dual timestamps (ISO-8601 `ts` for humans, epoch `tsMs` for sorting), `DashboardEvent` oneof → `type` + typed body. protobuf's reflection-based JSON was rejected on purpose — the wire schema and the UI schema should be allowed to evolve independently, and this file is the explicit contract between them. |
+| `include/dash_api/grpc_bridge.hpp` + `src/grpc_bridge.cpp` | One channel, both stubs (DashboardService + AdminService) — gRPC multiplexes over a single HTTP/2 connection, so one channel is the right number. Drogon creates controllers reflectively (no constructor args), so a process-wide `set_bridge()/bridge()` pair wired in main is the hand-off. |
+| `src/controllers/health_controller.cpp` | `GET /api/health` → `{status, upstream, upstreamAddr, siteId}`. Answers even when the gate-server is down — a dashboard that can say "server unreachable" beats a dead one. |
+| `src/main.cpp` | CLI11 flags (`--listen/--port/--server/--site-id/--threads/--cors-dev`); the CORS flag exists only for the Vite dev server origin — production serves the built SPA same-origin from this process. |
+| `tests/dashboard_api/` | 6 tests pinning the presentation schema (suite 52 → 58): field names, enum stripping, timestamp encoding, oneof dispatch, diagnostic fields on acks/faults. The frontend codes against exactly these shapes. |
+
+### Two lessons the build taught
+
+- **Drogon controllers must not live in static libraries.** They
+  register through global constructors; the linker drops unreferenced
+  archive members, and the symptom is a silent 404 on a route that
+  compiles fine. Controllers now compile straight into the
+  executable, with the reason recorded in the CMakeLists.
+- **`option()` defaults don't beat a warm cache.** Flipping
+  `BUILD_DASHBOARD` to ON changed nothing until `-DBUILD_DASHBOARD=ON`
+  updated the existing cache — worth remembering for every future
+  option-default change.
+
+### Verification
+
+- 58/58 host tests; format + cppcheck sweeps clean (dashboard sources
+  were already inside both CI sweeps).
+- Live boot: `gate-dashboard --port 18099 --server 127.0.0.1:59998` →
+  `GET /api/health` returns
+  `{"siteId":"site-01","status":"ok","upstream":false,…}` — healthy
+  backend honestly reporting a dead upstream; clean SIGINT shutdown.
+
+#### What 4.7.2 will add on top
+
+The REST surface: `POST /api/gates/{id}/command` → `IssueCommand`,
+allowlist CRUD proxied to `AdminService`, and a `GET /api/status`
+snapshot fed by the event cache that 4.7.3's Subscribe consumer will
+maintain.
+
+---
+
 ## Repository layout
 
 ```
@@ -3940,7 +3994,9 @@ gate-automation/
 │   ├── partitions.csv     # Two-OTA 4 MB layout (nvs, otadata, ota_0/1, spiffs)
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)
 ├── simulation/            # ✅ Phase 4.6 — gate-sim virtual field controller
-├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
+├── dashboard/             # 🔵 Phase 4.7 — Drogon backend + SvelteKit frontend
+│   ├── backend/           # 🔵 4.7.1+ — gate-dashboard: Drogon ↔ gRPC bridge
+│   └── frontend/          # ⏳ 4.7.4+ — SvelteKit SPA
 ├── deployment/            # ⏳ Phase 4.8 — systemd units + install scripts
 ├── tests/                 # Catch2 unit + contract tests
 │   ├── proto/             # ✅ Phase 4.1 — proto contract tests

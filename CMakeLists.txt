@@ -14,7 +14,7 @@ option(ENABLE_GPU       "Build with CUDA/TensorRT GPU support"          ON)
 option(BUILD_PROTO      "Build the shared gRPC proto library"           ON)
 option(BUILD_TESTS      "Build unit and contract tests"                 ON)
 option(BUILD_SERVER     "Build the GPU inference + RPC server"          OFF)
-option(BUILD_DASHBOARD  "Build the Drogon dashboard backend"            OFF)
+option(BUILD_DASHBOARD  "Build the Drogon dashboard backend"            ON)
 option(BUILD_SIM        "Build the gate-sim virtual field controller"   ON)
 
 # Compiler warnings — strict on first-party code, relaxed on generated code.
@@ -51,6 +51,20 @@ if(BUILD_SERVER)
         message(STATUS
             "Skipping server/: spdlog not found via find_package(CONFIG). "
             "Configure with the vcpkg toolchain to build the inference + RPC server.")
+    endif()
+endif()
+
+# Dashboard backend (Phase 4.7): Drogon ↔ gRPC bridge. Same vcpkg-only
+# gating pattern; Drogon is the heavyweight dependency, so it gets the
+# QUIET probe rather than being assumed.
+if(BUILD_DASHBOARD AND TARGET gate_proto)
+    find_package(Drogon CONFIG QUIET)
+    if(Drogon_FOUND)
+        add_subdirectory(dashboard/backend)
+    else()
+        message(STATUS
+            "Skipping dashboard/backend: Drogon not found via find_package(CONFIG). "
+            "Configure with the vcpkg toolchain to build the dashboard backend.")
     endif()
 endif()
 
