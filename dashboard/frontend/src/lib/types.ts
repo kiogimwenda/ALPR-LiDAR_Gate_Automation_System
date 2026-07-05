@@ -108,3 +108,45 @@ export interface StatusResponse {
 	streamConnected: boolean;
 	upstream: boolean;
 }
+
+export interface TimeWindow {
+	startMinute: number;
+	endMinute: number;
+	daysMask: number;
+}
+
+export interface AllowlistEntry {
+	plate: string;
+	allowedClasses: string[];
+	timeWindows: TimeWindow[];
+	ownerName: string;
+	ownerUnit: string;
+	validFrom?: Stamp;
+	validUntil?: Stamp;
+	notes: string;
+	addedBy: string;
+	added?: Stamp;
+}
+
+// The POST body accepted by /api/allowlist (bridge fills the rest).
+export interface AllowlistEntryInput {
+	plate: string;
+	ownerName?: string;
+	ownerUnit?: string;
+	notes?: string;
+	allowedClasses?: string[];
+	timeWindows?: TimeWindow[];
+}
+
+// Order matches the proto's VehicleClass enum (UNKNOWN omitted:
+// "empty = any class allowed" is the UI default instead).
+export const VEHICLE_CLASSES = [
+	'PEDESTRIAN',
+	'BICYCLE',
+	'MOTORCYCLE',
+	'SEDAN',
+	'SUV',
+	'PICKUP',
+	'VAN',
+	'TRUCK'
+] as const;

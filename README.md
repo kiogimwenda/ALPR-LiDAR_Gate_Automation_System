@@ -111,13 +111,13 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ✅ Complete |
 | 4.6 | Simulation harness | ✅ Complete |
-| **4.7** | **Dashboard backend + frontend** | 🔵 **In progress** |
+| **4.7** | **Dashboard backend + frontend** | ✅ **Complete** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.1 | Backend foundation: Drogon app + gRPC bridge + health | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.2 | REST API: commands, allowlist CRUD | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream + status snapshot | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ⏳ Pending |
-| 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ✅ Complete |
+| 4.8 | Deployment scripts (systemd, install) | ⏳ Pending — next |
 | 4.9 | End-to-end integration tests | ⏳ Pending |
 
 ---
@@ -4084,7 +4084,7 @@ against a gate-sim fleet.
 
 ---
 
-## Phase 4.7.4 — SvelteKit frontend: scaffold + live monitoring (latest)
+## Phase 4.7.4 — SvelteKit frontend: scaffold + live monitoring
 
 First pixels. `dashboard/frontend/` is now a real SvelteKit app in
 SPA mode (ADR-004): `adapter-static` with an `index.html` fallback so
@@ -4125,6 +4125,72 @@ Controls and administration: open/close buttons on the tiles wired to
 
 ---
 
+## Phase 4.7.5 — Frontend controls + allowlist + Phase 4.7 closure (latest)
+
+The dashboard becomes an actor, not just an observer.
+
+### What landed
+
+- **`src/lib/api.ts`** — typed REST helpers that resolve to
+  `{ok, error?}` instead of throwing: the callers are UI event
+  handlers, and a fetch failure is a state to render, not an
+  exception to forget to catch. Backend `{"error"}` bodies surface
+  verbatim.
+- **Command buttons on the tiles** — Open/Close →
+  `POST /api/gates/{id}/command`. The inline result shows only
+  "accepted": the *initial* ack means accepted, the completion ack
+  arrives on the live feed, and the tile's colour follows telemetry —
+  the UI never pretends a 15-second physical process finished because
+  an HTTP call returned.
+- **`/allowlist` page** — table over `GET /api/allowlist`, add-entry
+  form (plate normalised to uppercase client-side, vehicle-class
+  checkboxes with "none selected = any class", owner/unit/notes),
+  per-row remove. Validation errors from the backend's pure parser
+  land next to the form with their exact reason.
+- **Shared `+layout.svelte`** — header, nav, and the three honesty
+  badges moved out of the page; the WebSocket lives in the layout so
+  navigating Monitor ↔ Allowlist doesn't tear the connection down.
+
+### Verification
+
+- `svelte-check`: 0 errors / 0 warnings (149 files); production build
+  clean.
+- Dev-path E2E: Vite dev server proxying to a **live** gate-dashboard
+  backend — `/` 200, `/allowlist` 200, `/api/status` through the
+  proxy returns the backend's honest empty snapshot.
+
+---
+
+### Phase 4.7 closure — what the dashboard phase delivered
+
+Five sub-milestones, two languages, one contract:
+
+| | Sub-milestone | The load-bearing idea |
+|---|---|---|
+| 4.7.1 | Backend foundation | Thin bridge process; presentation schema as an explicit, tested contract |
+| 4.7.2 | REST API | gRPC↔HTTP semantics mapped once, honestly; pure inbound validation |
+| 4.7.3 | Live stream | EventCache/EventStream split; resume-not-gap on reconnect, proven against a mock server in CI |
+| 4.7.4 | Frontend scaffold | SPA with zero extra runtime deps; the schema transcribed for the compiler |
+| 4.7.5 | Controls + allowlist | Accepted ≠ completed in the UI; admin CRUD end to end |
+
+Numbers: three C++ targets + one SvelteKit app, 66 host tests (15
+dashboard-specific), a fifth CI workflow (path-filtered frontend), and
+one wire-contract philosophy — resume, don't gap — applied at every
+hop of the chain: firmware → server → backend → browser.
+
+Deliberately open, with owners: authentication/authorization on both
+the REST surface and AdminService (JWT per ADR-003 — Phase 4.8
+deployment hardening, alongside TLS everywhere); serving the built
+SPA from Drogon's document root (a deployment concern, 4.8); the full
+three-process live demo (gate-server + gate-sim fleet + dashboard)
+needs the GPU host and lands with Phase 4.9's end-to-end integration
+pass.
+
+Next: **Phase 4.8 — deployment** (systemd units, install scripts, the
+OTA signing keypair, TLS).
+
+---
+
 ## Repository layout
 
 ```
@@ -4158,8 +4224,8 @@ gate-automation/
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)
 ├── simulation/            # ✅ Phase 4.6 — gate-sim virtual field controller
 ├── dashboard/             # 🔵 Phase 4.7 — Drogon backend + SvelteKit frontend
-│   ├── backend/           # 🔵 4.7.1-3 — gate-dashboard: Drogon ↔ gRPC bridge
-│   └── frontend/          # 🔵 4.7.4+ — SvelteKit SPA (live monitoring view)
+│   ├── backend/           # ✅ 4.7.1-3 — gate-dashboard: Drogon ↔ gRPC bridge
+│   └── frontend/          # ✅ 4.7.4-5 — SvelteKit SPA: monitor + allowlist + controls
 ├── deployment/            # ⏳ Phase 4.8 — systemd units + install scripts
 ├── tests/                 # Catch2 unit + contract tests
 │   ├── proto/             # ✅ Phase 4.1 — proto contract tests

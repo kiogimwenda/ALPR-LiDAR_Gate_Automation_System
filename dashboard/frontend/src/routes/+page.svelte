@@ -1,21 +1,8 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
 	import EventRow from '$lib/EventRow.svelte';
 	import GateTile from '$lib/GateTile.svelte';
-	import { connect, disconnect, feed, gates, streamConnected, upstream, wsConnected } from '$lib/live';
-
-	onMount(connect);
-	onDestroy(disconnect);
+	import { feed, gates } from '$lib/live';
 </script>
-
-<header>
-	<h1>Gate Dashboard</h1>
-	<div class="badges">
-		<span class="badge" class:ok={$wsConnected}>backend {$wsConnected ? 'live' : 'offline'}</span>
-		<span class="badge" class:ok={$streamConnected}>event stream {$streamConnected ? 'up' : 'down'}</span>
-		<span class="badge" class:ok={$upstream}>server {$upstream ? 'up' : 'down'}</span>
-	</div>
-</header>
 
 <main>
 	<section>
@@ -48,37 +35,6 @@
 </main>
 
 <style>
-	:global(body) {
-		margin: 0;
-		font-family: system-ui, sans-serif;
-		background: #f5f6f8;
-		color: #212121;
-	}
-	header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 0.8rem 1.5rem;
-		background: #1a1a2e;
-		color: #fff;
-	}
-	h1 {
-		font-size: 1.1rem;
-		margin: 0;
-	}
-	.badges {
-		display: flex;
-		gap: 0.5rem;
-	}
-	.badge {
-		font-size: 0.75rem;
-		padding: 0.2rem 0.6rem;
-		border-radius: 999px;
-		background: #7a2b2b;
-	}
-	.badge.ok {
-		background: #2b7a3f;
-	}
 	main {
 		padding: 1rem 1.5rem;
 		display: grid;

@@ -1,7 +1,21 @@
 <script lang="ts">
+	import { issueCommand } from './api';
 	import type { GateSnapshot } from './types';
 
 	let { gateId, snapshot }: { gateId: string; snapshot: GateSnapshot } = $props();
+
+	let busy = $state(false);
+	let lastResult = $state('');
+
+	async function command(kind: 'OPEN_GATE' | 'CLOSE_GATE'): Promise<void> {
+		busy = true;
+		lastResult = '';
+		const r = await issueCommand(gateId, kind);
+		// The initial ack only means "accepted" — the completion ack
+		// arrives on the live feed and the tile state follows telemetry.
+		lastResult = r.ok ? `${kind === 'OPEN_GATE' ? 'open' : 'close'} accepted` : (r.error ?? 'failed');
+		busy = false;
+	}
 
 	const stateColors: Record<string, string> = {
 		CLOSED: '#2e7d32',
@@ -37,6 +51,13 @@
 		<span>fw {snapshot.telemetry.fwVersion || '—'}</span>
 		<span>up {Math.floor(snapshot.telemetry.uptimeSec / 3600)}h{Math.floor((snapshot.telemetry.uptimeSec % 3600) / 60)}m</span>
 		<span>{ageSec === null ? 'no data' : stale ? `${ageSec}s ago ⚠` : `${ageSec}s ago`}</span>
+	</div>
+	<div class="actions">
+		<button disabled={busy} onclick={() => command('OPEN_GATE')}>Open</button>
+		<button disabled={busy} onclick={() => command('CLOSE_GATE')}>Close</button>
+		{#if lastResult}
+			<span class="result">{lastResult}</span>
+		{/if}
 	</div>
 </div>
 
@@ -81,5 +102,30 @@
 		gap: 0.8rem;
 		font-size: 0.75rem;
 		color: #666;
+	}
+	.actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 0.6rem;
+	}
+	button {
+		font-size: 0.8rem;
+		padding: 0.25rem 0.9rem;
+		border: 1px solid #bbb;
+		border-radius: 6px;
+		background: #fafafa;
+		cursor: pointer;
+	}
+	button:hover:not(:disabled) {
+		background: #eee;
+	}
+	button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.result {
+		font-size: 0.75rem;
+		color: #555;
 	}
 </style>
