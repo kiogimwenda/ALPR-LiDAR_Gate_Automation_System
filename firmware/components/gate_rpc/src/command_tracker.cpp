@@ -1,4 +1,4 @@
-// command_tracker.cpp — the four completion rules.
+// command_tracker.cpp — the five completion rules.
 
 #include "gate_rpc/command_tracker.hpp"
 
@@ -36,14 +36,22 @@ CommandTracker::Verdict CommandTracker::on_gate_event(sm::State s, sm::Reason r,
     if (transitioned && s == sm::State::Faulted) {
         return resolve(false, sm::to_string(r).data());
     }
-    // Rule 3 — interlock refusal: no transition, but the step carried
-    // a Reason (e.g. a close rejected by the safety-beam latch).
+    // Rule 3 — aborted mid-travel: the commanded motion stopped short
+    // (operator stop, or the safety beam tripping during a close).
+    // Definitive — the server hears the abort and its reason now, not
+    // at the deadline. Found while writing the Phase 4.5.6 scenario
+    // tests: a beam-aborted close previously sat silent for the full
+    // deadline window.
+    if (transitioned && (s == sm::State::StoppedOpen || s == sm::State::StoppedClose)) {
+        return resolve(false, sm::to_string(r).data());
+    }
+    // Rule 4 — interlock refusal: no transition, but the step carried
+    // a Reason (a close rejected outright by the safety-beam latch).
     if (!transitioned && r == sm::Reason::SafetyBeamObstacle) {
         return resolve(false, "rejected: safety beam obstacle");
     }
-    // Anything else (intermediate transitions, operator stop of an
-    // unrelated motion) leaves the command pending — the deadline is
-    // the backstop.
+    // Intermediate transitions (Opening, Closing, …) leave the command
+    // pending — the deadline is the backstop.
     return {};
 }
 
@@ -51,7 +59,7 @@ CommandTracker::Verdict CommandTracker::on_tick(std::uint32_t now_ms) noexcept {
     if (!armed_ || static_cast<std::int32_t>(now_ms - deadline_ms_) < 0) {
         return {};
     }
-    // Rule 4 — deadline: no terminal state before the clock ran out.
+    // Rule 5 — deadline: no terminal state before the clock ran out.
     return resolve(false, "deadline exceeded awaiting terminal state");
 }
 

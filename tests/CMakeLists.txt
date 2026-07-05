@@ -65,3 +65,10 @@ endif()
 if(TARGET gate_ota_manifest)
     add_subdirectory(ota_manifest)
 endif()
+
+# End-to-end scenarios over the composed pure firmware modules
+# (Phase 4.5.6): state machine + command tracker + the GateController
+# policy wiring, replayed against a simulated gate.
+if(TARGET gate_rpc_framing)
+    add_subdirectory(firmware_integration)
+endif()

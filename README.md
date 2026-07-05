@@ -103,14 +103,14 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.3 | W5500 ethernet driver wrapper | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.4 | Safety beam input + LED status driver | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.4.5 | Firmware CI workflow + Phase 4.4 closure | ✅ Complete |
-| **4.5** | **Firmware app (state machine, gRPC client, OTA)** | 🔵 **In progress** |
+| **4.5** | **Firmware app (state machine, gRPC client, OTA)** | ✅ **Complete** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.1 | Gate state machine skeleton | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.2 | Wire state machine to drivers on ESP32-S3 | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.3 | gRPC client foundation (Control bidi stream) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ⏳ Pending |
-| 4.6 | Simulation harness | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ✅ Complete |
+| 4.6 | Simulation harness | ⏳ Pending — next |
 | 4.7 | Dashboard backend + frontend | ⏳ Pending |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
 | 4.9 | End-to-end integration tests | ⏳ Pending |
@@ -3633,7 +3633,7 @@ OTA delivery: `BEGIN_OTA` stops returning a polite refusal —
 
 ---
 
-## Phase 4.5.5 — OTA delivery (latest)
+## Phase 4.5.5 — OTA delivery
 
 The 4.5.4 closing note guessed the transport wrong, and ADR-009 —
 written back in Phase 2 — is what actually governs: updates come from
@@ -3717,6 +3717,104 @@ command → ack sequences), plus the phase retrospective in this log.
 
 ---
 
+## Phase 4.5.6 — Firmware integration scenarios + Phase 4.5 closure (latest)
+
+The unit suites pin each pure module alone; this sub-milestone pins
+the **composition** — the places where a contract drift between
+modules would hide. `tests/firmware_integration/` introduces
+`SimulatedGate`: a host-side harness that owns a `StateMachine` and a
+`CommandTracker` and replays, in pure C++, exactly the wiring the
+ESP32-S3 runs — `execute()`'s motor bookkeeping, `manage_timers()`'s
+watchdog/auto-close arming, `apply_policies()`'s reverse-on-beam and
+auto-close re-arm, the transition listener into the tracker, and the
+pump's periodic tick — on top of a toy physics model (an energised
+motor hits its limit switch after `travel_ticks`).
+
+### The six scenarios
+
+1. **Remote open lifecycle** — command → tracker armed → travel →
+   limit hit → success ack, motors off.
+2. **Auto-close dwell** — the gate closes itself; the policy retries
+   are not commands, so exactly one ack ever leaves.
+3. **Beam trip mid-close** — the pending close fails *immediately*
+   with `SafetyBeamObstacle`, reverse-on-beam drives back to Open, the
+   blocked auto-close is latched out and re-arms, and once the beam
+   clears the gate finally closes. One walk-through, five module
+   contracts exercised.
+4. **Motor stall** — watchdog → `Faulted`, failure ack carries
+   `MotorTimeout`, and `FaultCleared` lands in `Initializing` (the
+   4.5.2 re-verify-position contract).
+5. **Operator stop mid-open** — immediate abort ack with
+   `OperatorStop`; a fresh command resumes and succeeds.
+6. **Unreachable command** — a close issued while already Closed is
+   dropped by the state machine, so only the deadline can end it.
+
+### The bug the scenarios found before writing a single one
+
+Sketching scenario 3 exposed a hole in the 4.5.4 tracker: a commanded
+close aborted by the beam *mid-travel* is a **transition** (Closing →
+StoppedClose), not a latched rejection — and no rule matched it. The
+server would have stared at a silent command for the full 40 s
+deadline and then received a useless "deadline exceeded". The tracker
+now has five rules instead of four: **rule 3 — aborted mid-travel** —
+any transition into `StoppedOpen`/`StoppedClose` fails the pending
+command right away with the carried reason (`OperatorStop` /
+`SafetyBeamObstacle`). Two new unit tests pin it alongside the six
+scenarios. This is the integration-test thesis in one anecdote: both
+modules were individually correct, and the composition still had a
+16-second-wait bug.
+
+### Artifacts
+
+| Artifact | What it does |
+|---|---|
+| `tests/firmware_integration/gate_scenarios_test.cpp` | `SimulatedGate` harness + the six scenarios (suite: 44 → 51). |
+| `firmware/components/gate_rpc/{command_tracker.hpp, command_tracker.cpp}` (updated) | Rule 3 (mid-travel abort); rules renumbered, five total. |
+| `tests/rpc_framing/command_tracker_test.cpp` (updated) | The old "stop leaves the command pending" expectation replaced by two abort tests. |
+
+### Verification
+
+- Host suite 51/51; `idf.py build` clean (0xb79e0, 52 % OTA headroom);
+  format sweep clean.
+
+---
+
+### Phase 4.5 closure — what the firmware app phase delivered
+
+Six sub-milestones took the board from "boot banner + idle loop" to a
+connected, commandable, updatable field controller:
+
+| | Sub-milestone | The load-bearing idea |
+|---|---|---|
+| 4.5.1 | State machine skeleton | Pure Events→Actions logic; no IDF, no clock — testable anywhere |
+| 4.5.2 | Driver wiring | One queue, one consumer, zero locks; timers and policies live in the driver layer |
+| 4.5.3 | gRPC client | gRPC-the-protocol ≠ grpc++-the-library: nanopb + framing codec + nghttp2 h2c (ADR-011) |
+| 4.5.4 | Telemetry + commands | Double-ack contract; command completion as pure rules (CommandTracker) |
+| 4.5.5 | OTA | ADR-009 pipeline: manifest → validate → stream → readback-hash → ed25519 → A/B flip + rollback |
+| 4.5.6 | Integration scenarios | Test the composition; it found the mid-travel abort gap |
+
+Numbers: four first-party components (`gate_state_machine`,
+`gate_control`, `gate_rpc`, `gate_ota`), 51 host tests over the pure
+mirrors, binary 0x556f0 → 0xb79e0 (752 KB, 52 % of an OTA slot free),
+three proto contract fixes forced by toolchain realities
+(`is_final`, `vehicle_class`, the nanopb `.options` sizing), and two
+new ADR-grade decisions (ADR-011 transport; ADR-009 executed as
+written).
+
+Deliberately left open, with owners: TLS/mTLS on both the Control
+stream and OTA transport plus the ed25519 deployment keypair (Phase
+4.8); server-side `ReportOtaProgress`/`DeliverOta` remain stubbed
+(the PCB path doesn't use them — a future Linux field unit might);
+a wire enum value for mid-travel "stopped" states (server-side
+modelling, revisit with the dashboard); remote gate config —
+auto-close dwell, gate type — over the Control stream.
+
+Next: **Phase 4.6 — simulation harness**, where the `SimulatedGate`
+idea grows into a standalone virtual gate that speaks the real gRPC
+contract against the real server.
+
+---
+
 ## Repository layout
 
 ```
@@ -3737,7 +3835,7 @@ gate-automation/
 │   ├── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
 │   ├── rpc/               # ✅ Phase 4.3.4/5 — gRPC services + lifecycle wrapper
 │   └── src/main.cpp       # ✅ Phase 4.3.5 — gate-server daemon entry point
-├── firmware/              # 🔵 Phase 4.4-4.5 — ESP-IDF field controller firmware (ESP32-S3)
+├── firmware/              # ✅ Phase 4.4-4.5 — ESP-IDF field controller firmware (ESP32-S3)
 │   ├── main/              # ✅ app_main — boot banner, ethernet up, GateController start
 │   ├── components/
 │   │   ├── gate_drivers/  # ✅ Phase 4.4.2-4.4.4 — relay/limit/eth/safety/LED drivers
@@ -3758,7 +3856,11 @@ gate-automation/
 │   ├── fusion/            # ✅ Phase 4.3.2 — fusion engine tests
 │   ├── dash/              # ✅ Phase 4.3.3 — broadcaster fan-out tests
 │   ├── rpc/               # ✅ Phase 4.3.4/5 — service handler + lifecycle tests
-│   └── integration/       # ✅ Phase 4.3.6 — end-to-end gRPC roundtrip tests
+│   ├── integration/       # ✅ Phase 4.3.6 — end-to-end gRPC roundtrip tests
+│   ├── state_machine/     # ✅ Phase 4.5.1 — gate state machine tests
+│   ├── rpc_framing/       # ✅ Phase 4.5.3/4 — framing codec + command tracker tests
+│   ├── ota_manifest/      # ✅ Phase 4.5.5 — OTA manifest rule tests
+│   └── firmware_integration/ # ✅ Phase 4.5.6 — composed-module gate scenarios
 ├── scripts/bootstrap/     # Reproducible WSL2 dev environment scripts
 └── .github/workflows/     # CI: build, test, lint, codeql, commitlint, proto
 ```

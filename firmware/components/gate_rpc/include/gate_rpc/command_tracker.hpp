@@ -4,13 +4,13 @@
 // GateCommand twice — immediately on receipt (completed=false) and
 // again when execution finishes (completed=true, success/error,
 // state_after). For asynchronous motion commands "finishes" means the
-// gate reached a terminal state, faulted, was refused by the safety
-// interlock, or ran out the clock. Those four rules are pure logic on
-// (state, reason, transitioned, time) — so they live here, with no
-// FreeRTOS/nghttp2/nanopb anywhere in sight, host-tested like
-// gate_state_machine and the framing codec. ControlClient owns one
-// tracker under a mutex and turns its verdicts into CommandAck
-// envelopes.
+// gate reached a terminal state, faulted, stopped short mid-travel,
+// was refused by the safety interlock, or ran out the clock. Those
+// five rules are pure logic on (state, reason, transitioned, time) —
+// so they live here, with no FreeRTOS/nghttp2/nanopb anywhere in
+// sight, host-tested like gate_state_machine and the framing codec.
+// ControlClient owns one tracker under a mutex and turns its verdicts
+// into CommandAck envelopes.
 //
 // One command in flight at a time, matching the physical device: a
 // gate cannot execute two motion commands concurrently, and the

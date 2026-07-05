@@ -84,9 +84,22 @@ TEST_CASE("arming over a live command supersedes it") {
     CHECK(std::strcmp(v.command_id, "cmd-b") == 0);
 }
 
-TEST_CASE("stop of an unrelated motion leaves the command pending") {
+TEST_CASE("stopping mid-travel aborts the pending command with the reason") {
     rpc::CommandTracker t;
     t.arm("cmd-open-3", sm::State::Open, 40'000);
-    CHECK_FALSE(t.on_gate_event(sm::State::StoppedOpen, sm::Reason::OperatorStop, true).fire);
-    CHECK(t.armed());  // deadline remains the backstop
+    const auto v = t.on_gate_event(sm::State::StoppedOpen, sm::Reason::OperatorStop, true);
+    REQUIRE(v.fire);
+    CHECK_FALSE(v.success);
+    CHECK(std::strcmp(v.error, "OperatorStop") == 0);
+    CHECK_FALSE(t.armed());
+}
+
+TEST_CASE("beam trip during a commanded close aborts it immediately") {
+    rpc::CommandTracker t;
+    t.arm("cmd-close-3", sm::State::Closed, 40'000);
+    CHECK_FALSE(t.on_gate_event(sm::State::Closing, sm::Reason::None, true).fire);
+    const auto v = t.on_gate_event(sm::State::StoppedClose, sm::Reason::SafetyBeamObstacle, true);
+    REQUIRE(v.fire);
+    CHECK_FALSE(v.success);
+    CHECK(std::strcmp(v.error, "SafetyBeamObstacle") == 0);
 }
