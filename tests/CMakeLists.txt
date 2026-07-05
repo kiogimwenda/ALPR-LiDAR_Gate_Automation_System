@@ -72,3 +72,8 @@ endif()
 if(TARGET gate_rpc_framing)
     add_subdirectory(firmware_integration)
 endif()
+
+# gate-sim ↔ mock server roundtrip over real gRPC (Phase 4.6).
+if(TARGET gate_sim_core)
+    add_subdirectory(simulation)
+endif()

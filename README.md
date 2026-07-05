@@ -110,8 +110,8 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ✅ Complete |
-| 4.6 | Simulation harness | ⏳ Pending — next |
-| 4.7 | Dashboard backend + frontend | ⏳ Pending |
+| 4.6 | Simulation harness | ✅ Complete |
+| 4.7 | Dashboard backend + frontend | ⏳ Pending — next |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
 | 4.9 | End-to-end integration tests | ⏳ Pending |
 
@@ -3717,7 +3717,7 @@ command → ack sequences), plus the phase retrospective in this log.
 
 ---
 
-## Phase 4.5.6 — Firmware integration scenarios + Phase 4.5 closure (latest)
+## Phase 4.5.6 — Firmware integration scenarios + Phase 4.5 closure
 
 The unit suites pin each pure module alone; this sub-milestone pins
 the **composition** — the places where a contract drift between
@@ -3815,6 +3815,99 @@ contract against the real server.
 
 ---
 
+## Phase 4.6 — Simulation harness: gate-sim (latest)
+
+The 4.5.6 test harness promised on its way out that it would grow up;
+one milestone later it did. `simulation/` ships **gate-sim**, a
+standalone virtual gate field controller: the same pure
+`gate_state_machine` and `CommandTracker` the ESP32-S3 runs (linked
+from the `firmware/host` mirrors — the sim executes the *identical
+translation units*), composed with the same GateController wiring,
+driven by wall-clock physics, and speaking the wire contract over
+**real grpc++** against a real `gate-server`. The server, dashboard
+(Phase 4.7), and fusion pipeline can now be developed and demoed
+against a live-feeling gate — or a whole fleet of them, one process
+per `--gate-id` — with no hardware on the desk.
+
+### What it is
+
+```
+gate-sim --server 192.168.1.10:50051 --gate-id gate-sim-01 \
+         --travel-ms 12000 --auto-close-ms 8000 --interactive
+```
+
+- **`VirtualGate`** (`gate_sim_core`): position-based physics — 0 ms
+  is the closed limit, `travel_ms` the open limit, motion integrates
+  real elapsed time. A resume after a mid-travel stop therefore takes
+  exactly the remaining distance, which makes watchdog and auto-close
+  interactions behave like a machine rather than a state chart.
+  Reboot and fault-clear re-resolve state from the simulated physical
+  position, mirroring the 4.5.2 boot contract (a mid-travel reboot
+  lands in `Faulted` — realistically).
+- **`SimClient`**: one Control-stream session per connection using the
+  same generated stubs as the server; 1 Hz telemetry with real
+  timestamps, double acks, tracker-driven completion for motion
+  commands, honest failures for BEGIN_OTA ("simulator has no flash to
+  update") and the latch/pulse kinds. A `LockedWriter` serialises the
+  session loop and the command handler onto gRPC's
+  one-write-in-flight rule.
+- **`main.cpp`**: CLI11 flags, SIGINT/SIGTERM-clean shutdown, a
+  reconnect loop whose physics keep running while disconnected (an
+  offline gate still moves), and `--interactive` stdin commands —
+  `open close stop trip clear fault-clear reboot status quit` — so a
+  human can walk someone through the beam while the server watches
+  the telemetry change.
+
+### Firmware ↔ simulator symmetry
+
+| Layer | ESP32-S3 firmware | gate-sim |
+|---|---|---|
+| Gate logic | `gate_state_machine` | same translation unit |
+| Command completion | `CommandTracker` | same translation unit |
+| Controller wiring | `GateController` (FreeRTOS) | `VirtualGate` (std::mutex + caller clock) |
+| Messages | nanopb | protobuf C++ |
+| Transport | nghttp2 h2c (ADR-011) | grpc++ |
+| Physics | a real motor | `position += dt` |
+
+The two columns share their brain and differ only in body — which is
+the whole point: a behaviour observed against gate-sim is a behaviour
+the firmware will exhibit, unless the bug is in a driver.
+
+### Proven over the wire, in CI
+
+`tests/simulation/` spins an **in-process gRPC server** with a mock
+`FieldControllerService` (the mock needs only `gate_proto` — no
+server/ build, no GPU) and runs the full exchange through a real
+HTTP/2 connection: telemetry arrives stamped and typed → the mock
+issues `OPEN_GATE` → received ack (`completed=false`) → 300 ms of
+simulated travel → completed ack (`success`, `state_after=OPEN`) →
+the virtual gate is physically at its open limit. Suite: 51 → 52.
+
+### Build wiring
+
+`BUILD_SIM=ON` by default, but the target set only materialises when
+vcpkg resolves `gate_proto` + CLI11 — the same "no vcpkg → no targets"
+invariant that keeps the lint-only CI configure inert. The
+`firmware/host` mirrors moved up so simulation and tests share them
+(guarded against double-add), and `simulation/` joined the
+clang-format and cppcheck sweeps in the Lint workflow.
+
+### Verification
+
+- Host suite 52/52 (roundtrip test: 0.36 s against a live in-process
+  gRPC server).
+- Manual: `gate-sim --server 127.0.0.1:59999` boots Closed, retries on
+  a 3 s cadence, exits cleanly on SIGINT; `--help` documents every
+  knob.
+
+#### What Phase 4.7 will add on top
+
+The dashboard: Drogon backend subscribing to `DashboardService`, a
+SvelteKit frontend — developed against a gate-sim fleet instead of
+waiting for field hardware.
+
+---
+
 ## Repository layout
 
 ```
@@ -3846,7 +3939,7 @@ gate-automation/
 │   ├── host/              # Host-side static-lib mirror so Catch2 links the state machine
 │   ├── partitions.csv     # Two-OTA 4 MB layout (nvs, otadata, ota_0/1, spiffs)
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)
-├── simulation/            # ⏳ Phase 4.6 — virtual gate harness
+├── simulation/            # ✅ Phase 4.6 — gate-sim virtual field controller
 ├── dashboard/             # ⏳ Phase 4.7 — Drogon backend + SvelteKit frontend
 ├── deployment/            # ⏳ Phase 4.8 — systemd units + install scripts
 ├── tests/                 # Catch2 unit + contract tests

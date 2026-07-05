@@ -15,6 +15,7 @@ option(BUILD_PROTO      "Build the shared gRPC proto library"           ON)
 option(BUILD_TESTS      "Build unit and contract tests"                 ON)
 option(BUILD_SERVER     "Build the GPU inference + RPC server"          OFF)
 option(BUILD_DASHBOARD  "Build the Drogon dashboard backend"            OFF)
+option(BUILD_SIM        "Build the gate-sim virtual field controller"   ON)
 
 # Compiler warnings — strict on first-party code, relaxed on generated code.
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
@@ -53,20 +54,41 @@ if(BUILD_SERVER)
     endif()
 endif()
 
+# The simulator needs the gRPC stubs (gate_proto), CLI11, and the pure
+# firmware mirrors from firmware/host/. It is added before tests/ so
+# tests/simulation can gate on the gate_sim_core target. The vcpkg-only
+# gating (gate_proto + CLI11) keeps lint-only configures target-free —
+# same invariant as the tests block below.
+if(BUILD_SIM AND TARGET gate_proto)
+    find_package(CLI11 CONFIG QUIET)
+    if(CLI11_FOUND)
+        add_subdirectory(firmware/host)
+        add_subdirectory(simulation)
+    else()
+        message(STATUS
+            "Skipping simulation/: CLI11 not found via find_package(CONFIG). "
+            "Configure with the vcpkg toolchain to build gate-sim.")
+    endif()
+endif()
+
 # Tests come last so any optional production targets (gate_proto, gate_inference)
 # are already declared when tests/CMakeLists.txt evaluates `if(TARGET …)` gates.
 #
 # Pure firmware modules (e.g. the gate state machine) are mirrored as host
 # static libraries under firmware/host/ so the Catch2 suite can link them.
-# Both the host-side library and the tests/ tree are added inside the
-# Catch2_FOUND branch — without Catch2 there are no consumers, and adding
-# the targets unconditionally would surface them in compile_commands.json
-# during lint-only configures that intentionally skip vcpkg.
+# The host mirrors and the tests/ tree are only added when vcpkg-resolved
+# dependencies exist — without them there are no consumers, and adding the
+# targets unconditionally would surface them in compile_commands.json
+# during lint-only configures that intentionally skip vcpkg. The mirror
+# block guards against a double add when the simulation block above
+# already pulled firmware/host in.
 if(BUILD_TESTS)
     find_package(Catch2 3 CONFIG QUIET)
     if(Catch2_FOUND)
         enable_testing()
-        add_subdirectory(firmware/host)
+        if(NOT TARGET gate_state_machine)
+            add_subdirectory(firmware/host)
+        endif()
         add_subdirectory(tests)
     else()
         message(STATUS

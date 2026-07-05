@@ -19,7 +19,7 @@ jobs:
         run: |
           # gate_rpc/src/pb is nanopb generator output (committed, see
           # scripts/gen-nanopb.sh) — machine-formatted, not ours to style.
-          find server/ firmware/ shared/ dashboard/backend/ \
+          find server/ firmware/ shared/ dashboard/backend/ simulation/ \
             -path firmware/components/gate_rpc/src/pb -prune -o \
             \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cu' \) -print \
             2>/dev/null | head -500 | \
@@ -74,7 +74,7 @@ jobs:
       - name: Run cppcheck
         run: |
           SRC_DIRS=""
-          for d in server/src firmware/src shared/include dashboard/backend/src; do
+          for d in server/src firmware/src shared/include dashboard/backend/src simulation/src; do
             [ -d "$d" ] && SRC_DIRS="$SRC_DIRS $d"
           done
           if [ -n "$SRC_DIRS" ]; then
