@@ -63,6 +63,12 @@ public:
     RpcResult delete_allowlist(const std::string& plate_text,
                                gate::v1::UpsertAllowlistResponse& out);
 
+    // Open a Subscribe stream (EventStream owns the read loop; the
+    // caller keeps `ctx` alive for the stream's lifetime and cancels
+    // it to unblock a shutdown).
+    std::unique_ptr<grpc::ClientReaderInterface<gate::v1::DashboardEvent>> subscribe(
+        grpc::ClientContext& ctx, const gate::v1::DashboardSubscription& sub);
+
 private:
     Config cfg_;
     std::shared_ptr<grpc::Channel> channel_;

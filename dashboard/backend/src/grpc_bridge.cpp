@@ -83,6 +83,13 @@ GrpcBridge::RpcResult GrpcBridge::upsert_allowlist(gate::v1::UpsertAllowlistRequ
     return to_result(admin_stub_->UpsertAllowlist(&with_deadline(ctx), req, &out));
 }
 
+std::unique_ptr<grpc::ClientReaderInterface<gate::v1::DashboardEvent>> GrpcBridge::subscribe(
+    grpc::ClientContext& ctx, const gate::v1::DashboardSubscription& sub) {
+    // No deadline: this stream is meant to live forever; EventStream
+    // handles death-and-reconnect.
+    return dash_stub_->Subscribe(&ctx, sub);
+}
+
 GrpcBridge::RpcResult GrpcBridge::delete_allowlist(const std::string& plate_text,
                                                    gate::v1::UpsertAllowlistResponse& out) {
     gate::v1::DeleteAllowlistRequest req;

@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 
+#include "dash_api/event_stream.hpp"
 #include "dash_api/grpc_bridge.hpp"
 
 int main(int argc, char** argv) {
@@ -36,7 +37,12 @@ int main(int argc, char** argv) {
 
     CLI11_PARSE(app, argc, argv);
 
-    gate::dash_api::set_bridge(std::make_shared<gate::dash_api::GrpcBridge>(bridge_cfg));
+    auto bridge = std::make_shared<gate::dash_api::GrpcBridge>(bridge_cfg);
+    gate::dash_api::set_bridge(bridge);
+    auto stream = std::make_shared<gate::dash_api::EventStream>(
+        bridge, gate::dash_api::EventStream::Config{});
+    gate::dash_api::set_event_stream(stream);
+    stream->start();
 
     if (cors_dev) {
         // Development only: the SvelteKit dev server runs on its own
@@ -59,5 +65,7 @@ int main(int argc, char** argv) {
         .addListener(listen_host, listen_port)
         .setThreadNum(static_cast<std::size_t>(threads))
         .run();
+
+    stream->stop();  // run() returned (SIGINT/SIGTERM) — cancel + join
     return 0;
 }

@@ -114,7 +114,7 @@ release on GitHub.
 | **4.7** | **Dashboard backend + frontend** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.1 | Backend foundation: Drogon app + gRPC bridge + health | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.2 | REST API: commands, allowlist CRUD | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream + status snapshot | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream + status snapshot | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ⏳ Pending |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
@@ -3962,7 +3962,7 @@ maintain.
 
 ---
 
-## Phase 4.7.2 — Dashboard REST API (latest)
+## Phase 4.7.2 — Dashboard REST API
 
 The REST surface the frontend will call, three controllers deep. One
 re-slice against the 4.7.1 plan: `GET /api/status` moved to 4.7.3 —
@@ -4014,6 +4014,73 @@ been décor. The timeline row is updated accordingly.
 The live half: a Subscribe consumer with reconnect + ring cache,
 `/ws/events` WebSocket fan-out of the presentation-mapped events, and
 the deferred `GET /api/status` snapshot on top of that cache.
+
+---
+
+## Phase 4.7.3 — WebSocket live event stream + status snapshot (latest)
+
+The live half of the backend, split along the project's standing
+fault line: everything with policy in it is a pure, host-tested class;
+the I/O around it is thin glue.
+
+### EventCache (pure) + EventStream (the pump)
+
+**`EventCache`** is the backend's memory: a ring of the most recent
+presentation-mapped frames (each event serialised to compact JSON
+exactly once, however many browsers are attached), the latest
+telemetry per gate, the WebSocket sink registry, and the highest
+`event_id` seen. Four unit tests pin fan-out (exactly once per sink,
+detach honoured), ring ordering/eviction, per-gate snapshot
+supersession, and the resume cursor being the *highest* id seen — a
+replayed duplicate must not rewind it.
+
+**`EventStream`** owns one `DashboardService::Subscribe` stream on a
+background thread for the life of the process. When the stream dies it
+reconnects with 1 s → 30 s backoff and passes
+`cache().last_event_id()` back as `since_event_id`, so the server's
+replay ring (Phase 4.3.3) fills the gap — a dashboard that survives a
+server restart without losing or duplicating events. That exact
+scenario runs in CI: a mock in-process gRPC server writes events 1–3,
+kills the stream, and the test asserts the second subscription arrives
+with `since_event_id=3` and the cache ends at 5 with all frames in
+the ring.
+
+### The endpoints on top
+
+- **`/ws/events`** — on connect: replay the ring (a freshly opened
+  dashboard paints instantly), then register a sink holding a *weak*
+  connection pointer (a closed socket can never be written through a
+  dangling handle). Frames flow from the EventStream thread through
+  trantor's thread-safe queue-posting `send()`. `ping` → `pong` for
+  naive keepalives. Verified with a raw handshake:
+  `HTTP/1.1 101 Switching Protocols` + correct `Sec-WebSocket-Accept`.
+- **`GET /api/status`** (deferred here from 4.7.2, now real) — the
+  cache's per-gate snapshot plus `streamConnected` and `upstream`
+  flags, so the UI can badge staleness instead of presenting dead
+  data as live.
+
+### A CI-portability catch
+
+Newer cppcheck releases count the informational
+`normalCheckLevelMaxBranches` notice ("analysis depth limited")
+against `--error-exitcode` — locally rc=1 with zero actual findings,
+while CI's older cppcheck stayed green. The Lint workflow now
+suppresses that specific id with a comment; the suppression hides an
+analysis-depth notice, not a defect class.
+
+### Verification
+
+- 66/66 host tests (event cache ×4, stream reconnect/resume over real
+  gRPC ×1, plus the existing suites).
+- Live boot: `/api/status` →
+  `{"gates":{},"lastEventId":0,"streamConnected":false,"upstream":false}`
+  against a dead server; `/ws/events` upgrade handshake → 101.
+
+#### What 4.7.4 will add on top
+
+The first pixels: SvelteKit SPA scaffold (ADR-004), gate status tiles
+off `/api/status`, and the live event feed off `/ws/events` — built
+against a gate-sim fleet.
 
 ---
 

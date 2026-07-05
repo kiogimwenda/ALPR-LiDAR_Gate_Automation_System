@@ -78,9 +78,13 @@ jobs:
             [ -d "$d" ] && SRC_DIRS="$SRC_DIRS $d"
           done
           if [ -n "$SRC_DIRS" ]; then
+            # normalCheckLevelMaxBranches is an informational notice
+            # ("analysis depth limited"), not a finding — but newer
+            # cppcheck releases count it against --error-exitcode.
             cppcheck --enable=warning,performance,portability \
               --error-exitcode=1 --inline-suppr \
               --suppress=missingInclude \
+              --suppress=normalCheckLevelMaxBranches \
               $SRC_DIRS
           else
             echo "No source directories found yet — skipping cppcheck."

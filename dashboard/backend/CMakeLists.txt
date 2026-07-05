@@ -12,6 +12,7 @@ find_package(CLI11  CONFIG REQUIRED)
 
 add_library(gate_dash_json STATIC
     src/json_mapping.cpp
+    src/event_cache.cpp
 )
 
 target_include_directories(gate_dash_json PUBLIC include)
@@ -26,6 +27,7 @@ target_compile_features(gate_dash_json PUBLIC cxx_std_20)
 
 add_library(gate_dash_api STATIC
     src/grpc_bridge.cpp
+    src/event_stream.cpp
 )
 
 target_link_libraries(gate_dash_api
@@ -43,6 +45,8 @@ add_executable(gate-dashboard
     src/controllers/health_controller.cpp
     src/controllers/gates_controller.cpp
     src/controllers/allowlist_controller.cpp
+    src/controllers/status_controller.cpp
+    src/controllers/events_ws_controller.cpp
 )
 
 target_link_libraries(gate-dashboard
