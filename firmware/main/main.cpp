@@ -9,7 +9,9 @@
 #include <esp_idf_version.h>
 #include <esp_log.h>
 #include <esp_netif_ip_addr.h>
+#include <esp_netif_sntp.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <sdkconfig.h>
@@ -66,14 +68,27 @@ extern "C" void app_main(void) {
         .reverse_on_beam = true,  // UL 325-style entrapment protection
         .heartbeat_period_ms = 5'000,
     }};
-    ESP_ERROR_CHECK(gate_ctrl.start());
 
-    // Phase 4.5.3 — gRPC Control-stream client (nanopb + nghttp2 h2c,
-    // ADR-011). The telemetry filler runs on the gate_rpc task and
-    // reads only the controller's lock-free snapshots. Constructed
-    // before ethernet start so no got-ip edge can slip past the
-    // notify wiring below.
+    // REBOOT commands ack over the stream first, then restart 1.5 s
+    // later via a one-shot — a blocking delay in the dispatcher would
+    // stall the HTTP/2 pump and the ack would never flush.
+    static esp_timer_handle_t reboot_timer = nullptr;
+    {
+        esp_timer_create_args_t targs = {};
+        targs.callback = [](void*) { esp_restart(); };
+        targs.dispatch_method = ESP_TIMER_TASK;
+        targs.name = "gate_reboot";
+        ESP_ERROR_CHECK(esp_timer_create(&targs, &reboot_timer));
+    }
+
+    // Phase 4.5.3/4.5.4 — gRPC Control-stream client (nanopb + nghttp2
+    // h2c, ADR-011). Telemetry filler and command dispatcher both run
+    // on the gate_rpc task and only touch GateController's thread-safe
+    // surfaces (lock-free snapshots, queue-posting command entry
+    // points). Constructed before ethernet start so no got-ip edge can
+    // slip past the notify wiring below.
     using gate::rpc::ControlClient;
+    using gate::state_machine::State;
     static ControlClient control_client{
         ControlClient::Config{
             .host = CONFIG_GATE_SERVER_HOST,
@@ -83,10 +98,54 @@ extern "C" void app_main(void) {
         },
         [](gate_v1_Telemetry& t) {
             t.gate_state = gate::rpc::to_wire_state(gate_ctrl.state());
-            // Limit/beam booleans join in 4.5.4 when GateController
-            // grows input snapshots; state is the load-bearing field.
+            t.limit_open = gate_ctrl.limit_open_active();
+            t.limit_closed = gate_ctrl.limit_closed_active();
+            t.safety_beam_clear = !gate_ctrl.beam_blocked();
+        },
+        [](const gate_v1_GateCommand& cmd) -> ControlClient::DispatchResult {
+            switch (cmd.kind) {
+                case gate_v1_CommandKind_COMMAND_KIND_OPEN_GATE:
+                    gate_ctrl.command_open();
+                    return {.accepted = true, .terminal_ok = State::Open};
+                case gate_v1_CommandKind_COMMAND_KIND_CLOSE_GATE:
+                    gate_ctrl.command_close();
+                    return {.accepted = true, .terminal_ok = State::Closed};
+                case gate_v1_CommandKind_COMMAND_KIND_LED_PATTERN:
+                    if (cmd.led_pattern > _gate_v1_LedPattern_MAX) {
+                        return {.error = "unknown led pattern"};
+                    }
+                    // Wire values 0–5 mirror StatusLed::Pattern by design.
+                    gate_ctrl.show_led_pattern(
+                        static_cast<gate::drivers::StatusLed::Pattern>(cmd.led_pattern));
+                    return {.accepted = true, .completed_now = true};
+                case gate_v1_CommandKind_COMMAND_KIND_REBOOT:
+                    ESP_LOGW(kTag, "reboot commanded by %s", cmd.actor);
+                    ESP_ERROR_CHECK(esp_timer_start_once(reboot_timer, 1'500'000));
+                    return {.accepted = true, .completed_now = true};
+                case gate_v1_CommandKind_COMMAND_KIND_BEGIN_OTA:
+                    return {.error = "OTA delivery lands in Phase 4.5.5"};
+                case gate_v1_CommandKind_COMMAND_KIND_PULSE_RELAY:
+                case gate_v1_CommandKind_COMMAND_KIND_LATCH_OPEN:
+                case gate_v1_CommandKind_COMMAND_KIND_LATCH_CLOSE:
+                case gate_v1_CommandKind_COMMAND_KIND_RELEASE_LATCH:
+                    // The residential profile drives two motion
+                    // contactors directly — there is no third-party
+                    // opener behind a trigger relay to pulse or latch.
+                    return {.error = "unsupported on the residential controller profile"};
+                default:
+                    return {.error = "unspecified command kind"};
+            }
         },
     };
+
+    // Completion acks for async commands: gate transitions (and
+    // reasoned rejections) flow from the gate_ctrl pump into the
+    // client's command tracker. Must be wired before gate_ctrl.start().
+    gate_ctrl.set_transition_listener(
+        [](State s, gate::state_machine::Reason r, bool transitioned) {
+            control_client.notify_gate_event(s, r, transitioned);
+        });
+    ESP_ERROR_CHECK(gate_ctrl.start());
 
     // Bring up the W5500 ethernet driver. DHCP completion gates the
     // Control stream: the client connects on got-ip and backs off
@@ -104,6 +163,13 @@ extern "C" void app_main(void) {
     if (gate::drivers::Ethernet::start({}) != ESP_OK) {
         ESP_LOGE(kTag, "ethernet start failed — running offline");
     }
+
+    // Wall clock for Telemetry/CommandAck timestamps. Init is safe
+    // pre-DHCP (it retries internally); until the first sync the RPC
+    // layer omits timestamps instead of sending epoch garbage.
+    esp_sntp_config_t sntp_cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_GATE_SNTP_SERVER);
+    ESP_ERROR_CHECK(esp_netif_sntp_init(&sntp_cfg));
+
     ESP_ERROR_CHECK(control_client.start());
 
     // Idle loop — gate work happens on gate_ctrl, RPC on gate_rpc.

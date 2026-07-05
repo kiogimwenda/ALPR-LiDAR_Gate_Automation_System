@@ -8,6 +8,7 @@
 idf_component_register(
     SRCS
         "src/grpc_framing.cpp"
+        "src/command_tracker.cpp"
         "src/control_client.cpp"
         "src/pb/gate_service.pb.c"
         "src/pb/google/protobuf/timestamp.pb.c"

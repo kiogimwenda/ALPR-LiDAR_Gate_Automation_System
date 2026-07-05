@@ -107,7 +107,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.1 | Gate state machine skeleton | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.2 | Wire state machine to drivers on ESP32-S3 | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.3 | gRPC client foundation (Control bidi stream) | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
@@ -3445,7 +3445,7 @@ was designed around.
 
 ---
 
-## Phase 4.5.3 — gRPC client foundation (latest)
+## Phase 4.5.3 — gRPC client foundation
 
 The plan said "gRPC client" and the honest engineering answer was
 that ADR-002's consequence line — *"both server and firmware link
@@ -3529,6 +3529,107 @@ The wire goes live end-to-end: SNTP + real `sent_ts`, the 1 Hz
 telemetry cadence with limit/beam snapshots from `GateController`,
 `GateCommand` dispatch into the `command_*()` entry points, and
 `CommandAck` (received + completed) flowing back.
+
+---
+
+## Phase 4.5.4 — Telemetry cadence + GateCommand execution (latest)
+
+4.5.3 opened the pipe; this sub-milestone makes it carry the actual
+product: telemetry at the proto's ~1 Hz cadence with real hardware
+snapshots and wall-clock timestamps, and full GateCommand execution
+with the double-ack contract (`completed=false` on receipt,
+`completed=true` with success/error/state_after when execution
+finishes). The interesting design question was *what "finishes" means
+for a command that physically takes fifteen seconds* — and the answer
+became another pure, host-tested module.
+
+### CommandTracker: completion is four rules
+
+An async motion command (`OPEN_GATE`, `CLOSE_GATE`) is done when one
+of four things happens, and every one of them is pure logic over
+`(state, reason, transitioned, time)`:
+
+1. **Success** — the gate transitioned into the commanded terminal
+   state (`Open` / `Closed`).
+2. **Fault** — the gate transitioned into `Faulted` while the command
+   ran; the ack's error is the fault reason (`MotorTimeout`, …).
+3. **Interlock refusal** — the step carried a `Reason` without a
+   transition: the safety-beam latch rejecting a close. The server
+   hears `rejected: safety beam obstacle` instead of a mystery timeout.
+4. **Deadline** — nothing terminal within `command_deadline_ms`
+   (default 40 s = motor watchdog budget + slack, so rule 2 normally
+   wins with a better error). Wrap-safe `uint32` arithmetic.
+
+One command in flight at a time — a gate cannot execute two motion
+commands at once, so arming over a live command supersedes it and the
+old command_id gets a failure ack (never a silently-abandoned ack; the
+`Verdict` carries a *copy* of the id, because arm() both returns the
+old verdict and overwrites the id buffer — the aliasing-pointer bug
+was caught while writing the supersession test). `CommandTracker` has
+no FreeRTOS/nanopb/nghttp2 anywhere: it joins the state machine and
+framing codec in the host suite (7 new tests, 37 total).
+
+### How events reach the tracker
+
+`GateController` grew a `TransitionListener` invoked from its pump
+task after any step that transitioned **or** was rejected with a
+`Reason` — that "or" is exactly what rule 3 needs, since a beam-latch
+rejection changes nothing but must still resolve an ack. main wires
+the listener to `ControlClient::notify_gate_event()`, which updates
+the shared `last_wire_state_` (so `CommandAck.state_after` and
+telemetry never disagree about the gate) and consults the tracker
+under its mutex. Deadlines ride the pump's 250 ms poll tick.
+
+### Dispatch policy (wired in main, not in the client)
+
+| CommandKind | Handling |
+|---|---|
+| `OPEN_GATE` / `CLOSE_GATE` | `command_open()` / `command_close()`; async, terminal `Open` / `Closed` |
+| `LED_PATTERN` | `show_led_pattern()` (wire values 0–5 cast straight onto `StatusLed::Pattern`); synchronous ack |
+| `REBOOT` | ack first, `esp_restart()` 1.5 s later via one-shot — a blocking delay in the dispatcher would stall the HTTP/2 pump and the ack would never flush |
+| `BEGIN_OTA` | honest failure: "OTA delivery lands in Phase 4.5.5" |
+| `PULSE_RELAY` / `LATCH_*` / `RELEASE_LATCH` | honest failure: the residential profile drives two motion contactors directly — there is no third-party opener behind a trigger relay |
+
+### Telemetry, now with a clock
+
+- ~1 Hz cadence on the pump loop (wrap-safe compare, 250 ms jitter
+  bound), each message carrying mapped state, both limit switches, the
+  beam (new lock-free snapshot accessors on `GateController`), uptime,
+  heap stats, fw version, and a monotonic `seq`.
+- SNTP via `esp_netif_sntp` (server in Kconfig, default pool.ntp.org),
+  started right after ethernet. `sent_ts` / `received_ts` /
+  `completed_ts` are filled **only once the clock reads past ~2023** —
+  until sync, timestamps are absent rather than epoch garbage.
+
+### Artifacts
+
+| Artifact | What it does |
+|---|---|
+| `firmware/components/gate_rpc/{include/gate_rpc/command_tracker.hpp, src/command_tracker.cpp}` | The four completion rules + supersession; pure C++20. |
+| `tests/rpc_framing/command_tracker_test.cpp` | 7 tests incl. wrap-around deadlines and supersession id integrity. |
+| `firmware/components/gate_rpc/control_client.*` (updated) | Telemetry cadence, wall-clock fills, `send_ack_received/completed`, `handle_command` (immediate ack → dispatch → arm tracker), `notify_gate_event`. |
+| `firmware/components/gate_control/gate_controller.*` (updated) | `TransitionListener` (fires on transitions and reasoned rejections), `limit_open_active()` / `limit_closed_active()` / `beam_blocked()` snapshots, `show_led_pattern()`. |
+| `firmware/main/main.cpp` + `Kconfig.projbuild` (updated) | Dispatcher table above, listener wiring (before `start()`, asserted), SNTP init, reboot one-shot, `GATE_SNTP_SERVER`. |
+
+Build note: GCC's `-Werror=stringop-truncation` (fires at -O2, so the
+IDF build caught what the -O0 host build didn't) rejected the
+`strncpy(dst, src, cap-1)` idiom — replaced with `strnlen` + `memcpy`,
+which states the intent (bounded copy, explicit NUL) instead of
+pattern-matching to the classic truncation bug.
+
+### Verification
+
+- `idf.py build` clean; binary 0x75680 (+16 KB over 4.5.3), 69 % OTA
+  headroom.
+- Host suite: 37/37 (state machine 11, framing 9, tracker 7, proto
+  contract), format sweep clean.
+
+#### What 4.5.5 will add on top
+
+OTA delivery: `BEGIN_OTA` stops returning a polite refusal —
+`DeliverOta` streams `OtaChunk`s into the passive partition via
+`esp_https_ota`/`esp_ota_ops`, progress flows back over
+`ReportOtaProgress`, and `kOtaPulse` finally earns its LED slot.
 
 ---
 

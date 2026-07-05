@@ -10,9 +10,11 @@ idf_component_register(
         "."
     REQUIRES
         # System components used by main:
-        esp_system        # esp_get_idf_version, esp_chip_info
+        esp_system        # esp_get_idf_version, esp_chip_info, esp_restart
+        esp_timer         # reboot one-shot
         log               # ESP_LOG*
         freertos          # vTaskDelay, xTaskCreate
+        lwip              # esp_netif_sntp (wall clock for telemetry)
         # First-party components:
         gate_control
         gate_drivers

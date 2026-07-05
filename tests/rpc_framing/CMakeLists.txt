@@ -2,6 +2,7 @@
 
 add_executable(test_rpc_framing
     rpc_framing_test.cpp
+    command_tracker_test.cpp
 )
 
 target_link_libraries(test_rpc_framing

@@ -56,6 +56,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <functional>
 
 #include "gate_drivers/limit_switch.hpp"
 #include "gate_drivers/relay.hpp"
@@ -113,10 +114,30 @@ public:
     void clear_fault();
 
     // Snapshot of the last committed state/reason, updated by the pump
-    // task after every transition. Safe from any task; used by the
-    // heartbeat today and by telemetry in Phase 4.5.4.
+    // task after every transition. Safe from any task; feeds the
+    // heartbeat log and the Telemetry stream.
     [[nodiscard]] state_machine::State state() const;
     [[nodiscard]] state_machine::Reason reason() const;
+
+    // Raw input snapshots for telemetry — lock-free reads of the
+    // drivers' committed (debounced) values.
+    [[nodiscard]] bool limit_open_active() const;
+    [[nodiscard]] bool limit_closed_active() const;
+    [[nodiscard]] bool beam_blocked() const;
+
+    // Observer for the RPC layer (Phase 4.5.4): invoked from the pump
+    // task after a step that either transitioned or was rejected with
+    // a Reason (e.g. a close refused by the beam latch — no state
+    // change, but exactly what a pending CommandAck needs to hear).
+    // Must be set before start(); the pump reads it without locking.
+    using TransitionListener =
+        std::function<void(state_machine::State, state_machine::Reason, bool transitioned)>;
+    void set_transition_listener(TransitionListener listener);
+
+    // Render a server-requested LED pattern (COMMAND_KIND_LED_PATTERN).
+    // Transient overlays (auth/deny flash) simply play out; the next
+    // gate transition re-renders the state pattern. Thread-safe.
+    void show_led_pattern(drivers::StatusLed::Pattern p);
 
 private:
     using Event = state_machine::Event;
@@ -144,6 +165,7 @@ private:
     state_machine::StateMachine sm_;
     std::atomic<State> state_snapshot_{State::Initializing};
     std::atomic<state_machine::Reason> reason_snapshot_{state_machine::Reason::None};
+    TransitionListener listener_;
 
     QueueHandle_t queue_ = nullptr;
     TaskHandle_t task_ = nullptr;

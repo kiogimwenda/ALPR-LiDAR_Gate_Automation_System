@@ -17,16 +17,20 @@ target_include_directories(gate_state_machine PUBLIC
 
 target_compile_features(gate_state_machine PUBLIC cxx_std_20)
 
-# gRPC length-prefix framing codec from the gate_rpc component — the
-# pure layer of the firmware's gRPC stack (ADR-011). Named
-# gate_rpc_framing because `gate_rpc` is already the server-side RPC
-# library target in server/rpc.
+# The pure layers of the gate_rpc component (ADR-011): the gRPC
+# length-prefix framing codec and the pending-command completion
+# tracker. Named gate_rpc_framing because `gate_rpc` is already the
+# server-side RPC library target in server/rpc.
 add_library(gate_rpc_framing STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_rpc/src/grpc_framing.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_rpc/src/command_tracker.cpp
 )
 
 target_include_directories(gate_rpc_framing PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_rpc/include
 )
+
+# The tracker's verdict rules are expressed over state-machine types.
+target_link_libraries(gate_rpc_framing PUBLIC gate_state_machine)
 
 target_compile_features(gate_rpc_framing PUBLIC cxx_std_20)

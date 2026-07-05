@@ -23,4 +23,12 @@ menu "Gate Firmware Configuration"
             Cleartext (h2c) gRPC port — must match the server's
             --listen address (default 0.0.0.0:50051, ADR-011).
 
+    config GATE_SNTP_SERVER
+        string "SNTP server"
+        default "pool.ntp.org"
+        help
+            Wall-clock source for Telemetry/CommandAck timestamps.
+            Until the first sync completes the firmware omits
+            timestamps rather than sending epoch garbage.
+
 endmenu

@@ -25,6 +25,7 @@
 #include <pb_encode.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "gate_rpc/grpc_framing.hpp"
@@ -60,8 +61,27 @@ nghttp2_nv make_nv(const char* name, const char* value) {
 }
 
 void copy_str(char* dst, std::size_t cap, const char* src) {
-    std::strncpy(dst, src, cap - 1);
-    dst[cap - 1] = '\0';
+    const std::size_t n = strnlen(src, cap - 1);
+    std::memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+std::uint32_t now_ms() {
+    return static_cast<std::uint32_t>(esp_timer_get_time() / 1000LL);
+}
+
+// Fill a wall-clock timestamp iff SNTP has synced — anything before
+// ~2023 is the unsynced boot default, and a zero timestamp is worse
+// than an absent one.
+bool fill_wallclock(google_protobuf_Timestamp& ts) {
+    timeval tv{};
+    gettimeofday(&tv, nullptr);
+    if (tv.tv_sec < 1'700'000'000LL) {
+        return false;
+    }
+    ts.seconds = tv.tv_sec;
+    ts.nanos = static_cast<std::int32_t>(tv.tv_usec) * 1000;
+    return true;
 }
 
 }  // namespace
@@ -124,11 +144,10 @@ void ControlSession::handle_message(const std::uint8_t* data, std::size_t len) {
     }
     switch (env.which_payload) {
         case gate_v1_ControlEnvelope_command_tag:
-            // Foundation scope: log only. 4.5.4 dispatches into
-            // GateController and answers with CommandAck.
-            ESP_LOGI(kTag, "<- GateCommand kind=%d id=%s actor=%s (dispatch lands in 4.5.4)",
+            ESP_LOGI(kTag, "<- GateCommand kind=%d id=%s actor=%s",
                      static_cast<int>(env.payload.command.kind), env.payload.command.command_id,
                      env.payload.command.actor);
+            owner->handle_command(env.payload.command);
             break;
         case gate_v1_ControlEnvelope_telemetry_tag:
         case gate_v1_ControlEnvelope_ack_tag:
@@ -288,8 +307,9 @@ int connect_to(const char* host, std::uint16_t port) {
 
 // ---------- ControlClient -----------------------------------------------------
 
-ControlClient::ControlClient(const Config& cfg, TelemetryFiller filler)
-    : cfg_(cfg), filler_(std::move(filler)) {
+ControlClient::ControlClient(const Config& cfg, TelemetryFiller filler,
+                             CommandDispatcher dispatcher)
+    : cfg_(cfg), filler_(std::move(filler)), dispatcher_(std::move(dispatcher)) {
     net_events_ = xEventGroupCreate();
     configASSERT(net_events_ != nullptr);
     out_queue_ = xQueueCreate(kOutQueueDepth, sizeof(OutFrame));
@@ -353,7 +373,7 @@ bool ControlClient::send_envelope(const gate_v1_ControlEnvelope& env) {
     return true;
 }
 
-void ControlClient::send_hello() {
+void ControlClient::send_telemetry() {
     gate_v1_ControlEnvelope env = gate_v1_ControlEnvelope_init_zero;
     env.which_payload = gate_v1_ControlEnvelope_telemetry_tag;
     auto& t = env.payload.telemetry;
@@ -363,12 +383,79 @@ void ControlClient::send_hello() {
     t.free_heap_bytes = esp_get_free_heap_size();
     t.min_free_heap = esp_get_minimum_free_heap_size();
     t.seq = telemetry_seq_++;
-    // sent_ts stays unset until SNTP lands with the telemetry cadence
-    // work in 4.5.4 — a zero timestamp is worse than an absent one.
+    t.has_sent_ts = fill_wallclock(t.sent_ts);
     if (filler_) {
         filler_(t);
     }
+    last_wire_state_.store(t.gate_state, std::memory_order_relaxed);
     send_envelope(env);
+}
+
+void ControlClient::send_ack_received(const gate_v1_GateCommand& cmd) {
+    gate_v1_ControlEnvelope env = gate_v1_ControlEnvelope_init_zero;
+    env.which_payload = gate_v1_ControlEnvelope_ack_tag;
+    auto& a = env.payload.ack;
+    copy_str(a.command_id, sizeof(a.command_id), cmd.command_id);
+    a.has_received_ts = fill_wallclock(a.received_ts);
+    a.completed = false;
+    a.success = false;  // meaningless until completed; zero keeps it explicit
+    a.state_after = last_wire_state_.load(std::memory_order_relaxed);
+    send_envelope(env);
+}
+
+void ControlClient::send_ack_completed(const char* command_id, bool success, const char* error) {
+    gate_v1_ControlEnvelope env = gate_v1_ControlEnvelope_init_zero;
+    env.which_payload = gate_v1_ControlEnvelope_ack_tag;
+    auto& a = env.payload.ack;
+    copy_str(a.command_id, sizeof(a.command_id), command_id);
+    a.has_completed_ts = fill_wallclock(a.completed_ts);
+    a.completed = true;
+    a.success = success;
+    if (!success) {
+        copy_str(a.error_text, sizeof(a.error_text), error);
+    }
+    a.state_after = last_wire_state_.load(std::memory_order_relaxed);
+    ESP_LOGI(kTag, "-> ack %s: %s%s%s", command_id, success ? "ok" : "failed", success ? "" : " — ",
+             success ? "" : error);
+    send_envelope(env);
+}
+
+void ControlClient::handle_command(const gate_v1_GateCommand& cmd) {
+    send_ack_received(cmd);
+    if (!dispatcher_) {
+        send_ack_completed(cmd.command_id, false, "no command dispatcher wired");
+        return;
+    }
+    const DispatchResult r = dispatcher_(cmd);
+    if (!r.accepted) {
+        send_ack_completed(cmd.command_id, false, r.error);
+        return;
+    }
+    if (r.completed_now) {
+        send_ack_completed(cmd.command_id, true, "");
+        return;
+    }
+    CommandTracker::Verdict superseded;
+    {
+        const std::lock_guard<std::mutex> lock(tracker_mutex_);
+        superseded =
+            tracker_.arm(cmd.command_id, r.terminal_ok, now_ms() + cfg_.command_deadline_ms);
+    }
+    if (superseded.fire) {
+        send_ack_completed(superseded.command_id, superseded.success, superseded.error);
+    }
+}
+
+void ControlClient::notify_gate_event(sm::State s, sm::Reason r, bool transitioned) {
+    last_wire_state_.store(to_wire_state(s), std::memory_order_relaxed);
+    CommandTracker::Verdict v;
+    {
+        const std::lock_guard<std::mutex> lock(tracker_mutex_);
+        v = tracker_.on_gate_event(s, r, transitioned);
+    }
+    if (v.fire) {
+        send_ack_completed(v.command_id, v.success, v.error);
+    }
 }
 
 void ControlClient::task_entry(void* arg) {
@@ -440,12 +527,32 @@ bool ControlClient::run_session() {
              static_cast<long>(s.stream_id));
 
     // The stream exists client-side the moment submit_request returns;
-    // queue the hello now so it rides out right behind the HEADERS.
+    // queue the first telemetry now so it rides out right behind the
+    // HEADERS frame.
     connected_.store(true, std::memory_order_relaxed);
-    send_hello();
+    last_telemetry_ms_ = now_ms();
+    send_telemetry();
 
     // Pump until the stream or connection dies.
     while (!s.closed && (nghttp2_session_want_read(s.ng) || nghttp2_session_want_write(s.ng))) {
+        // Telemetry cadence — ~1 Hz while the stream is up. Wrap-safe
+        // unsigned compare; the 250 ms poll bounds the jitter.
+        const std::uint32_t now = now_ms();
+        if (s.headers_seen && now - last_telemetry_ms_ >= cfg_.telemetry_period_ms) {
+            last_telemetry_ms_ = now;
+            send_telemetry();
+        }
+
+        // Pending-command deadline backstop.
+        CommandTracker::Verdict expired;
+        {
+            const std::lock_guard<std::mutex> lock(tracker_mutex_);
+            expired = tracker_.on_tick(now);
+        }
+        if (expired.fire) {
+            send_ack_completed(expired.command_id, expired.success, expired.error);
+        }
+
         if (!s.has_current && xQueueReceive(out_queue_, &s.current, 0) == pdTRUE) {
             s.current_off = 0;
             s.has_current = true;

@@ -17,10 +17,20 @@
 // notify_network_down() gates the next reconnect; the in-flight
 // session discovers the dead link through socket errors.
 //
-// Phase 4.5.3 scope (foundation): on stream open the client sends one
-// "hello" Telemetry envelope and logs every envelope the server sends
-// back. The 1 Hz telemetry cadence, CommandAck flow, and dispatch of
-// GateCommands into GateController land in Phase 4.5.4.
+// Command flow (Phase 4.5.4)
+// --------------------------
+// Every GateCommand is acked twice, per the proto contract: once on
+// receipt (completed=false) and once on completion. The dispatcher
+// callback (wired in main) issues the hardware action and classifies
+// the command as synchronous (LED, reboot — completed immediately),
+// asynchronous (open/close — completed when the gate reaches the
+// commanded terminal state, tracked by CommandTracker), or rejected
+// (unsupported kinds — completed immediately with an error). Gate
+// transitions reach the tracker through notify_gate_event(), wired to
+// GateController's transition listener. Telemetry flows at
+// telemetry_period_ms while the stream is up; sent_ts appears once
+// SNTP has synced the wall clock (a zero timestamp is worse than an
+// absent one).
 //
 // Threading
 // ---------
@@ -40,7 +50,9 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <functional>
+#include <mutex>
 
+#include "gate_rpc/command_tracker.hpp"
 #include "gate_service.pb.h"
 #include "gate_state_machine/state_machine.hpp"
 
@@ -62,6 +74,19 @@ public:
     // right before an envelope is encoded. Runs on the gate_rpc task.
     using TelemetryFiller = std::function<void(gate_v1_Telemetry&)>;
 
+    // Outcome of dispatching a GateCommand to the hardware layer.
+    struct DispatchResult {
+        bool accepted = false;
+        bool completed_now = false;  // synchronous command — final ack immediately
+        // Async commands: reaching this state completes successfully.
+        gate::state_machine::State terminal_ok = gate::state_machine::State::Initializing;
+        const char* error = "";  // set when !accepted; must be a literal
+    };
+    // Runs on the gate_rpc task; must not block (a slow dispatcher
+    // stalls the HTTP/2 pump). Command entry points on GateController
+    // are queue-posts, so the natural implementations are all O(1).
+    using CommandDispatcher = std::function<DispatchResult(const gate_v1_GateCommand&)>;
+
     struct Config {
         const char* host = "";       // server IPv4/hostname (Kconfig: GATE_SERVER_HOST)
         std::uint16_t port = 50051;  // gRPC h2c port
@@ -69,9 +94,14 @@ public:
         const char* fw_version = "";
         std::uint32_t reconnect_min_ms = 1'000;
         std::uint32_t reconnect_max_ms = 30'000;
+        std::uint32_t telemetry_period_ms = 1'000;  // proto asks for ~1 Hz
+        // Completion backstop for async commands: motor watchdog
+        // budget plus slack, so the gate's own MotorTimeout fault
+        // normally resolves the ack first with a better error.
+        std::uint32_t command_deadline_ms = 40'000;
     };
 
-    ControlClient(const Config& cfg, TelemetryFiller filler);
+    ControlClient(const Config& cfg, TelemetryFiller filler, CommandDispatcher dispatcher);
     ~ControlClient();
     ControlClient(const ControlClient&) = delete;
     ControlClient& operator=(const ControlClient&) = delete;
@@ -94,6 +124,12 @@ public:
     // the next telemetry tick supersedes a dropped one.
     bool send_envelope(const gate_v1_ControlEnvelope& env);
 
+    // Gate transition/rejection feed for pending-command completion —
+    // wire to GateController::set_transition_listener. Thread-safe
+    // (called from the gate_ctrl task; tracker sits under a mutex).
+    void notify_gate_event(gate::state_machine::State s, gate::state_machine::Reason r,
+                           bool transitioned);
+
 private:
     // Encoded gRPC frame (5-byte prefix + nanopb payload) queued for
     // the HTTP/2 data provider. Control-plane messages are small; 512
@@ -107,18 +143,30 @@ private:
     static void task_entry(void* arg);
     void task_main();
     bool run_session();  // one connect → stream → pump cycle
-    void send_hello();
+    void send_telemetry();
+    void handle_command(const gate_v1_GateCommand& cmd);  // gate_rpc task
+    void send_ack_received(const gate_v1_GateCommand& cmd);
+    void send_ack_completed(const char* command_id, bool success, const char* error);
 
-    friend struct ControlSession;  // session frames use OutFrame
+    friend struct ControlSession;  // session frames use OutFrame; commands call back
 
     Config cfg_;
     TelemetryFiller filler_;
+    CommandDispatcher dispatcher_;
     TaskHandle_t task_ = nullptr;
     EventGroupHandle_t net_events_ = nullptr;
     QueueHandle_t out_queue_ = nullptr;
     std::atomic<bool> connected_{false};
     std::uint64_t telemetry_seq_ = 0;
+    std::uint32_t last_telemetry_ms_ = 0;
     bool started_ = false;
+
+    // Last state reported on the wire — CommandAck.state_after uses
+    // this so acks and telemetry never disagree about the gate.
+    std::atomic<gate_v1_GateState> last_wire_state_{gate_v1_GateState_GATE_STATE_UNKNOWN};
+
+    std::mutex tracker_mutex_;
+    CommandTracker tracker_;
 };
 
 }  // namespace gate::rpc

@@ -149,6 +149,27 @@ sm::Reason GateController::reason() const {
     return reason_snapshot_.load(std::memory_order_relaxed);
 }
 
+bool GateController::limit_open_active() const {
+    return limit_open_.is_active();
+}
+
+bool GateController::limit_closed_active() const {
+    return limit_closed_.is_active();
+}
+
+bool GateController::beam_blocked() const {
+    return beam_.is_blocked();
+}
+
+void GateController::set_transition_listener(TransitionListener listener) {
+    configASSERT(!started_);  // pump reads it unlocked; set-before-start only
+    listener_ = std::move(listener);
+}
+
+void GateController::show_led_pattern(drivers::StatusLed::Pattern p) {
+    led_.render(p);
+}
+
 // ---------- pump task ---------------------------------------------------------
 
 void GateController::pump_task_entry(void* arg) {
@@ -167,6 +188,13 @@ void GateController::pump_task() {
             execute(out);
             manage_timers(out);
             apply_policies(out);
+
+            // Surface both transitions and reasoned rejections to the
+            // RPC layer — a close refused by the beam latch does not
+            // change state, but a pending CommandAck must hear it.
+            if (listener_ && (out.transitioned || out.reason != sm::Reason::None)) {
+                listener_(out.new_state, out.reason, out.transitioned);
+            }
 
             // FaultCleared lands the machine back in Initializing; the
             // header contract says the driver layer must re-verify the
