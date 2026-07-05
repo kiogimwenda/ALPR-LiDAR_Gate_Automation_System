@@ -85,6 +85,69 @@ TEST_CASE("dashboard events dispatch the payload oneof into type + body") {
     CHECK(dash::to_json(empty)["type"].asString() == "unknown");
 }
 
+TEST_CASE("allowlist entries round-trip through the presentation schema") {
+    Json::Value in;
+    in["plate"] = "KDA123X";
+    in["ownerName"] = "A. Resident";
+    in["ownerUnit"] = "B-12";
+    in["allowedClasses"].append("SEDAN");
+    Json::Value w;
+    w["startMinute"] = 360;
+    w["endMinute"] = 1080;
+    w["daysMask"] = 31;  // Mon–Fri
+    in["timeWindows"].append(w);
+
+    gate::v1::Allowlistentry entry;
+    std::string error;
+    REQUIRE(dash::allowlist_entry_from_json(in, entry, error));
+    CHECK(entry.plate_text() == "KDA123X");
+    REQUIRE(entry.allowed_classes_size() == 1);
+    CHECK(entry.allowed_classes(0) == gate::v1::VEHICLE_CLASS_SEDAN);
+    REQUIRE(entry.time_windows_size() == 1);
+    CHECK(entry.time_windows(0).start_minute_of_day() == 360);
+    CHECK(entry.time_windows(0).days_of_week_mask() == 31);
+
+    const auto out = dash::to_json(entry);
+    CHECK(out["plate"].asString() == "KDA123X");
+    CHECK(out["allowedClasses"][0].asString() == "SEDAN");
+    CHECK(out["timeWindows"][0]["endMinute"].asUInt() == 1080);
+    CHECK(out["ownerUnit"].asString() == "B-12");
+}
+
+TEST_CASE("allowlist parsing rejects the bodies the API must refuse") {
+    gate::v1::Allowlistentry entry;
+    std::string error;
+
+    Json::Value no_plate;
+    no_plate["ownerName"] = "x";
+    CHECK_FALSE(dash::allowlist_entry_from_json(no_plate, entry, error));
+    CHECK(error.find("plate") != std::string::npos);
+
+    Json::Value bad_class;
+    bad_class["plate"] = "KAA111A";
+    bad_class["allowedClasses"].append("HOVERCRAFT");
+    CHECK_FALSE(dash::allowlist_entry_from_json(bad_class, entry, error));
+    CHECK(error.find("vehicle class") != std::string::npos);
+
+    Json::Value bad_window;
+    bad_window["plate"] = "KAA111A";
+    Json::Value w;
+    w["startMinute"] = 2000;  // > 1439
+    bad_window["timeWindows"].append(w);
+    CHECK_FALSE(dash::allowlist_entry_from_json(bad_window, entry, error));
+    CHECK(error.find("1439") != std::string::npos);
+}
+
+TEST_CASE("command kinds parse from their short names") {
+    gate::v1::CommandKind kind{};
+    REQUIRE(dash::command_kind_from_string("OPEN_GATE", kind));
+    CHECK(kind == gate::v1::COMMAND_KIND_OPEN_GATE);
+    REQUIRE(dash::command_kind_from_string("LATCH_CLOSE", kind));
+    CHECK(kind == gate::v1::COMMAND_KIND_LATCH_CLOSE);
+    CHECK_FALSE(dash::command_kind_from_string("MAKE_COFFEE", kind));
+    CHECK_FALSE(dash::command_kind_from_string("UNSPECIFIED", kind));
+}
+
 TEST_CASE("acks and faults keep their diagnostic fields") {
     gate::v1::CommandAck a;
     a.set_command_id("cmd-9");

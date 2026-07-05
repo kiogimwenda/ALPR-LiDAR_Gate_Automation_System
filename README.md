@@ -113,8 +113,8 @@ release on GitHub.
 | 4.6 | Simulation harness | ✅ Complete |
 | **4.7** | **Dashboard backend + frontend** | 🔵 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.1 | Backend foundation: Drogon app + gRPC bridge + health | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.7.2 | REST API: commands, allowlist CRUD, status snapshot | ⏳ Pending |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.2 | REST API: commands, allowlist CRUD | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream + status snapshot | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ⏳ Pending |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ⏳ Pending |
 | 4.8 | Deployment scripts (systemd, install) | ⏳ Pending |
@@ -3913,7 +3913,7 @@ waiting for field hardware.
 
 ---
 
-## Phase 4.7.1 — Dashboard backend foundation (latest)
+## Phase 4.7.1 — Dashboard backend foundation
 
 Phase 4.7 opens with the sub-milestone split above and the Drogon
 skeleton everything else hangs off. The backend is deliberately a
@@ -3959,6 +3959,61 @@ The REST surface: `POST /api/gates/{id}/command` → `IssueCommand`,
 allowlist CRUD proxied to `AdminService`, and a `GET /api/status`
 snapshot fed by the event cache that 4.7.3's Subscribe consumer will
 maintain.
+
+---
+
+## Phase 4.7.2 — Dashboard REST API (latest)
+
+The REST surface the frontend will call, three controllers deep. One
+re-slice against the 4.7.1 plan: `GET /api/status` moved to 4.7.3 —
+it reads the event cache that only exists once the Subscribe consumer
+does, and shipping a placeholder that returns nothing real would have
+been décor. The timeline row is updated accordingly.
+
+### The surface
+
+| Route | Upstream | Notes |
+|---|---|---|
+| `POST /api/gates/{gateId}/command` | `DashboardService.IssueCommand` | Body `{"kind": "OPEN_GATE" \| "CLOSE_GATE" \| "LATCH_OPEN" \| … , "ledPattern"?}`. The server stamps `command_id`/`issued_ts` and answers with the initial `CommandAck`; the response is that ack under the presentation mapping, so the frontend correlates the eventual completion (arriving on the 4.7.3 stream) by `commandId`. |
+| `GET /api/allowlist?pageSize=&pageToken=` | `AdminService.ListAllowlist` | Paged; bridge stamps `site_id`. |
+| `POST /api/allowlist` | `AdminService.UpsertAllowlist` | One entry object, or `{"entries":[…]}` for a batch; bridge stamps `addedBy`/`addedTs` defaults. |
+| `DELETE /api/allowlist/{plate}` | `AdminService.DeleteAllowlist` | Single plate. |
+
+### Plumbing worth recording
+
+- **gRPC → HTTP status mapping** (`controllers/grpc_http.hpp`):
+  `INVALID_ARGUMENT`→400, `NOT_FOUND`→404, `DEADLINE_EXCEEDED`→504,
+  `UNAVAILABLE`→503, `UNAUTHENTICATED/PERMISSION_DENIED`→403,
+  everything unrefinable→502. Every error body is `{"error": …}` with
+  the upstream detail preserved — the live check against a dead
+  server returns `503 {"error":"failed to connect … Connection
+  refused"}`, which is exactly what an operator debugging a broken
+  deployment wants to read in the network tab.
+- **Every upstream call carries a 2 s deadline** — a Drogon IO thread
+  blocks at most that long against a dead server. Synchronous stubs
+  are a deliberate simplicity trade at single-site scale (2 IO
+  threads, LAN); the note lives in the bridge header for whoever
+  scales it.
+- **Inbound validation is pure and tested**:
+  `allowlist_entry_from_json` (plate required, vehicle classes parsed
+  through protobuf's `VehicleClass_Parse` with `VEHICLE_CLASS_`
+  re-prefixing, time-window minutes bounded to 0..1439, day masks
+  clamped to 7 bits) and `command_kind_from_string` (UNSPECIFIED is
+  rejected, not defaulted). Three new test cases pin the reject
+  paths with their exact error strings; suite 58 → 61.
+
+### Verification
+
+- 61/61 host tests; format + cppcheck sweeps clean.
+- Live against a dead upstream: unknown kind → `400 {"error":"unknown
+  command kind: MAKE_COFFEE"}`, plateless entry → `400`, command/list
+  → `503` with the gRPC connect error preserved.
+
+#### What 4.7.3 will add on top
+
+The live half: a Subscribe consumer with reconnect + ring cache,
+`/ws/events` WebSocket fan-out of the presentation-mapped events, and
+the deferred `GET /api/status` snapshot on top of that cache.
 
 ---
 

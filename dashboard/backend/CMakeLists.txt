@@ -41,6 +41,8 @@ target_link_libraries(gate_dash_api
 add_executable(gate-dashboard
     src/main.cpp
     src/controllers/health_controller.cpp
+    src/controllers/gates_controller.cpp
+    src/controllers/allowlist_controller.cpp
 )
 
 target_link_libraries(gate-dashboard

@@ -42,6 +42,27 @@ public:
 
     [[nodiscard]] const Config& config() const { return cfg_; }
 
+    // Upstream call outcome; ok() mirrors grpc::Status. Controllers
+    // map the code onto an HTTP status (see controllers/grpc_http.hpp).
+    struct RpcResult {
+        grpc::StatusCode code = grpc::StatusCode::OK;
+        std::string message;
+        [[nodiscard]] bool ok() const { return code == grpc::StatusCode::OK; }
+    };
+
+    // All upstream calls are synchronous with a per-call deadline —
+    // a Drogon IO thread blocks at most kRpcDeadline on a dead server,
+    // which is fine at this scale (LAN, single site, 2 IO threads).
+    // The bridge stamps site_id/actor defaults; the server stamps
+    // command_id and issued_ts (DashboardServiceImpl::IssueCommand).
+    RpcResult issue_command(gate::v1::GateCommand cmd, gate::v1::CommandAck& ack);
+    RpcResult list_allowlist(std::uint32_t page_size, const std::string& page_token,
+                             gate::v1::ListAllowlistResponse& out);
+    RpcResult upsert_allowlist(gate::v1::UpsertAllowlistRequest req,
+                               gate::v1::UpsertAllowlistResponse& out);
+    RpcResult delete_allowlist(const std::string& plate_text,
+                               gate::v1::UpsertAllowlistResponse& out);
+
 private:
     Config cfg_;
     std::shared_ptr<grpc::Channel> channel_;

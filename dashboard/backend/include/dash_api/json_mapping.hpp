@@ -37,4 +37,23 @@ Json::Value to_json(const gate::v1::DashboardEvent& ev);
 std::string gate_state_name(gate::v1::GateState s);
 std::string verdict_name(gate::v1::AuthVerdict v);
 
+// --- Allowlist (REST CRUD, 4.7.2) -------------------------------------------
+
+Json::Value to_json(const gate::v1::Allowlistentry& e);
+Json::Value to_json(const gate::v1::ListAllowlistResponse& r);
+Json::Value to_json(const gate::v1::UpsertAllowlistResponse& r);
+
+// Inbound parsing. Returns false and fills `error` on a body the API
+// must reject (missing plate, unknown class name, malformed window).
+// Accepted shape mirrors to_json(Allowlistentry):
+//   { "plate": "KDA123X", "ownerName": …, "ownerUnit": …, "notes": …,
+//     "allowedClasses": ["SEDAN", …],
+//     "timeWindows": [{"startMinute":360,"endMinute":1080,"daysMask":31}],
+//     "validFromMs": …, "validUntilMs": … }
+bool allowlist_entry_from_json(const Json::Value& v, gate::v1::Allowlistentry& out,
+                               std::string& error);
+
+// "OPEN_GATE" → COMMAND_KIND_OPEN_GATE; false on unknown/UNSPECIFIED.
+bool command_kind_from_string(const std::string& s, gate::v1::CommandKind& out);
+
 }  // namespace gate::dash_api
