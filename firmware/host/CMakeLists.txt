@@ -34,3 +34,16 @@ target_include_directories(gate_rpc_framing PUBLIC
 target_link_libraries(gate_rpc_framing PUBLIC gate_state_machine)
 
 target_compile_features(gate_rpc_framing PUBLIC cxx_std_20)
+
+# OTA manifest model + accept/reject rules from gate_ota (ADR-009) —
+# the pure slice of the updater (JSON extraction and flashing stay
+# on-target).
+add_library(gate_ota_manifest STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_ota/src/ota_manifest.cpp
+)
+
+target_include_directories(gate_ota_manifest PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_ota/include
+)
+
+target_compile_features(gate_ota_manifest PUBLIC cxx_std_20)

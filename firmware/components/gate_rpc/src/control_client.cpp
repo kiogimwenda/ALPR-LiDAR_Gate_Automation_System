@@ -435,6 +435,11 @@ void ControlClient::handle_command(const gate_v1_GateCommand& cmd) {
         send_ack_completed(cmd.command_id, true, "");
         return;
     }
+    if (r.external_completion) {
+        // The owning subsystem (e.g. OTA) calls complete_command()
+        // when it finishes; it owns its own timeouts.
+        return;
+    }
     CommandTracker::Verdict superseded;
     {
         const std::lock_guard<std::mutex> lock(tracker_mutex_);
@@ -444,6 +449,10 @@ void ControlClient::handle_command(const gate_v1_GateCommand& cmd) {
     if (superseded.fire) {
         send_ack_completed(superseded.command_id, superseded.success, superseded.error);
     }
+}
+
+void ControlClient::complete_command(const char* command_id, bool success, const char* error) {
+    send_ack_completed(command_id, success, error);
 }
 
 void ControlClient::notify_gate_event(sm::State s, sm::Reason r, bool transitioned) {

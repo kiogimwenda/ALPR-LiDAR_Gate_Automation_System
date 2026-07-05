@@ -108,7 +108,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.2 | Wire state machine to drivers on ESP32-S3 | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.3 | gRPC client foundation (Control bidi stream) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.4 | Telemetry heartbeats + GateCommand handling | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.5.5 | OTA delivery via `esp_https_ota` | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.5.6 | Firmware integration tests + Phase 4.5 closure | ⏳ Pending |
 | 4.6 | Simulation harness | ⏳ Pending |
 | 4.7 | Dashboard backend + frontend | ⏳ Pending |
@@ -3532,7 +3532,7 @@ telemetry cadence with limit/beam snapshots from `GateController`,
 
 ---
 
-## Phase 4.5.4 — Telemetry cadence + GateCommand execution (latest)
+## Phase 4.5.4 — Telemetry cadence + GateCommand execution
 
 4.5.3 opened the pipe; this sub-milestone makes it carry the actual
 product: telemetry at the proto's ~1 Hz cadence with real hardware
@@ -3633,6 +3633,90 @@ OTA delivery: `BEGIN_OTA` stops returning a polite refusal —
 
 ---
 
+## Phase 4.5.5 — OTA delivery (latest)
+
+The 4.5.4 closing note guessed the transport wrong, and ADR-009 —
+written back in Phase 2 — is what actually governs: updates come from
+a **self-hosted static file server** (JSON manifest + image binary,
+ed25519-signed, A/B partitions with automatic rollback), not from the
+proto's `OtaChunk` gRPC stream. The gRPC OTA methods stay stubbed
+server-side; chunk streaming over the Control connection would have
+put a 4 KiB-per-message hop through the inference server's process for
+something a static HTTP GET does better. `BEGIN_OTA` is now a real
+command: it triggers the ADR-009 pipeline and acks through the
+`external_completion` path added to the dispatcher contract.
+
+### The pipeline (new `gate_ota` component)
+
+```
+BEGIN_OTA ─▶ GET manifest.json ─▶ validate (pure rules) ─▶ esp_https_ota
+             (esp_http_client,      version differs ·        stream into
+              cJSON)                fits passive slot ·      passive slot
+                                    uptime gate · sha/sig    (kOtaPulse LED)
+                                    fields present
+        ─▶ flash readback SHA-256 ─▶ ed25519 verify ─▶ finish() ─▶ ack ─▶ reboot
+           (libsodium, hashes what    (libsodium, over     boot slot   1.5 s later
+            was actually written)      the digest)          flips
+```
+
+Design points worth remembering:
+
+- **Manifest rules are pure and host-tested** (`ota_manifest.*`, 7 new
+  tests, suite now 44): hex decoding with trailing-garbage rejection,
+  version-idempotence guard (re-flashing the running version is
+  refused), image ≤ passive slot, and the manifest's own
+  `min_uptime_sec` gate — a device crash-looping through short uptimes
+  refuses to take an update, per the proto's production-safety note.
+- **Verify what hit the flash, not what crossed the wire**: the SHA-256
+  runs over a readback of the written partition, so a flash-level
+  corruption fails the update before the boot slot flips.
+- **ed25519 via libsodium** — deliberately not mbedtls: IDF v6 ships
+  mbedtls 4 (PSA-first, legacy md API in flux) and mbedtls has no
+  EdDSA anyway; libsodium gives both `crypto_sign_verify_detached` and
+  `crypto_hash_sha256` in one stable dependency. Until the Phase 4.8
+  deployment keypair exists (`GATE_OTA_PUBKEY` empty), verification
+  falls back to the checksum alone — with a loud warning, never
+  silently.
+- **Rollback handshake**: `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`
+  makes a freshly-flashed image boot as `PENDING_VERIFY`; `app_main`
+  marks it valid only after drivers + controller + RPC are all up, so
+  a crash loop anywhere in bring-up reverts to the previous slot with
+  no operator involvement.
+- **Ack-then-reboot**: success acks ride the stream first; the restart
+  fires 1.5 s later off the same one-shot the REBOOT command uses.
+  Failures ack with the precise pipeline error (`manifest: image
+  larger than the OTA partition`, `verify: ed25519 signature
+  rejected`, …) and flash the deny pattern.
+- **`DispatchResult.external_completion`**: a third dispatch mode next
+  to sync and tracker-tracked — the subsystem owns its own completion
+  and deadline, and calls `ControlClient::complete_command()` when
+  done. OTA is its first user.
+
+### Artifacts
+
+| Artifact | What it does |
+|---|---|
+| `firmware/components/gate_ota/{include/gate_ota/ota_manifest.hpp, src/ota_manifest.cpp}` | Manifest struct (schema documented in the header), `hex_decode`, `validate` — pure C++20, host-mirrored as `gate_ota_manifest`. |
+| `firmware/components/gate_ota/{include/gate_ota/ota_updater.hpp, src/ota_updater.cpp}` | `OtaUpdater` — the six-step pipeline on a one-shot "gate_ota" task (priority 3, below RPC and gate control). One update at a time via CAS. |
+| `tests/ota_manifest/` | 7 host tests over the accept/reject rules. |
+| `firmware/main/{main.cpp, Kconfig.projbuild}` (updated) | Real `BEGIN_OTA` dispatch, ack/reboot/LED wiring, rollback mark-valid at end of bring-up; `GATE_OTA_MANIFEST_URL` + `GATE_OTA_PUBKEY`. |
+| `firmware/sdkconfig.defaults` (updated) | `BOOTLOADER_APP_ROLLBACK_ENABLE`, `ESP_HTTPS_OTA_ALLOW_HTTP` (plain http on the field LAN until 4.8 provisions TLS — integrity comes from the digest + signature, not the transport). |
+| `firmware/components/gate_ota/idf_component.yml` | `espressif/libsodium` + `espressif/cjson` — cJSON left the IDF core in v6, which the first build caught. |
+
+### Verification
+
+- `idf.py build` clean; binary 0xb79d0 (+270 KB — libsodium,
+  esp_https_ota, http client, cJSON), 52 % OTA headroom.
+- Host suite 44/44; format sweep clean.
+
+#### What 4.5.6 will add on top
+
+Phase 4.5 closure: firmware integration tests (driving the pure
+modules through realistic end-to-end scenarios — boot → connect →
+command → ack sequences), plus the phase retrospective in this log.
+
+---
+
 ## Repository layout
 
 ```
@@ -3659,7 +3743,8 @@ gate-automation/
 │   │   ├── gate_drivers/  # ✅ Phase 4.4.2-4.4.4 — relay/limit/eth/safety/LED drivers
 │   │   ├── gate_state_machine/ # ✅ Phase 4.5.1 — pure C++20 transition logic (host-tested)
 │   │   ├── gate_control/  # ✅ Phase 4.5.2 — event pump task, timers, action dispatch
-│   │   └── gate_rpc/      # ✅ Phase 4.5.3 — gRPC Control client (nanopb + nghttp2 h2c)
+│   │   ├── gate_rpc/      # ✅ Phase 4.5.3/4 — gRPC Control client (nanopb + nghttp2 h2c)
+│   │   └── gate_ota/      # ✅ Phase 4.5.5 — self-hosted OTA (manifest + ed25519, ADR-009)
 │   ├── host/              # Host-side static-lib mirror so Catch2 links the state machine
 │   ├── partitions.csv     # Two-OTA 4 MB layout (nvs, otadata, ota_0/1, spiffs)
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)

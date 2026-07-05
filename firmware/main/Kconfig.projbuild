@@ -31,4 +31,21 @@ menu "Gate Firmware Configuration"
             Until the first sync completes the firmware omits
             timestamps rather than sending epoch garbage.
 
+    config GATE_OTA_MANIFEST_URL
+        string "OTA manifest URL"
+        default "http://192.168.1.10:8080/firmware/manifest.json"
+        help
+            Self-hosted OTA manifest location (ADR-009). BEGIN_OTA
+            commands fetch this JSON manifest, validate it, then
+            stream the image it points at into the passive OTA slot.
+
+    config GATE_OTA_PUBKEY
+        string "OTA ed25519 public key (hex)"
+        default ""
+        help
+            64 hex chars (32-byte ed25519 public key) used to verify
+            the manifest signature over the image digest. Empty until
+            the Phase 4.8 deployment keypair is generated — updates
+            then proceed on the SHA-256 alone, with a loud warning.
+
 endmenu

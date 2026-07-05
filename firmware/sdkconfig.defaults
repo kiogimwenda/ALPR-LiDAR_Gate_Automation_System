@@ -33,6 +33,17 @@ CONFIG_PARTITION_TABLE_OFFSET=0x8000
 # We boot from ota_data after the first OTA; without OTA history the
 # bootloader picks ota_0 by default (see the partition layout).
 CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+# Rollback: a freshly-flashed OTA image boots as PENDING_VERIFY and
+# app_main must mark it valid once steady state is reached; a crash
+# loop before that point reverts to the previous slot (ADR-009).
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# --- OTA transport (Phase 4.5.5) --------------------------------------------
+# The field LAN update server speaks plain HTTP until the Phase 4.8
+# deployment milestone provisions TLS certs (ADR-009 calls for HTTPS
+# in production). Image integrity comes from the manifest SHA-256 +
+# ed25519 signature, not the transport.
+CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y
 
 # --- Flash size ------------------------------------------------------------
 # Most ESP32-S3 dev boards ship with 4 MB. Production hardware will likely

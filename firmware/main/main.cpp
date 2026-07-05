@@ -5,11 +5,13 @@
 // confirms the build is the one running. The infinite vTaskDelay loop
 // keeps the main task alive — actual application logic lands in Phase 4.5.
 
+#include <cstdio>
 #include <esp_chip_info.h>
 #include <esp_idf_version.h>
 #include <esp_log.h>
 #include <esp_netif_ip_addr.h>
 #include <esp_netif_sntp.h>
+#include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -19,6 +21,7 @@
 #include "gate_control/gate_controller.hpp"
 #include "gate_drivers/ethernet.hpp"
 #include "gate_drivers/version.hpp"
+#include "gate_ota/ota_updater.hpp"
 #include "gate_rpc/control_client.hpp"
 
 namespace {
@@ -81,6 +84,18 @@ extern "C" void app_main(void) {
         ESP_ERROR_CHECK(esp_timer_create(&targs, &reboot_timer));
     }
 
+    // Phase 4.5.5 — self-hosted OTA (ADR-009). BEGIN_OTA commands ack
+    // through complete_command() when the update finishes; the pending
+    // command id lives here because only one OTA runs at a time
+    // (OtaUpdater::begin refuses concurrency).
+    using gate::ota::OtaUpdater;
+    static OtaUpdater gate_ota{OtaUpdater::Config{
+        .manifest_url = CONFIG_GATE_OTA_MANIFEST_URL,
+        .running_version = gate::drivers::kVersion,
+        .pubkey_hex = CONFIG_GATE_OTA_PUBKEY,
+    }};
+    static char ota_cmd_id[40] = {};
+
     // Phase 4.5.3/4.5.4 — gRPC Control-stream client (nanopb + nghttp2
     // h2c, ADR-011). Telemetry filler and command dispatcher both run
     // on the gate_rpc task and only touch GateController's thread-safe
@@ -122,8 +137,35 @@ extern "C" void app_main(void) {
                     ESP_LOGW(kTag, "reboot commanded by %s", cmd.actor);
                     ESP_ERROR_CHECK(esp_timer_start_once(reboot_timer, 1'500'000));
                     return {.accepted = true, .completed_now = true};
-                case gate_v1_CommandKind_COMMAND_KIND_BEGIN_OTA:
-                    return {.error = "OTA delivery lands in Phase 4.5.5"};
+                case gate_v1_CommandKind_COMMAND_KIND_BEGIN_OTA: {
+                    if (gate_ota.in_progress()) {
+                        return {.error = "an OTA update is already running"};
+                    }
+                    std::snprintf(ota_cmd_id, sizeof(ota_cmd_id), "%s", cmd.command_id);
+                    const esp_err_t err = gate_ota.begin(
+                        [](bool success, const char* error) {
+                            control_client.complete_command(ota_cmd_id, success, error);
+                            if (success) {
+                                // Ack first, boot the new image after
+                                // the pump has flushed it.
+                                ESP_ERROR_CHECK(esp_timer_start_once(reboot_timer, 1'500'000));
+                            } else {
+                                gate_ctrl.show_led_pattern(
+                                    gate::drivers::StatusLed::Pattern::kDenyFlash);
+                            }
+                        },
+                        [](std::uint8_t /*percent*/) {
+                            // Keep the operator LED pulsing for the
+                            // duration; each call re-arms the pattern.
+                            gate_ctrl.show_led_pattern(
+                                gate::drivers::StatusLed::Pattern::kOtaPulse);
+                        });
+                    if (err != ESP_OK) {
+                        return {.error = "failed to start the OTA task"};
+                    }
+                    gate_ctrl.show_led_pattern(gate::drivers::StatusLed::Pattern::kOtaPulse);
+                    return {.accepted = true, .external_completion = true};
+                }
                 case gate_v1_CommandKind_COMMAND_KIND_PULSE_RELAY:
                 case gate_v1_CommandKind_COMMAND_KIND_LATCH_OPEN:
                 case gate_v1_CommandKind_COMMAND_KIND_LATCH_CLOSE:
@@ -171,6 +213,19 @@ extern "C" void app_main(void) {
     ESP_ERROR_CHECK(esp_netif_sntp_init(&sntp_cfg));
 
     ESP_ERROR_CHECK(control_client.start());
+
+    // Rollback handshake: on the first boot of a freshly-flashed OTA
+    // image the bootloader marks it PENDING_VERIFY. Reaching this
+    // point means drivers, controller, and RPC all came up — mark the
+    // image valid; if we never get here (crash loop), the bootloader
+    // reverts to the previous slot automatically.
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t img_state;
+    if (esp_ota_get_state_partition(running, &img_state) == ESP_OK &&
+        img_state == ESP_OTA_IMG_PENDING_VERIFY) {
+        ESP_LOGI(kTag, "first boot of OTA image on %s — marking valid", running->label);
+        ESP_ERROR_CHECK(esp_ota_mark_app_valid_cancel_rollback());
+    }
 
     // Idle loop — gate work happens on gate_ctrl, RPC on gate_rpc.
     while (true) {

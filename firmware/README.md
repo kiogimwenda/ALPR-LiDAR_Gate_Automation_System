@@ -80,10 +80,15 @@ firmware/
     │                       #   unit-tested on host (tests/state_machine/).
     ├── gate_control/       # GateController: FreeRTOS event-pump task, motor
     │                       #   watchdog + auto-close timers, action dispatch.
-    └── gate_rpc/           # gRPC Control-stream client: nanopb messages,
-                            #   framing codec (host-tested), nghttp2 h2c pump.
-                            #   src/pb/ is committed generator output —
-                            #   regenerate via scripts/gen-nanopb.sh (ADR-011).
+    ├── gate_rpc/           # gRPC Control-stream client: nanopb messages,
+    │                       #   framing codec (host-tested), nghttp2 h2c pump,
+    │                       #   command tracker (host-tested), telemetry + acks.
+    │                       #   src/pb/ is committed generator output —
+    │                       #   regenerate via scripts/gen-nanopb.sh (ADR-011).
+    └── gate_ota/           # Self-hosted OTA (ADR-009): manifest fetch +
+                            #   pure validation (host-tested), esp_https_ota
+                            #   download, flash readback SHA-256, ed25519
+                            #   verify, A/B slot flip with rollback.
 ```
 
 ## Build target

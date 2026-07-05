@@ -78,7 +78,12 @@ public:
     struct DispatchResult {
         bool accepted = false;
         bool completed_now = false;  // synchronous command — final ack immediately
-        // Async commands: reaching this state completes successfully.
+        // Async command whose subsystem acks for itself by calling
+        // complete_command() later (e.g. OTA) — the gate-state tracker
+        // is not armed and no deadline is imposed here.
+        bool external_completion = false;
+        // Async gate-motion commands: reaching this state completes
+        // successfully (tracked, deadline-backstopped).
         gate::state_machine::State terminal_ok = gate::state_machine::State::Initializing;
         const char* error = "";  // set when !accepted; must be a literal
     };
@@ -129,6 +134,10 @@ public:
     // (called from the gate_ctrl task; tracker sits under a mutex).
     void notify_gate_event(gate::state_machine::State s, gate::state_machine::Reason r,
                            bool transitioned);
+
+    // Completion ack for external_completion commands (see
+    // DispatchResult). Thread-safe; `error` must be a static string.
+    void complete_command(const char* command_id, bool success, const char* error);
 
 private:
     // Encoded gRPC frame (5-byte prefix + nanopb payload) queued for

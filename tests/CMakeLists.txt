@@ -60,3 +60,8 @@ endif()
 if(TARGET gate_rpc_framing)
     add_subdirectory(rpc_framing)
 endif()
+
+# OTA manifest accept/reject rules (ADR-009), same mirror pattern.
+if(TARGET gate_ota_manifest)
+    add_subdirectory(ota_manifest)
+endif()

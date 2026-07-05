@@ -1,0 +1,12 @@
+# Managed-component manifest for gate_ota (ADR-009).
+#
+# libsodium provides both crypto_sign_verify_detached (ed25519 over
+# the image digest) and crypto_hash_sha256 (flash readback checksum) —
+# one dependency for the whole verification path. mbedtls was
+# deliberately not used for the hash: IDF v6 ships mbedtls 4 whose
+# legacy md API is in flux, while the libsodium surface is stable.
+dependencies:
+  idf: ">=5.0"
+  espressif/libsodium: "^1.0.20"
+  # cJSON left the IDF core in v6 — it lives on the registry now.
+  espressif/cjson: "^1.7.0"

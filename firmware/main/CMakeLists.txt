@@ -10,6 +10,7 @@ idf_component_register(
         "."
     REQUIRES
         # System components used by main:
+        app_update        # esp_ota_ops — rollback mark-valid handshake
         esp_system        # esp_get_idf_version, esp_chip_info, esp_restart
         esp_timer         # reboot one-shot
         log               # ESP_LOG*
@@ -18,6 +19,7 @@ idf_component_register(
         # First-party components:
         gate_control
         gate_drivers
+        gate_ota
         gate_rpc
         gate_state_machine  # main.cpp names GateType directly
 )
