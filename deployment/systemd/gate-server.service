@@ -18,7 +18,9 @@ Type=simple
 User=gate
 Group=gate
 EnvironmentFile=/etc/gate/gate-server.env
-ExecStart=/opt/gate/bin/gate-server --listen ${LISTEN_ADDRESS} --site-id ${SITE_ID} --db ${DB_PATH}
+# (--db-path, not --db: the Phase 4.9 E2E pass caught the mismatch
+# before any host did.)
+ExecStart=/opt/gate/bin/gate-server --listen ${LISTEN_ADDRESS} --site-id ${SITE_ID} --db-path ${DB_PATH}
 Restart=on-failure
 RestartSec=3
 

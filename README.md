@@ -118,8 +118,8 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ✅ Complete |
 | 4.8 | Deployment scripts (systemd, install, OTA signing) | ✅ Complete |
-| 4.9 | End-to-end integration tests | ⏳ Pending — next |
-| 4.10 | Security hardening (TLS/mTLS, JWT admin auth) | ⏳ Pending |
+| 4.9 | End-to-end integration tests | ✅ Complete |
+| 4.10 | Security hardening (TLS/mTLS, JWT admin auth) | ⏳ Pending — next |
 
 ---
 
@@ -4222,7 +4222,7 @@ don't change.
 
 ---
 
-## Phase 4.8 — Deployment: units, installer, OTA signing (latest)
+## Phase 4.8 — Deployment: units, installer, OTA signing
 
 Everything a Phase-2 placeholder promised, made real — plus one scope
 decision made out loud. The old stubs (`deployment/install.sh` echoing
@@ -4304,6 +4304,71 @@ The end-to-end integration pass on the GPU host: gate-server +
 gate-sim fleet + dashboard, all three processes on real sockets, plus
 the full-stack scenarios (plate → decision → gate motion → dashboard
 paint) that no single-seam test can cover.
+
+---
+
+## Phase 4.9 — End-to-end integration tests (latest)
+
+The 4.8 closing note assumed this phase needed the GPU host. It
+mostly didn't — and discovering why reshaped the build.
+
+### The unlock: the server splits cleanly on the GPU boundary
+
+Every server library except `inference/` was *already* documented as
+CPU-only (auth, fusion, dash, rpc — and `gate-server` itself links
+none of TensorRT). The only thing forcing `BUILD_SERVER` onto a GPU
+machine was a CMake `FATAL_ERROR` guarding the whole subtree.
+`BUILD_SERVER` now defaults ON and works with `ENABLE_GPU=OFF` —
+`inference/` alone stays gated — which produced two immediate payoffs:
+
+1. **64 dormant tests woke up.** The auth, fusion, dash, RPC-handler,
+   and gRPC-roundtrip suites had *never compiled in this environment*
+   (CI configures without vcpkg; local builds had `BUILD_SERVER=OFF`).
+   Suite: 66 → 130, all green on first run — including the code the
+   4.5.3 `vehicle_class` rename edited blind.
+2. **The real daemon runs locally.** No mock needed for the
+   integration pass; the genuine `FieldControllerServiceImpl`,
+   fusion engine, and SQLite-backed AdminService sit at the middle of
+   the stack.
+
+### The E2E pass itself
+
+`tests/e2e/e2e_local_stack.py` (stdlib-only, ctest-registered, 10 s):
+launches **gate-server + two gate-sims + gate-dashboard** on loopback
+and drives the stack exactly like a browser would, asserting the
+seams no single-process test covers:
+
+1. **liveness** — `/api/health` reports the upstream channel up;
+2. **convergence** — both sims' telemetry crosses sim → server →
+   backend cache and lands in `/api/status` as CLOSED;
+3. **allowlist CRUD** — REST upsert/list/delete round-trips through
+   the real AdminService into real SQLite;
+4. **command lifecycle** — `POST OPEN_GATE` (acked with a real
+   server-minted UUIDv4) physically drives one gate
+   CLOSED → OPENING → OPEN → auto-close → CLOSED while the
+   *unaddressed* gate provably never moves;
+5. **teardown** — all four processes exit cleanly on SIGINT.
+
+Suite total: **131**.
+
+### What the pass caught before any host did
+
+The 4.8 systemd unit invoked `gate-server --db …`; the actual flag is
+`--db-path`. Deployment would have failed at first `systemctl start`.
+The unit is fixed with the catch recorded inline — integration work
+earning its keep on day one.
+
+### The genuinely GPU-bound remainder
+
+The inference path — camera frame → TensorRT ALPR →
+`SubmitDetection` → fusion verdict — still needs the GPU host and a
+camera, and stays explicitly open alongside firmware-on-bench
+hardware validation. Everything downstream of a detection (fusion,
+decisions, commands, telemetry, dashboard) is now exercised
+end-to-end on every developer machine.
+
+Next: **Phase 4.10 — security hardening** (TLS/mTLS everywhere, JWT
+admin auth) — the final planned Phase 4 milestone.
 
 ---
 

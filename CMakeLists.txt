@@ -13,7 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(ENABLE_GPU       "Build with CUDA/TensorRT GPU support"          ON)
 option(BUILD_PROTO      "Build the shared gRPC proto library"           ON)
 option(BUILD_TESTS      "Build unit and contract tests"                 ON)
-option(BUILD_SERVER     "Build the GPU inference + RPC server"          OFF)
+option(BUILD_SERVER     "Build the RPC server (inference/ needs ENABLE_GPU)" ON)
 option(BUILD_DASHBOARD  "Build the Drogon dashboard backend"            ON)
 option(BUILD_SIM        "Build the gate-sim virtual field controller"   ON)
 
@@ -40,10 +40,14 @@ if(BUILD_PROTO)
     endif()
 endif()
 
+# The server tree splits cleanly on the GPU boundary: inference/ needs
+# CUDA/TensorRT, but auth/fusion/dash/rpc and the gate-server daemon
+# are pure CPU (they consume DetectionFrames over RPC; they don't run
+# the models). BUILD_SERVER therefore works with ENABLE_GPU=OFF — the
+# server/ CMakeLists skips inference/ — which is what lets the real
+# service implementations run in local integration tests (Phase 4.9)
+# and demo stacks instead of a mock.
 if(BUILD_SERVER)
-    if(NOT ENABLE_GPU)
-        message(FATAL_ERROR "BUILD_SERVER=ON requires ENABLE_GPU=ON (CUDA/TensorRT).")
-    endif()
     find_package(spdlog CONFIG QUIET)
     if(spdlog_FOUND)
         add_subdirectory(server)

@@ -82,3 +82,19 @@ endif()
 if(TARGET gate_dash_json)
     add_subdirectory(dashboard_api)
 endif()
+
+# Phase 4.9 — the multi-process E2E pass: real gate-server (CPU-only
+# build), two gate-sims, and the dashboard backend, driven over HTTP
+# from a stdlib-only python script. Needs all three binaries.
+if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND)
+        add_test(NAME e2e_local_stack
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/e2e/e2e_local_stack.py
+                --server $<TARGET_FILE:gate-server>
+                --sim $<TARGET_FILE:gate-sim>
+                --dashboard $<TARGET_FILE:gate-dashboard>
+        )
+        set_tests_properties(e2e_local_stack PROPERTIES TIMEOUT 120)
+    endif()
+endif()

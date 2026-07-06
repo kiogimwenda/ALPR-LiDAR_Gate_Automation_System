@@ -8,7 +8,16 @@
 # Subsequent Phase 4 milestones will add `rpc/` (gRPC service host) and `app/`
 # (the daemon entry point) alongside `inference/`.
 
-add_subdirectory(inference)
+# inference/ is the only CUDA/TensorRT consumer in the tree; every
+# other library here is deliberately CPU-only (see each CMakeLists'
+# header note). Skipping it under ENABLE_GPU=OFF yields a fully
+# functional decision server whose detections arrive over RPC — the
+# configuration local integration tests run against.
+if(ENABLE_GPU)
+    add_subdirectory(inference)
+else()
+    message(STATUS "Skipping server/inference: ENABLE_GPU=OFF (CPU-only server build).")
+endif()
 
 # auth/ depends on gate_proto (built in shared/proto when BUILD_PROTO=ON).
 # Skip cleanly if the proto target is unavailable so a CUDA-only configure
