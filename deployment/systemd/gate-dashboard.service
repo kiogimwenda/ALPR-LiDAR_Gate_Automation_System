@@ -1,0 +1,31 @@
+# gate-dashboard.service — Drogon ↔ gRPC bridge + built SPA.
+#
+# Serves the REST/WebSocket API and the SvelteKit build from
+# /opt/gate/www (same-origin — no CORS in production, per 4.7.1).
+
+[Unit]
+Description=Gate automation dashboard backend
+Documentation=https://github.com/kiogimwenda/ALPR-LiDAR_Gate_Automation_System
+After=network-online.target gate-server.service
+Wants=network-online.target
+# Crash-loop brake ([Unit] scope since systemd 230 — in [Service]
+# these are silently ignored, which systemd-analyze verify caught).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=gate
+Group=gate
+EnvironmentFile=/etc/gate/gate-dashboard.env
+ExecStart=/opt/gate/bin/gate-dashboard --listen ${LISTEN_HOST} --port ${LISTEN_PORT} --server ${GRPC_SERVER} --site-id ${SITE_ID} --www /opt/gate/www
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -117,8 +117,9 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.3 | WebSocket live event stream + status snapshot | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.4 | SvelteKit frontend scaffold + live monitoring view | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ✅ Complete |
-| 4.8 | Deployment scripts (systemd, install) | ⏳ Pending — next |
-| 4.9 | End-to-end integration tests | ⏳ Pending |
+| 4.8 | Deployment scripts (systemd, install, OTA signing) | ✅ Complete |
+| 4.9 | End-to-end integration tests | ⏳ Pending — next |
+| 4.10 | Security hardening (TLS/mTLS, JWT admin auth) | ⏳ Pending |
 
 ---
 
@@ -4125,7 +4126,7 @@ Controls and administration: open/close buttons on the tiles wired to
 
 ---
 
-## Phase 4.7.5 — Frontend controls + allowlist + Phase 4.7 closure (latest)
+## Phase 4.7.5 — Frontend controls + allowlist + Phase 4.7 closure
 
 The dashboard becomes an actor, not just an observer.
 
@@ -4191,6 +4192,91 @@ OTA signing keypair, TLS).
 
 ---
 
+## Phase 4.8 — Deployment: units, installer, OTA signing (latest)
+
+Everything a Phase-2 placeholder promised, made real — plus one scope
+decision made out loud. The old stubs (`deployment/install.sh` echoing
+TODO, a nonsensical `gate-firmware.service` for a chip that has no
+systemd, an `update_server.hpp` that lost to nginx the day ADR-009 was
+written) are deleted, not renovated.
+
+### The OTA signing toolchain — the part that has to be byte-exact
+
+`scripts/gen-ota-keys.sh` (openssl ed25519 keypair; prints the raw
+32-byte public key as the exact hex string `GATE_OTA_PUBKEY` expects,
+extracted from the DER SubjectPublicKeyInfo tail; refuses to overwrite
+an existing key) and `scripts/sign-ota-manifest.sh` (image → signed
+`manifest.json` per the gate_ota schema). The convention that must
+match `OtaUpdater::run_inner` exactly: **the ed25519 message is the
+raw 32-byte SHA-256 digest of the image** — the same digest the
+firmware recomputes from its flash readback. The signer self-verifies
+before writing, and verification went one step further here: the
+manifest's hex fields plus the Kconfig-format pubkey were
+reconstructed into DER and verified *from the published artifacts
+alone* — the exact bytes a device will trust. Coreutils-only
+(`od`/`tr`, `openssl dgst -binary`) after the first run discovered the
+build host has no `xxd`.
+
+### Units, installer, topology
+
+- `deployment/systemd/gate-server.service` + `gate-dashboard.service`:
+  hardened (NoNewPrivileges, ProtectSystem=strict, service account,
+  StateDirectory), env-file-driven so units never need editing, and a
+  crash-loop brake that doubles as the server-side ADR-009 rollback
+  posture. `systemd-analyze verify` caught a real bug in the first
+  draft: `StartLimit*` moved to `[Unit]` scope in systemd 230 and is
+  *silently ignored* in `[Service]` — the exact kind of quiet
+  misconfiguration the verify step exists for.
+- `deployment/install-server.sh`: service account, `/opt/gate/bin`
+  with previous binaries kept as `*.prev` for manual rollback, SPA to
+  `/opt/gate/www`, `/etc/gate/*.env` installed first-run-only so
+  upgrades never clobber operator edits, units enabled. Idempotent.
+- `deployment/nginx/gate-ota.conf`: the ADR-009 static file server —
+  `/srv/gate/firmware` on :8081, manifests `no-cache` (a gate polls
+  that file to learn an update exists), everything else 404.
+- `deployment/README.md`: the one-page topology + install + release
+  walkthrough.
+
+### The SPA is now served same-origin
+
+`gate-dashboard --www <dir>` sets Drogon's document root with an SPA
+fallback: non-`/api`/`/ws` 404s return `index.html` as 200 so client
+routes survive deep links and reloads, while API 404s stay honest
+404s. Live-verified end to end: root 200 with the app shell, deep-link
+`/allowlist` falls back to index, `/api/health` still routed, hashed
+`_app/immutable/*` assets served. The 4.7 "production is same-origin"
+promise is now mechanical fact.
+
+### Scope decision: security hardening is its own milestone
+
+TLS/mTLS (gRPC + OTA transport) and JWT on the admin API were parked
+with "owner: 4.8" — and doing them *inside* 4.8 would have meant
+touching server credentials, the dashboard channel, gate-sim, and the
+firmware's transport (nghttp2 → esp-tls) in one sprawling change. The
+timeline now carries an explicit **Phase 4.10 — security hardening**
+row so the system upgrades transport everywhere at once instead of
+living half-TLS. Today's documented posture: isolated field LAN,
+integrity carried by signatures rather than transport.
+
+### Verification
+
+- Signing roundtrip: generate → sign → openssl self-verify →
+  independent re-verify from the manifest JSON + Kconfig pubkey hex.
+- `systemd-analyze verify` clean on both units (after the StartLimit
+  fix it caught).
+- SPA-from-Drogon: five live checks (root, deep link, API routing,
+  honest API 404, hashed assets).
+- Suite 66/66; format + cppcheck sweeps clean.
+
+#### What 4.9 will add on top
+
+The end-to-end integration pass on the GPU host: gate-server +
+gate-sim fleet + dashboard, all three processes on real sockets, plus
+the full-stack scenarios (plate → decision → gate motion → dashboard
+paint) that no single-seam test can cover.
+
+---
+
 ## Repository layout
 
 ```
@@ -4226,7 +4312,7 @@ gate-automation/
 ├── dashboard/             # 🔵 Phase 4.7 — Drogon backend + SvelteKit frontend
 │   ├── backend/           # ✅ 4.7.1-3 — gate-dashboard: Drogon ↔ gRPC bridge
 │   └── frontend/          # ✅ 4.7.4-5 — SvelteKit SPA: monitor + allowlist + controls
-├── deployment/            # ⏳ Phase 4.8 — systemd units + install scripts
+├── deployment/            # ✅ Phase 4.8 — units, installer, nginx OTA site, topology docs
 ├── tests/                 # Catch2 unit + contract tests
 │   ├── proto/             # ✅ Phase 4.1 — proto contract tests
 │   ├── inference/         # ✅ Phase 4.2.6 — host-side algorithm tests
