@@ -27,3 +27,15 @@ target_link_libraries(gate-sim
         gate_sim_core
         CLI11::CLI11
 )
+
+# gate-mock-server — a GPU-free gate-server stand-in implementing the
+# exact RPC surface gate-sim and the dashboard consume (no inference,
+# no fusion, in-memory allowlist). Lets the full three-process demo —
+# mock server + sim fleet + dashboard — run on any dev machine.
+add_executable(gate-mock-server src/mock_server_main.cpp)
+
+target_link_libraries(gate-mock-server
+    PRIVATE
+        gate_proto
+        CLI11::CLI11
+)

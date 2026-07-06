@@ -4192,6 +4192,36 @@ OTA signing keypair, TLS).
 
 ---
 
+## Interlude — gate-mock-server: the GPU-free demo stack
+
+An unplanned tool, built on request and kept because it earns its
+place: `gate-mock-server` (in `simulation/`) is a stand-in for
+gate-server implementing exactly the RPC surface the rest of the
+system consumes — `FieldControllerService/Control` bridging gate-sim
+fleets, `DashboardService/Subscribe` + `IssueCommand` for the
+dashboard, an in-memory `AdminService` allowlist, and a synthetic
+ALPR decision every 15 s so the feed breathes. No inference, no
+fusion, no persistence, no auth — demo-grade by intent and labelled
+as such.
+
+```bash
+gate-mock-server --listen 127.0.0.1:50051 &
+gate-sim --server 127.0.0.1:50051 --gate-id gate-sim-01 --travel-ms 8000 --auto-close-ms 12000 &
+gate-sim --server 127.0.0.1:50051 --gate-id gate-sim-02 --travel-ms 15000 &
+gate-dashboard --port 8080 --server 127.0.0.1:50051 --www dashboard/frontend/build
+# → http://localhost:8080
+```
+
+Verified live end to end: both sims connect and stream telemetry, the
+dashboard paints tiles and the event feed, and a browser Open button
+drives `CLOSED → OPENING → OPEN` through five processes and three
+protocols, with the auto-close bringing it home. This is also the
+scaffold Phase 4.9's integration pass will reuse — swap the mock for
+the real gate-server on the GPU host and the other four processes
+don't change.
+
+---
+
 ## Phase 4.8 — Deployment: units, installer, OTA signing (latest)
 
 Everything a Phase-2 placeholder promised, made real — plus one scope
@@ -4308,7 +4338,7 @@ gate-automation/
 │   ├── host/              # Host-side static-lib mirror so Catch2 links the state machine
 │   ├── partitions.csv     # Two-OTA 4 MB layout (nvs, otadata, ota_0/1, spiffs)
 │   └── sdkconfig.defaults # Compile-time pinning (target=esp32s3, freertos, OTA)
-├── simulation/            # ✅ Phase 4.6 — gate-sim virtual field controller
+├── simulation/            # ✅ Phase 4.6 — gate-sim + gate-mock-server (GPU-free demo stack)
 ├── dashboard/             # 🔵 Phase 4.7 — Drogon backend + SvelteKit frontend
 │   ├── backend/           # ✅ 4.7.1-3 — gate-dashboard: Drogon ↔ gRPC bridge
 │   └── frontend/          # ✅ 4.7.4-5 — SvelteKit SPA: monitor + allowlist + controls
