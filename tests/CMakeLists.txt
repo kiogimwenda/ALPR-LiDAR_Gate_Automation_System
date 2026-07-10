@@ -96,5 +96,17 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard)
                 --dashboard $<TARGET_FILE:gate-dashboard>
         )
         set_tests_properties(e2e_local_stack PROPERTIES TIMEOUT 120)
+
+        # The same pass under mTLS (Phase 4.10.1): ephemeral site PKI,
+        # every channel encrypted, plus enforcement checks that
+        # plaintext / certless peers never reach the stack.
+        add_test(NAME e2e_tls_stack
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/e2e/e2e_local_stack.py
+                --server $<TARGET_FILE:gate-server>
+                --sim $<TARGET_FILE:gate-sim>
+                --dashboard $<TARGET_FILE:gate-dashboard>
+                --tls
+        )
+        set_tests_properties(e2e_tls_stack PROPERTIES TIMEOUT 120)
     endif()
 endif()

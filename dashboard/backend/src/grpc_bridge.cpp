@@ -3,7 +3,9 @@
 #include "dash_api/grpc_bridge.hpp"
 
 #include <ctime>
+#include <fstream>
 #include <mutex>
+#include <sstream>
 #include <utility>
 
 namespace gate::dash_api {
@@ -13,13 +15,32 @@ namespace {
 std::mutex g_bridge_mutex;
 std::shared_ptr<GrpcBridge> g_bridge;
 
+std::string read_pem(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in)
+        return {};
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+std::shared_ptr<grpc::ChannelCredentials> make_channel_credentials(const GrpcBridge::Config& cfg) {
+    if (cfg.tls_ca_path.empty()) {
+        return grpc::InsecureChannelCredentials();
+    }
+    grpc::SslCredentialsOptions opts;
+    opts.pem_root_certs = read_pem(cfg.tls_ca_path);
+    if (!cfg.tls_cert_path.empty()) {
+        opts.pem_cert_chain = read_pem(cfg.tls_cert_path);
+        opts.pem_private_key = read_pem(cfg.tls_key_path);
+    }
+    return grpc::SslCredentials(opts);
+}
+
 }  // namespace
 
 GrpcBridge::GrpcBridge(Config cfg) : cfg_(std::move(cfg)) {
-    // Insecure on the trusted field LAN, matching the server listener;
-    // TLS lands with the Phase 4.8 deployment work alongside the
-    // firmware's (ADR-011 note).
-    channel_ = grpc::CreateChannel(cfg_.server, grpc::InsecureChannelCredentials());
+    channel_ = grpc::CreateChannel(cfg_.server, make_channel_credentials(cfg_));
     dash_stub_ = gate::v1::DashboardService::NewStub(channel_);
     admin_stub_ = gate::v1::AdminService::NewStub(channel_);
 }

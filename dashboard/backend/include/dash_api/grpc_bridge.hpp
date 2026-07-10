@@ -30,6 +30,12 @@ public:
         std::string server = "127.0.0.1:50051";  // gate-server gRPC address
         std::string site_id = "site-01";
         std::string actor = "dashboard";  // audit tag on issued commands
+        // Transport security (Phase 4.10.1): setting ca_path switches
+        // the channel to TLS; cert+key present a client certificate
+        // for mTLS listeners. Empty = plaintext (dev/tests).
+        std::string tls_ca_path;
+        std::string tls_cert_path;
+        std::string tls_key_path;
     };
 
     explicit GrpcBridge(Config cfg);

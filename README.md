@@ -119,7 +119,11 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ✅ Complete |
 | 4.8 | Deployment scripts (systemd, install, OTA signing) | ✅ Complete |
 | 4.9 | End-to-end integration tests | ✅ Complete |
-| 4.10 | Security hardening (TLS/mTLS, JWT admin auth) | ⏳ Pending — next |
+| **4.10** | **Security hardening (TLS/mTLS, JWT admin auth)** | 🔄 **In progress** |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.1 | Host-side TLS/mTLS: server, dashboard, sim, site PKI tooling | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.2 | JWT admin authentication (ADR-003) | ⏳ Pending — next |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.3 | Firmware TLS (esp-tls) + HTTPS OTA | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.4 | Phase 4.10 closure | ⏳ Pending |
 
 ---
 
@@ -4307,7 +4311,7 @@ paint) that no single-seam test can cover.
 
 ---
 
-## Phase 4.9 — End-to-end integration tests (latest)
+## Phase 4.9 — End-to-end integration tests
 
 The 4.8 closing note assumed this phase needed the GPU host. It
 mostly didn't — and discovering why reshaped the build.
@@ -4369,6 +4373,72 @@ end-to-end on every developer machine.
 
 Next: **Phase 4.10 — security hardening** (TLS/mTLS everywhere, JWT
 admin auth) — the final planned Phase 4 milestone.
+
+---
+
+## Phase 4.10.1 — Host-side TLS/mTLS (latest)
+
+Everything on the host side of the gRPC fabric now speaks TLS — and,
+in production posture, *mutual* TLS: the server proves itself to every
+client and every client proves itself back with a certificate from
+the site CA.
+
+### The server's three-step ladder
+
+`gate::rpc::TlsConfig` rides in `ServerConfig`, and its fields form a
+deliberate ladder rather than a pile of independent knobs:
+
+| Given | You get |
+|---|---|
+| `--tls-cert` + `--tls-key` | TLS: the server proves itself, clients unauthenticated |
+| … + `--tls-ca` | client certs verified *if presented* |
+| … + `--require-client-cert` | mTLS: no valid client cert, no connection |
+
+Two postures are non-negotiable. **Unreadable PEM = refuse to start**
+— a server asked for TLS never silently falls back to plaintext; it
+logs which file failed and exits. And plaintext-by-omission stays
+legal for dev/tests but announces itself with a startup warning, so a
+production box misconfigured back to plaintext is loud in the journal.
+
+### Both host clients grew the mirror image
+
+The dashboard bridge and gate-sim take `--tls-ca` (trust the site CA —
+this alone turns TLS on) plus `--tls-cert`/`--tls-key` (their client
+identity for mTLS). The sim's wiring deliberately mirrors the posture
+the ESP32 firmware will adopt in 4.10.3 — the sim keeps its job as the
+firmware's stand-in, now for transport security too.
+
+### One command mints the site PKI
+
+`scripts/gen-tls-certs.sh` generates an ed25519 site CA (10 yr) and
+three leaf certs (3 yr): `server.pem` (SANs `DNS:localhost,
+IP:127.0.0.1` + any extras, `serverAuth`), `dashboard.pem` and
+`gate-client.pem` (`clientAuth`). It refuses to overwrite an existing
+CA key and prints the exact flag lines each process needs.
+
+### Proven by the E2E pass, not by inspection
+
+`e2e_tls_stack` (ctest, 18 s) re-runs the entire 4.9 scenario — real
+server, two sims, dashboard, allowlist CRUD, physical gate travel —
+with every channel under mTLS on an ephemeral throwaway PKI. Then the
+enforcement check: two *intruder* sims join, one speaking plaintext
+and one speaking TLS without a client cert. The pass asserts neither
+ever reaches the dashboard's gate map. Encryption you can demo is
+nice; **exclusion you can demo is the point**. Suite total: **132**.
+
+### Deployment plumbing
+
+Both systemd units append an unbraced `$TLS_EXTRA_ARGS` (systemd
+word-splits it, so one env var carries the whole flag set), with
+production-ready commented examples in the `/etc/gate/*.env`
+templates. The nginx OTA site gains a TLS mirror block on 8444 —
+commented until the site PKI is installed, because `nginx -t` fails
+hard on a missing certificate and a fresh install shouldn't be broken
+by a block it can't satisfy yet.
+
+Next: **Phase 4.10.2 — JWT admin authentication** (ADR-003): the
+dashboard's admin surface stops trusting anyone who can reach the
+socket.
 
 ---
 

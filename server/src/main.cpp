@@ -56,11 +56,29 @@ int main(int argc, char** argv) {
                    "Seconds to wait for in-flight RPCs during graceful shutdown.")
         ->default_str(std::to_string(shutdown_deadline_sec));
 
+    gate::rpc::TlsConfig tls;
+    app.add_option("--tls-cert", tls.cert_path, "Server certificate chain (PEM); enables TLS.");
+    app.add_option("--tls-key", tls.key_path, "Server private key (PEM).")
+        ->needs(app.get_option("--tls-cert"));
+    app.add_option("--tls-ca", tls.ca_path, "CA bundle (PEM) for verifying client certificates.");
+    app.add_flag("--require-client-cert", tls.require_client_cert,
+                 "Reject clients without a valid certificate (mTLS).")
+        ->needs(app.get_option("--tls-ca"));
+
     CLI11_PARSE(app, argc, argv);
 
     spdlog::set_level(spdlog::level::from_str(log_level));
     spdlog::info("gate-server starting (listen={}, site_id={}, db={})", listen_address, site_id,
                  db_path);
+    if (tls.enabled()) {
+        spdlog::info("transport: {} (cert={})",
+                     tls.require_client_cert ? "mTLS — client certs required" : "TLS",
+                     tls.cert_path);
+    } else {
+        spdlog::warn(
+            "transport: PLAINTEXT — fine for dev/tests; production wants "
+            "--tls-cert/--tls-key (Phase 4.10)");
+    }
 
     gate::auth::AllowlistStore store = gate::auth::AllowlistStore::open(db_path);
     gate::fusion::FusionEngine fusion{store};
@@ -69,6 +87,7 @@ int main(int argc, char** argv) {
     gate::rpc::ServerConfig cfg;
     cfg.listen_address = listen_address;
     cfg.default_site_id = site_id;
+    cfg.tls = tls;
     gate::rpc::Server server{store, fusion, bus, cfg};
 
     if (!server.start()) {

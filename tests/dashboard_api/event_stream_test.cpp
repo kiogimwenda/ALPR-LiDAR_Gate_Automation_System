@@ -61,8 +61,11 @@ TEST_CASE("event stream ingests, survives a server drop, and resumes without a g
     auto server = builder.BuildAndStart();
     REQUIRE(server != nullptr);
 
-    auto bridge = std::make_shared<dash::GrpcBridge>(dash::GrpcBridge::Config{
-        .server = "127.0.0.1:" + std::to_string(port), .site_id = "site-test", .actor = "test"});
+    dash::GrpcBridge::Config bridge_cfg;
+    bridge_cfg.server = "127.0.0.1:" + std::to_string(port);
+    bridge_cfg.site_id = "site-test";
+    bridge_cfg.actor = "test";
+    auto bridge = std::make_shared<dash::GrpcBridge>(bridge_cfg);
     dash::EventStream::Config cfg;
     cfg.reconnect_min_ms = 50;  // fast test reconnect
     dash::EventStream stream(bridge, cfg);

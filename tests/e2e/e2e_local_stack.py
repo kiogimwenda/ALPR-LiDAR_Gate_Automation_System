@@ -28,6 +28,7 @@ no pip dependencies.
 
 import argparse
 import json
+import pathlib
 import signal
 import subprocess
 import sys
@@ -95,24 +96,54 @@ def main():
     ap.add_argument("--server", required=True)
     ap.add_argument("--sim", required=True)
     ap.add_argument("--dashboard", required=True)
+    ap.add_argument("--tls", action="store_true",
+                    help="run the whole stack under mTLS (Phase 4.10.1)")
     args = ap.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp:
-        print("== launching the real stack ==")
+        server_tls, client_tls = [], []
+        if args.tls:
+            print("== generating an ephemeral site PKI ==")
+            gen = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "gen-tls-certs.sh"
+            subprocess.run(["bash", str(gen), f"{tmp}/tls"], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            server_tls = ["--tls-cert", f"{tmp}/tls/server.pem",
+                          "--tls-key", f"{tmp}/tls/server.key",
+                          "--tls-ca", f"{tmp}/tls/ca.pem", "--require-client-cert"]
+            client_tls = ["--tls-ca", f"{tmp}/tls/ca.pem",
+                          "--tls-cert", f"{tmp}/tls/gate-client.pem",
+                          "--tls-key", f"{tmp}/tls/gate-client.key"]
+
+        print(f"== launching the real stack{' (mTLS)' if args.tls else ''} ==")
         launch("gate-server", [args.server, "--listen", f"127.0.0.1:{GRPC_PORT}",
                                "--site-id", "site-e2e", "--db-path", f"{tmp}/allowlist.db",
-                               "--log-level", "warn"])
+                               "--log-level", "warn"] + server_tls)
         time.sleep(1.0)
         launch("sim-01", [args.sim, "--server", f"127.0.0.1:{GRPC_PORT}",
                           "--gate-id", "gate-e2e-01", "--travel-ms", "2000",
-                          "--auto-close-ms", "4000", "--telemetry-ms", "250"])
+                          "--auto-close-ms", "4000", "--telemetry-ms", "250"] + client_tls)
         launch("sim-02", [args.sim, "--server", f"127.0.0.1:{GRPC_PORT}",
                           "--gate-id", "gate-e2e-02", "--travel-ms", "3000",
-                          "--telemetry-ms", "250"])
+                          "--telemetry-ms", "250"] + client_tls)
+        dash_tls = (["--tls-ca", f"{tmp}/tls/ca.pem",
+                     "--tls-cert", f"{tmp}/tls/dashboard.pem",
+                     "--tls-key", f"{tmp}/tls/dashboard.key"] if args.tls else [])
         launch("dashboard", [args.dashboard, "--listen", "127.0.0.1",
                              "--port", str(HTTP_PORT),
                              "--server", f"127.0.0.1:{GRPC_PORT}",
-                             "--site-id", "site-e2e"])
+                             "--site-id", "site-e2e"] + dash_tls)
+
+        if args.tls:
+            # Enforcement checks: peers without the right credentials
+            # must stay out — a plaintext sim and a TLS-but-certless
+            # sim (mTLS requires the client certificate).
+            launch("intruder-plain", [args.sim, "--server", f"127.0.0.1:{GRPC_PORT}",
+                                      "--gate-id", "gate-intruder-plain",
+                                      "--telemetry-ms", "250"])
+            launch("intruder-nocert", [args.sim, "--server", f"127.0.0.1:{GRPC_PORT}",
+                                       "--gate-id", "gate-intruder-nocert",
+                                       "--telemetry-ms", "250",
+                                       "--tls-ca", f"{tmp}/tls/ca.pem"])
 
         print("== 1: liveness ==")
         wait_for("dashboard answers /api/health with upstream up",
@@ -127,6 +158,15 @@ def main():
                     and gate_state(s, "gate-e2e-02") == "CLOSED")
 
         wait_for("both sims report CLOSED through the full pipeline", converged)
+
+        if args.tls:
+            print("== 2b: mTLS enforcement ==")
+            time.sleep(3)  # ample time for an intruder to have converged if allowed
+            _, s = api("/api/status")
+            for intruder in ("gate-intruder-plain", "gate-intruder-nocert"):
+                if intruder in s.get("gates", {}):
+                    fail(f"{intruder} reached the dashboard despite bad credentials")
+            print("  ok: plaintext and certless clients never reached the stack")
 
         print("== 3: allowlist CRUD against the real store ==")
         code, body = api("/api/allowlist", "POST",

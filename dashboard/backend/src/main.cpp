@@ -37,6 +37,13 @@ int main(int argc, char** argv) {
                  "answer every origin with permissive CORS headers (Vite dev server)");
     app.add_option("--www", www_dir,
                    "serve the built SPA from this directory (production, same-origin)");
+    app.add_option("--tls-ca", bridge_cfg.tls_ca_path,
+                   "CA bundle (PEM) — switches the upstream gRPC channel to TLS");
+    app.add_option("--tls-cert", bridge_cfg.tls_cert_path,
+                   "client certificate (PEM) presented to an mTLS server")
+        ->needs(app.get_option("--tls-ca"));
+    app.add_option("--tls-key", bridge_cfg.tls_key_path, "client private key (PEM)")
+        ->needs(app.get_option("--tls-cert"));
 
     CLI11_PARSE(app, argc, argv);
 

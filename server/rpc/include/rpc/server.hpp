@@ -27,6 +27,20 @@
 
 namespace gate::rpc {
 
+// Transport security (Phase 4.10.1). Setting cert+key enables TLS;
+// adding a CA verifies client certificates, and require_client_cert
+// turns that into mTLS (unverified clients are rejected at handshake).
+// All paths are PEM files. Empty cert path = plaintext listener —
+// legal for dev/tests, loudly logged by the daemon.
+struct TlsConfig {
+    std::string cert_path;  // server certificate chain
+    std::string key_path;   // server private key
+    std::string ca_path;    // CA for verifying client certs (mTLS)
+    bool require_client_cert = false;
+
+    [[nodiscard]] bool enabled() const { return !cert_path.empty(); }
+};
+
 struct ServerConfig {
     std::string listen_address = "0.0.0.0:50051";
     // Default site_id stamped on dashboard-published events when the RPC
@@ -35,6 +49,7 @@ struct ServerConfig {
     // Per-Subscribe poll interval (controls how often each Subscribe RPC
     // checks for cancellation). 500ms is a reasonable production default.
     std::chrono::milliseconds subscribe_poll_interval{500};
+    TlsConfig tls{};
 };
 
 class Server {

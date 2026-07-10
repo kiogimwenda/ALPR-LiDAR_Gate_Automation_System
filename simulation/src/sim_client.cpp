@@ -4,8 +4,10 @@
 
 #include <chrono>
 #include <cstdio>
+#include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <mutex>
+#include <sstream>
 #include <thread>
 
 #include "gate_service.grpc.pb.h"
@@ -89,8 +91,36 @@ void write_ack_completed(LockedWriter& w, const std::string& command_id, bool su
 
 }  // namespace
 
+namespace {
+
+std::string read_pem(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return {};
+    }
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+}  // namespace
+
 bool SimClient::run_session(const std::atomic<bool>& shutdown) {
-    auto channel = grpc::CreateChannel(cfg_.server, grpc::InsecureChannelCredentials());
+    std::shared_ptr<grpc::ChannelCredentials> creds;
+    if (cfg_.tls_ca_path.empty()) {
+        creds = grpc::InsecureChannelCredentials();
+    } else {
+        // Mirrors the firmware's eventual posture (4.10.3): verify the
+        // server against the site CA and present a device identity.
+        grpc::SslCredentialsOptions opts;
+        opts.pem_root_certs = read_pem(cfg_.tls_ca_path);
+        if (!cfg_.tls_cert_path.empty()) {
+            opts.pem_cert_chain = read_pem(cfg_.tls_cert_path);
+            opts.pem_private_key = read_pem(cfg_.tls_key_path);
+        }
+        creds = grpc::SslCredentials(opts);
+    }
+    auto channel = grpc::CreateChannel(cfg_.server, creds);
     const auto deadline =
         std::chrono::system_clock::now() + std::chrono::milliseconds(cfg_.connect_timeout_ms);
     if (!channel->WaitForConnected(deadline)) {

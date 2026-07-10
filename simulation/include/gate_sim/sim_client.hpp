@@ -28,6 +28,11 @@ public:
         std::uint32_t telemetry_period_ms = 1'000;
         std::uint32_t tick_ms = 50;  // physics + write cadence
         std::uint32_t connect_timeout_ms = 3'000;
+        // Transport security (Phase 4.10.1): ca set = TLS; cert+key =
+        // client identity for mTLS. Empty = plaintext.
+        std::string tls_ca_path;
+        std::string tls_cert_path;
+        std::string tls_key_path;
     };
 
     SimClient(Config cfg, VirtualGate& gate) : cfg_(std::move(cfg)), gate_(gate) {}

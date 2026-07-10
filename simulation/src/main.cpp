@@ -90,6 +90,13 @@ int main(int argc, char** argv) {
         ->capture_default_str();
     app.add_flag("-i,--interactive", interactive,
                  "read operator commands from stdin (open/close/stop/trip/…)");
+    app.add_option("--tls-ca", client_cfg.tls_ca_path,
+                   "CA bundle (PEM) — switches the Control channel to TLS");
+    app.add_option("--tls-cert", client_cfg.tls_cert_path,
+                   "client certificate (PEM) for mTLS servers")
+        ->needs(app.get_option("--tls-ca"));
+    app.add_option("--tls-key", client_cfg.tls_key_path, "client private key (PEM)")
+        ->needs(app.get_option("--tls-cert"));
 
     CLI11_PARSE(app, argc, argv);
 

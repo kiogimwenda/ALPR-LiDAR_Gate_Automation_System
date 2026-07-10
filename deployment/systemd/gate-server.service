@@ -20,7 +20,10 @@ Group=gate
 EnvironmentFile=/etc/gate/gate-server.env
 # (--db-path, not --db: the Phase 4.9 E2E pass caught the mismatch
 # before any host did.)
-ExecStart=/opt/gate/bin/gate-server --listen ${LISTEN_ADDRESS} --site-id ${SITE_ID} --db-path ${DB_PATH}
+# $TLS_EXTRA_ARGS is unbraced on purpose: systemd word-splits it, so
+# one env var can carry the whole --tls-cert/--tls-key/--tls-ca set
+# (empty in dev = plaintext, and the server logs that loudly).
+ExecStart=/opt/gate/bin/gate-server --listen ${LISTEN_ADDRESS} --site-id ${SITE_ID} --db-path ${DB_PATH} $TLS_EXTRA_ARGS
 Restart=on-failure
 RestartSec=3
 
