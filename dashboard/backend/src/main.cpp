@@ -11,9 +11,11 @@
 #include <CLI/CLI.hpp>
 #include <cstdio>
 #include <drogon/drogon.h>
+#include <fstream>
 #include <memory>
 #include <string>
 
+#include "dash_api/auth.hpp"
 #include "dash_api/event_stream.hpp"
 #include "dash_api/grpc_bridge.hpp"
 
@@ -45,7 +47,32 @@ int main(int argc, char** argv) {
     app.add_option("--tls-key", bridge_cfg.tls_key_path, "client private key (PEM)")
         ->needs(app.get_option("--tls-cert"));
 
+    gate::dash_api::AuthService::Config auth_cfg;
+    std::string jwt_secret_file;
+    app.add_option("--admin-user", auth_cfg.admin_user, "admin login username")
+        ->capture_default_str();
+    app.add_option("--admin-password-hash", auth_cfg.password_hash,
+                   "pbkdf2-sha256 admin credential (scripts/gen-admin-hash.sh); "
+                   "setting it turns admin auth ON");
+    app.add_option("--jwt-secret-file", jwt_secret_file,
+                   "file holding the JWT signing secret — pins sessions across "
+                   "restarts (default: random per-process secret)")
+        ->needs(app.get_option("--admin-password-hash"));
+    app.add_option("--token-ttl-min", auth_cfg.token_ttl_min, "admin session lifetime, minutes")
+        ->capture_default_str();
+
     CLI11_PARSE(app, argc, argv);
+
+    if (!jwt_secret_file.empty()) {
+        std::ifstream in(jwt_secret_file);
+        std::getline(in, auth_cfg.jwt_secret);
+        if (auth_cfg.jwt_secret.empty()) {
+            std::fprintf(stderr, "gate-dashboard: cannot read a JWT secret from %s\n",
+                         jwt_secret_file.c_str());
+            return 1;  // asked-for auth never silently degrades
+        }
+    }
+    gate::dash_api::set_auth(std::make_shared<gate::dash_api::AuthService>(auth_cfg));
 
     auto bridge = std::make_shared<gate::dash_api::GrpcBridge>(bridge_cfg);
     gate::dash_api::set_bridge(bridge);
@@ -92,6 +119,14 @@ int main(int argc, char** argv) {
                 static_cast<unsigned>(listen_port), bridge_cfg.server.c_str(),
                 bridge_cfg.site_id.c_str(), cors_dev ? ", cors-dev" : "",
                 www_dir.empty() ? "" : ", serving SPA");
+    if (auth_cfg.enabled()) {
+        std::printf("admin auth: ON (user=%s, ttl=%umin, secret=%s)\n", auth_cfg.admin_user.c_str(),
+                    auth_cfg.token_ttl_min, jwt_secret_file.empty() ? "per-process" : "pinned");
+    } else {
+        std::printf(
+            "admin auth: DISABLED — allowlist + gate commands are open; "
+            "production wants --admin-password-hash (Phase 4.10.2)\n");
+    }
 
     drogon::app()
         .setLogLevel(trantor::Logger::kWarn)

@@ -121,8 +121,8 @@ release on GitHub.
 | 4.9 | End-to-end integration tests | ✅ Complete |
 | **4.10** | **Security hardening (TLS/mTLS, JWT admin auth)** | 🔄 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.1 | Host-side TLS/mTLS: server, dashboard, sim, site PKI tooling | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.10.2 | JWT admin authentication (ADR-003) | ⏳ Pending — next |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.10.3 | Firmware TLS (esp-tls) + HTTPS OTA | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.2 | JWT admin authentication | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.3 | Firmware TLS (esp-tls) + HTTPS OTA | ⏳ Pending — next |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.4 | Phase 4.10 closure | ⏳ Pending |
 
 ---
@@ -4376,7 +4376,7 @@ admin auth) — the final planned Phase 4 milestone.
 
 ---
 
-## Phase 4.10.1 — Host-side TLS/mTLS (latest)
+## Phase 4.10.1 — Host-side TLS/mTLS
 
 Everything on the host side of the gRPC fabric now speaks TLS — and,
 in production posture, *mutual* TLS: the server proves itself to every
@@ -4439,6 +4439,68 @@ by a block it can't satisfy yet.
 Next: **Phase 4.10.2 — JWT admin authentication** (ADR-003): the
 dashboard's admin surface stops trusting anyone who can reach the
 socket.
+
+---
+
+## Phase 4.10.2 — JWT admin authentication (latest)
+
+The dashboard's admin surface — allowlist CRUD (resident PII) and
+gate commands (things that physically move) — now wants a token.
+Monitoring stays open: the guard-booth view of `/api/health`,
+`/api/status`, and the event WebSocket must survive an expired admin
+session.
+
+### Two mechanisms, one module
+
+`gate_dash_auth` (jwt-cpp + OpenSSL, no Drogon — fully unit-testable):
+
+- **Credential**: PBKDF2-HMAC-SHA256, stored as
+  `pbkdf2-sha256$<iter>$<salt>$<hash>` and checked with a
+  constant-time compare. `scripts/gen-admin-hash.sh` mints it (never
+  echoes, never lands in argv or history). Any malformed stored hash
+  **fails closed** — seven rejection paths pinned by tests.
+- **Session**: HS256 JWT from `POST /api/auth/login`
+  (`{"username","password"}` → `{"token","user","expiresInMin"}`).
+  The signing secret is random per process by default — sessions die
+  with the backend, the safe single-instance posture —
+  `--jwt-secret-file` pins it for restart-surviving sessions.
+
+Posture mirrors 4.10.1's ladder exactly: no `--admin-password-hash` =
+auth disabled for dev/tests, announced loudly at startup; an
+unreadable secret file refuses to start rather than degrading.
+
+### The filter, and the linker trap it stepped into
+
+A Drogon `HttpFilter` guards the protected routes, attached per-route
+rather than globally. It promptly reproduced the Phase 4.7 lesson in
+a sharper form: Drogon instantiates filters *reflectively* through
+`DrObject<T>::alloc_`, a class-template static the compiler only
+emits in a translation unit that odr-uses the class. Controllers
+odr-use themselves via `METHOD_LIST`'s route registration — a filter
+is referenced by name alone, so the whole class was silently dropped
+and route setup failed at runtime with `middleware … not found`. One
+deliberate `AuthFilter::classTypeName()` reference forces the
+emission; the comment above it explains why it must never be
+"cleaned up".
+
+### Proven end-to-end
+
+`e2e_auth_stack` runs the full 4.9 scenario with auth on: admin
+routes answer 401 bare, a wrong password answers 401, login mints a
+JWT (the hash is minted by *python's* `hashlib.pbkdf2_hmac` and
+parsed by the *C++ OpenSSL* side — a free cross-implementation
+check), and the CRUD + gate-travel scenarios then run fully
+authorized while monitoring stays open. The SPA grew the browser
+half: a sessionStorage token, `Authorization: Bearer` on every call,
+and a login modal that any 401 pops. Suite total: **142**.
+
+Deployment: `$AUTH_EXTRA_ARGS` joins the dashboard unit, with the
+production example (hash + pinned secret file) commented in the env
+template.
+
+Next: **Phase 4.10.3 — firmware TLS**: the ESP32's gRPC channel
+(nghttp2 → esp-tls) and HTTPS OTA adopt the site PKI the host side
+already enforces.
 
 ---
 

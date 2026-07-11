@@ -20,7 +20,8 @@ namespace gate::dash_api {
 class GatesController : public drogon::HttpController<GatesController> {
 public:
     METHOD_LIST_BEGIN
-    ADD_METHOD_TO(GatesController::command, "/api/gates/{gate_id}/command", drogon::Post);
+    ADD_METHOD_TO(GatesController::command, "/api/gates/{gate_id}/command", drogon::Post,
+                  "gate::dash_api::AuthFilter");
     METHOD_LIST_END
 
     void command(const drogon::HttpRequestPtr& req,

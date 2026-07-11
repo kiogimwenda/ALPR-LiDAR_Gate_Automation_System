@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onDestroy, onMount } from 'svelte';
+	import { authRequired, authUser, logout } from '$lib/auth';
 	import { connect, disconnect, streamConnected, upstream, wsConnected } from '$lib/live';
+	import LoginModal from '$lib/LoginModal.svelte';
 
 	let { children } = $props();
 
@@ -23,8 +25,15 @@
 		<span class="badge" class:ok={$wsConnected}>backend {$wsConnected ? 'live' : 'offline'}</span>
 		<span class="badge" class:ok={$streamConnected}>event stream {$streamConnected ? 'up' : 'down'}</span>
 		<span class="badge" class:ok={$upstream}>server {$upstream ? 'up' : 'down'}</span>
+		{#if $authUser}
+			<button class="badge user" onclick={logout} title="sign out">{$authUser} ✕</button>
+		{/if}
 	</div>
 </header>
+
+{#if $authRequired}
+	<LoginModal />
+{/if}
 
 {@render children()}
 
@@ -77,5 +86,12 @@
 	}
 	.badge.ok {
 		background: #2b7a3f;
+	}
+	.badge.user {
+		background: #2b4a7a;
+		border: none;
+		color: #fff;
+		font-family: inherit;
+		cursor: pointer;
 	}
 </style>

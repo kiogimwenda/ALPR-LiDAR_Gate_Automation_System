@@ -108,5 +108,17 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard)
                 --tls
         )
         set_tests_properties(e2e_tls_stack PROPERTIES TIMEOUT 120)
+
+        # And under JWT admin auth (Phase 4.10.2): admin routes 401
+        # without a token, login mints one, the CRUD + command
+        # scenarios then run fully authorized.
+        add_test(NAME e2e_auth_stack
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/e2e/e2e_local_stack.py
+                --server $<TARGET_FILE:gate-server>
+                --sim $<TARGET_FILE:gate-sim>
+                --dashboard $<TARGET_FILE:gate-dashboard>
+                --auth
+        )
+        set_tests_properties(e2e_auth_stack PROPERTIES TIMEOUT 120)
     endif()
 endif()

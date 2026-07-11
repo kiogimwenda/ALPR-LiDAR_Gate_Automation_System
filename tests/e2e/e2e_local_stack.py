@@ -14,6 +14,9 @@ can cover:
     1. liveness      /api/health reports upstream up
     2. convergence   both gates appear in /api/status with live
                      telemetry, event stream connected
+    2b (--tls)       plaintext / certless intruder sims never appear
+    2c (--auth)      admin routes 401 without a token; login mints a
+                     JWT; monitoring endpoints stay open
     3. allowlist     REST CRUD lands in the real AdminService + SQLite
                      and reads back
     4. command       POST open → gate physically travels
@@ -27,8 +30,10 @@ no pip dependencies.
 """
 
 import argparse
+import hashlib
 import json
 import pathlib
+import secrets
 import signal
 import subprocess
 import sys
@@ -41,7 +46,20 @@ GRPC_PORT = 58061
 HTTP_PORT = 58080
 BASE = f"http://127.0.0.1:{HTTP_PORT}"
 
+ADMIN_USER = "e2e-admin"
+ADMIN_PASSWORD = "e2e-correct-horse"
+
 procs = []
+token = None  # set after /api/auth/login in --auth mode
+
+
+def admin_hash():
+    """The backend's pbkdf2-sha256$iter$salt$hash format, minted with
+    python's hashlib — a cross-implementation check against the C++
+    OpenSSL PKCS5_PBKDF2_HMAC parser for free."""
+    salt = secrets.token_bytes(16)
+    key = hashlib.pbkdf2_hmac("sha256", ADMIN_PASSWORD.encode(), salt, 50000, dklen=32)
+    return f"pbkdf2-sha256$50000${salt.hex()}${key.hex()}"
 
 
 def launch(name, argv):
@@ -50,12 +68,15 @@ def launch(name, argv):
     return p
 
 
-def api(path, method="GET", body=None, timeout=5):
+def api(path, method="GET", body=None, timeout=5, with_token=True):
+    headers = {"Content-Type": "application/json"}
+    if token and with_token:
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
         BASE + path,
         method=method,
         data=json.dumps(body).encode() if body is not None else None,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -98,6 +119,8 @@ def main():
     ap.add_argument("--dashboard", required=True)
     ap.add_argument("--tls", action="store_true",
                     help="run the whole stack under mTLS (Phase 4.10.1)")
+    ap.add_argument("--auth", action="store_true",
+                    help="enable JWT admin auth on the dashboard (Phase 4.10.2)")
     args = ap.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -128,10 +151,13 @@ def main():
         dash_tls = (["--tls-ca", f"{tmp}/tls/ca.pem",
                      "--tls-cert", f"{tmp}/tls/dashboard.pem",
                      "--tls-key", f"{tmp}/tls/dashboard.key"] if args.tls else [])
+        dash_auth = (["--admin-user", ADMIN_USER,
+                      "--admin-password-hash", admin_hash(),
+                      "--token-ttl-min", "10"] if args.auth else [])
         launch("dashboard", [args.dashboard, "--listen", "127.0.0.1",
                              "--port", str(HTTP_PORT),
                              "--server", f"127.0.0.1:{GRPC_PORT}",
-                             "--site-id", "site-e2e"] + dash_tls)
+                             "--site-id", "site-e2e"] + dash_tls + dash_auth)
 
         if args.tls:
             # Enforcement checks: peers without the right credentials
@@ -167,6 +193,35 @@ def main():
                 if intruder in s.get("gates", {}):
                     fail(f"{intruder} reached the dashboard despite bad credentials")
             print("  ok: plaintext and certless clients never reached the stack")
+
+        if args.auth:
+            print("== 2c: admin auth enforcement + login ==")
+            global token
+            code, _ = api("/api/allowlist", with_token=False)
+            if code != 401:
+                fail(f"unauthenticated allowlist read got {code}, wanted 401")
+            code, _ = api("/api/gates/gate-e2e-01/command", "POST",
+                          {"kind": "OPEN_GATE"}, with_token=False)
+            if code != 401:
+                fail(f"unauthenticated command got {code}, wanted 401")
+            print("  ok: admin surface answers 401 without a token")
+            code, _ = api("/api/auth/login", "POST",
+                          {"username": ADMIN_USER, "password": "wrong"})
+            if code != 401:
+                fail(f"login with a wrong password got {code}, wanted 401")
+            code, body = api("/api/auth/login", "POST",
+                             {"username": ADMIN_USER, "password": ADMIN_PASSWORD})
+            if code != 200 or not body.get("token"):
+                fail(f"login: {code} {body}")
+            token = body["token"]
+            print(f"  ok: login issues a JWT (ttl {body.get('expiresInMin')}min)")
+            code, _ = api("/api/allowlist")
+            if code != 200:
+                fail(f"authorized allowlist read got {code}")
+            code, _ = api("/api/status", with_token=False)
+            if code != 200:
+                fail(f"monitoring /api/status must stay open, got {code}")
+            print("  ok: token opens the admin surface; monitoring stays open")
 
         print("== 3: allowlist CRUD against the real store ==")
         code, body = api("/api/allowlist", "POST",

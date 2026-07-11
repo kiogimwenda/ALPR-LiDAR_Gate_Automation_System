@@ -5,6 +5,7 @@
 // render, not an exception to forget to catch. Backend errors arrive
 // as {"error": …} with a meaningful HTTP status (grpc_http.hpp).
 
+import { onUnauthorized, token } from './auth';
 import type { Ack, AllowlistEntry, AllowlistEntryInput } from './types';
 
 interface Result<T> {
@@ -15,11 +16,20 @@ interface Result<T> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<Result<T>> {
 	try {
+		const jwt = token();
 		const resp = await fetch(path, {
-			headers: { 'Content-Type': 'application/json' },
+			headers: {
+				'Content-Type': 'application/json',
+				...(jwt ? { Authorization: `Bearer ${jwt}` } : {})
+			},
 			...init
 		});
 		const body = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+		if (resp.status === 401) {
+			// Expired or missing session — pop the login modal.
+			onUnauthorized();
+			return { ok: false, error: (body.error as string) ?? 'authentication required' };
+		}
 		if (!resp.ok) {
 			return { ok: false, error: (body.error as string) ?? `HTTP ${resp.status}` };
 		}

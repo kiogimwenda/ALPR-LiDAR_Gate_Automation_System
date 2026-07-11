@@ -28,3 +28,19 @@ target_link_libraries(test_dashboard_stream
 catch_discover_tests(test_dashboard_stream
     PROPERTIES TIMEOUT 30
 )
+
+# 4.10.2 admin auth core — PBKDF2 credentials + JWT sessions. Links
+# only gate_dash_auth: no Drogon, no gRPC.
+add_executable(test_dashboard_auth
+    auth_test.cpp
+)
+
+target_link_libraries(test_dashboard_auth
+    PRIVATE
+        gate_dash_auth
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_dashboard_auth
+    PROPERTIES TIMEOUT 30
+)
