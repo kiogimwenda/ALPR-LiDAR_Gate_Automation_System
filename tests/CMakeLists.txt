@@ -120,5 +120,17 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard)
                 --auth
         )
         set_tests_properties(e2e_auth_stack PROPERTIES TIMEOUT 120)
+
+        # Phase 4.10.4 closure: the full production posture in one
+        # pass — every channel mTLS *and* the admin surface behind
+        # JWT, intruders and 401s both enforced.
+        add_test(NAME e2e_hardened_stack
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/e2e/e2e_local_stack.py
+                --server $<TARGET_FILE:gate-server>
+                --sim $<TARGET_FILE:gate-sim>
+                --dashboard $<TARGET_FILE:gate-dashboard>
+                --tls --auth
+        )
+        set_tests_properties(e2e_hardened_stack PROPERTIES TIMEOUT 120)
     endif()
 endif()

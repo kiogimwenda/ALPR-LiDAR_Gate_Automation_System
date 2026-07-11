@@ -119,11 +119,11 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.7.5 | Frontend allowlist + controls + Phase 4.7 closure | ✅ Complete |
 | 4.8 | Deployment scripts (systemd, install, OTA signing) | ✅ Complete |
 | 4.9 | End-to-end integration tests | ✅ Complete |
-| **4.10** | **Security hardening (TLS/mTLS, JWT admin auth)** | 🔄 **In progress** |
+| **4.10** | **Security hardening (TLS/mTLS, JWT admin auth)** | ✅ **Complete** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.1 | Host-side TLS/mTLS: server, dashboard, sim, site PKI tooling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.2 | JWT admin authentication | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.3 | Firmware TLS (esp-tls) + HTTPS OTA | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.10.4 | Phase 4.10 closure | ⏳ Pending — next |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.4 | Phase 4.10 closure | ✅ Complete |
 
 ---
 
@@ -4504,7 +4504,7 @@ already enforces.
 
 ---
 
-## Phase 4.10.3 — Firmware TLS: the gate joins the site PKI (latest)
+## Phase 4.10.3 — Firmware TLS: the gate joins the site PKI
 
 The last plaintext peer. The ESP32's gRPC channel and its OTA
 downloads now speak TLS against the same PKI the host stack enforces
@@ -4554,6 +4554,40 @@ still free). On-hardware validation stays bundled with the bench
 items from 4.5.
 
 Next: **Phase 4.10.4 — Phase 4.10 closure**.
+
+---
+
+## Phase 4.10.4 — Phase 4.10 closure: the hardened posture, proven whole (latest)
+
+Security milestones love to end as a checklist of parts. This one
+closes with the parts running *together*: `e2e_hardened_stack` boots
+the real server, two gates, and the dashboard with **every channel
+under mTLS and the admin surface behind JWT at the same time** —
+intruder sims kept out by the transport, bare requests kept out by
+the 401, and the full CRUD + gate-travel scenario running authorized
+inside both fences. Suite total: **143**.
+
+The posture now has a home: [`docs/security.md`](docs/security.md)
+records what protects what, the credential ladder every process
+shares, which keys must never leave which machine (the OTA signing
+key and the site CA key above all), and — honestly — the residual
+items: GPU inference path E2E, on-hardware TLS validation, and
+expiry-only JWT revocation.
+
+The two invariants Phase 4.10 leaves behind, everywhere:
+
+1. **Asked-for security never silently degrades.** Unreadable PEM,
+   unreadable JWT secret, missing firmware cert — refuse to start /
+   fail the build, never fall back.
+2. **Security-off is legal but loud.** Dev stays frictionless;
+   a production box misconfigured back to plaintext or open-admin
+   announces itself in the journal on every boot.
+
+**Phase 4 is complete** across all ten milestones: wire contract →
+inference scaffold → auth store → fusion → firmware (state machine,
+drivers, gRPC, OTA) → simulation → dashboard → deployment → E2E →
+security. Open items beyond it: the GPU-host inference path with a
+real camera, and firmware bench validation on the ESP32-S3 hardware.
 
 ---
 
