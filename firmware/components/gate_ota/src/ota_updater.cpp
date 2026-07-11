@@ -31,9 +31,11 @@ constexpr std::size_t kReadbackChunk = 4096;
 
 // GET the manifest into a NUL-terminated heap buffer. Returns nullptr
 // on success and fills *out (caller frees), else a static error.
-const char* fetch_json(const char* url, char** out) {
+// `ca_pem` verifies https URLs (ignored for plain http).
+const char* fetch_json(const char* url, const char* ca_pem, char** out) {
     esp_http_client_config_t cfg = {};
     cfg.url = url;
+    cfg.cert_pem = ca_pem;
     cfg.timeout_ms = kHttpTimeoutMs;
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
     if (client == nullptr) {
@@ -181,7 +183,7 @@ void OtaUpdater::run() {
 const char* OtaUpdater::run_inner() {
     // 1. Manifest.
     char* json = nullptr;
-    const char* err = fetch_json(cfg_.manifest_url, &json);
+    const char* err = fetch_json(cfg_.manifest_url, cfg_.server_ca_pem, &json);
     if (err != nullptr) {
         return err;
     }
@@ -208,6 +210,7 @@ const char* OtaUpdater::run_inner() {
     // 3. Stream the image into the passive slot.
     esp_http_client_config_t http_cfg = {};
     http_cfg.url = m.image_url;
+    http_cfg.cert_pem = cfg_.server_ca_pem;
     http_cfg.timeout_ms = kHttpTimeoutMs;
     http_cfg.keep_alive_enable = true;
     esp_https_ota_config_t ota_cfg = {};

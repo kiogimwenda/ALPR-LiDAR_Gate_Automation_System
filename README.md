@@ -122,8 +122,8 @@ release on GitHub.
 | **4.10** | **Security hardening (TLS/mTLS, JWT admin auth)** | 🔄 **In progress** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.1 | Host-side TLS/mTLS: server, dashboard, sim, site PKI tooling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.2 | JWT admin authentication | ✅ Complete |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.10.3 | Firmware TLS (esp-tls) + HTTPS OTA | ⏳ Pending — next |
-| &nbsp;&nbsp;&nbsp;&nbsp;4.10.4 | Phase 4.10 closure | ⏳ Pending |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.3 | Firmware TLS (esp-tls) + HTTPS OTA | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.10.4 | Phase 4.10 closure | ⏳ Pending — next |
 
 ---
 
@@ -4442,7 +4442,7 @@ socket.
 
 ---
 
-## Phase 4.10.2 — JWT admin authentication (latest)
+## Phase 4.10.2 — JWT admin authentication
 
 The dashboard's admin surface — allowlist CRUD (resident PII) and
 gate commands (things that physically move) — now wants a token.
@@ -4501,6 +4501,59 @@ template.
 Next: **Phase 4.10.3 — firmware TLS**: the ESP32's gRPC channel
 (nghttp2 → esp-tls) and HTTPS OTA adopt the site PKI the host side
 already enforces.
+
+---
+
+## Phase 4.10.3 — Firmware TLS: the gate joins the site PKI (latest)
+
+The last plaintext peer. The ESP32's gRPC channel and its OTA
+downloads now speak TLS against the same PKI the host stack enforces
+— with the gate presenting a client certificate, because the
+production server runs `--require-client-cert` and a field
+controller is exactly the kind of client mTLS exists for.
+
+### nghttp2 keeps its job; the socket changes underneath
+
+ADR-011's three-layer stack survives intact — nanopb, the framing
+codec, and the nghttp2 pump don't know anything changed. The swap
+happens at the transport seams only: `esp_tls_conn_new_sync`
+handshakes (blocking, ALPN pinned to `h2` — gRPC is HTTP/2 or
+nothing, and failing at the handshake beats failing at the first
+frame), then the established socket drops into the existing
+nonblocking poll loop. `cb_send` and the read path branch on the
+session's `tls` handle; `:scheme` becomes `https`.
+
+One real subtlety earned its comment: **mbedTLS decrypts in
+records**, so a single socket wakeup can surface more plaintext than
+one read returns — and decrypted bytes can sit buffered with nothing
+left on the socket for `poll()` to see. The TLS read path drains
+until `WANT_READ` and treats `esp_tls_get_bytes_avail() > 0` as
+readable; the plaintext path keeps its original shape.
+
+### OTA rides the same CA
+
+`OtaUpdater` gains `server_ca_pem`, handed to both the manifest fetch
+and `esp_https_ota` — pointed at the 4.10.1 nginx TLS mirror
+(`https://…:8444`). Plain http stays legal where TLS isn't
+provisioned, because ADR-009's integrity story never depended on the
+transport: the SHA-256 + ed25519 signature over the image survives
+any downgrade.
+
+### Provisioning is fail-closed
+
+`CONFIG_GATE_TLS_ENABLE` embeds `main/certs/{site_ca.pem, gate.pem,
+gate.key}` via `EMBED_TXTFILES` — minted by the same
+`gen-tls-certs.sh` the host uses, gitignored as per-site secrets, and
+a missing file **fails the build** rather than shipping a gate
+without its identity. Off by default: dev firmware matches the
+server's dev posture (plaintext, loudly).
+
+Verified by compiling both configurations against IDF (TLS off:
+unchanged; TLS on: esp-tls + mbedTLS linked, 52% app partition
+still free). On-hardware validation stays bundled with the bench
+items from 4.5.
+
+Next: **Phase 4.10.4 — Phase 4.10 closure**.
 
 ---
 

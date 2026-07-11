@@ -1,10 +1,11 @@
-// control_client.hpp — gRPC Control-stream client over h2c (ADR-011).
+// control_client.hpp — gRPC Control-stream client (ADR-011).
 //
 // Speaks real gRPC to the server's FieldControllerService/Control bidi
 // stream using the three-layer stack ADR-011 picked: nanopb messages,
-// the gate_rpc framing codec, and nghttp2 over a plain lwIP socket
-// (the server listens with InsecureServerCredentials — cleartext
-// HTTP/2, client preface sent directly, no Upgrade dance).
+// the gate_rpc framing codec, and nghttp2 over either a plain lwIP
+// socket (h2c — cleartext HTTP/2, client preface sent directly, no
+// Upgrade dance) or, since Phase 4.10.3, an esp-tls session carrying
+// the gate's mTLS client identity against the site PKI.
 //
 // Lifecycle
 // ---------
@@ -104,6 +105,15 @@ public:
         // budget plus slack, so the gate's own MotorTimeout fault
         // normally resolves the ack first with a better error.
         std::uint32_t command_deadline_ms = 40'000;
+        // TLS (Phase 4.10.3) — NUL-terminated PEM text, embedded via
+        // EMBED_TXTFILES in main. ca_pem switches the session to TLS
+        // over esp-tls, verifying the server against the 4.10.1 site
+        // CA; the cert/key pair is this gate's mTLS client identity
+        // (the server runs --require-client-cert in production). All
+        // nullptr = plaintext h2c, matching the server's dev posture.
+        const char* ca_pem = nullptr;
+        const char* client_cert_pem = nullptr;
+        const char* client_key_pem = nullptr;
     };
 
     ControlClient(const Config& cfg, TelemetryFiller filler, CommandDispatcher dispatcher);

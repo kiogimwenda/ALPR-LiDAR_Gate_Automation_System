@@ -24,6 +24,15 @@
 #include "gate_ota/ota_updater.hpp"
 #include "gate_rpc/control_client.hpp"
 
+#if CONFIG_GATE_TLS_ENABLE
+// Site PKI, embedded by EMBED_TXTFILES (NUL-terminated PEM text).
+// site_ca verifies the server (gRPC + https OTA); gate.pem/gate.key
+// is this gate's mTLS client identity. See main/certs/README.md.
+extern const char kSiteCaPem[] asm("_binary_site_ca_pem_start");
+extern const char kGateCertPem[] asm("_binary_gate_pem_start");
+extern const char kGateKeyPem[] asm("_binary_gate_key_start");
+#endif
+
 namespace {
 
 constexpr const char* kTag = "gate-fw";
@@ -93,6 +102,9 @@ extern "C" void app_main(void) {
         .manifest_url = CONFIG_GATE_OTA_MANIFEST_URL,
         .running_version = gate::drivers::kVersion,
         .pubkey_hex = CONFIG_GATE_OTA_PUBKEY,
+#if CONFIG_GATE_TLS_ENABLE
+        .server_ca_pem = kSiteCaPem,
+#endif
     }};
     static char ota_cmd_id[40] = {};
 
@@ -110,6 +122,11 @@ extern "C" void app_main(void) {
             .port = CONFIG_GATE_SERVER_PORT,
             .gate_id = CONFIG_GATE_ID,
             .fw_version = gate::drivers::kVersion,
+#if CONFIG_GATE_TLS_ENABLE
+            .ca_pem = kSiteCaPem,
+            .client_cert_pem = kGateCertPem,
+            .client_key_pem = kGateKeyPem,
+#endif
         },
         [](gate_v1_Telemetry& t) {
             t.gate_state = gate::rpc::to_wire_state(gate_ctrl.state());

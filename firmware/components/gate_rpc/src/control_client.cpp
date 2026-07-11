@@ -18,6 +18,7 @@
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_timer.h>
+#include <esp_tls.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <nghttp2/nghttp2.h>
@@ -117,6 +118,7 @@ struct ControlSession {
 
     ControlClient* owner = nullptr;
     int fd = -1;
+    esp_tls_t* tls = nullptr;  // non-null = TLS transport (4.10.3); fd is its socket
     nghttp2_session* ng = nullptr;
     std::int32_t stream_id = -1;
 
@@ -168,6 +170,16 @@ namespace {
 ssize_t cb_send(nghttp2_session*, const std::uint8_t* data, std::size_t length, int,
                 void* user_data) {
     auto* s = static_cast<ControlSession*>(user_data);
+    if (s->tls != nullptr) {
+        const ssize_t n = esp_tls_conn_write(s->tls, data, length);
+        if (n < 0) {
+            if (n == ESP_TLS_ERR_SSL_WANT_READ || n == ESP_TLS_ERR_SSL_WANT_WRITE) {
+                return NGHTTP2_ERR_WOULDBLOCK;
+            }
+            return NGHTTP2_ERR_CALLBACK_FAILURE;
+        }
+        return n;
+    }
     const ssize_t n = send(s->fd, data, length, 0);
     if (n < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
@@ -266,6 +278,39 @@ ssize_t cb_data_read(nghttp2_session*, std::int32_t, std::uint8_t* buf, std::siz
         s->current_off = 0;
     }
     return static_cast<ssize_t>(take);
+}
+
+// TLS connect + handshake (blocking, esp-tls's own timeout). Returns
+// the established session or nullptr; the caller extracts the socket
+// for the poll loop. ALPN pins h2 — gRPC is HTTP/2 or nothing, and
+// failing at the handshake beats failing at the first frame.
+esp_tls_t* tls_connect(const ControlClient::Config& cfg) {
+    esp_tls_cfg_t tc = {};
+    static const char* kAlpn[] = {"h2", nullptr};
+    tc.alpn_protos = kAlpn;
+    tc.timeout_ms = 10'000;
+    // esp-tls wants PEM buffers NUL-inclusive.
+    tc.cacert_buf = reinterpret_cast<const unsigned char*>(cfg.ca_pem);
+    tc.cacert_bytes = std::strlen(cfg.ca_pem) + 1;
+    if (cfg.client_cert_pem != nullptr && cfg.client_key_pem != nullptr) {
+        tc.clientcert_buf = reinterpret_cast<const unsigned char*>(cfg.client_cert_pem);
+        tc.clientcert_bytes = std::strlen(cfg.client_cert_pem) + 1;
+        tc.clientkey_buf = reinterpret_cast<const unsigned char*>(cfg.client_key_pem);
+        tc.clientkey_bytes = std::strlen(cfg.client_key_pem) + 1;
+    }
+    esp_tls_t* tls = esp_tls_init();
+    if (tls == nullptr) {
+        ESP_LOGE(kTag, "esp_tls_init failed");
+        return nullptr;
+    }
+    if (esp_tls_conn_new_sync(cfg.host, static_cast<int>(std::strlen(cfg.host)), cfg.port, &tc,
+                              tls) != 1) {
+        ESP_LOGW(kTag, "TLS handshake with %s:%u failed", cfg.host,
+                 static_cast<unsigned>(cfg.port));
+        esp_tls_conn_destroy(tls);
+        return nullptr;
+    }
+    return tls;
 }
 
 int connect_to(const char* host, std::uint16_t port) {
@@ -492,9 +537,28 @@ bool ControlClient::run_session() {
     ControlSession s;
     s.owner = this;
 
-    s.fd = connect_to(cfg_.host, cfg_.port);
-    if (s.fd < 0) {
-        return false;
+    const bool use_tls = cfg_.ca_pem != nullptr;
+    if (use_tls) {
+        s.tls = tls_connect(cfg_);
+        if (s.tls == nullptr) {
+            return false;
+        }
+        if (esp_tls_get_conn_sockfd(s.tls, &s.fd) != ESP_OK || s.fd < 0) {
+            ESP_LOGE(kTag, "no socket behind the TLS session");
+            esp_tls_conn_destroy(s.tls);
+            return false;
+        }
+        // The handshake ran blocking; the pump wants the same
+        // non-blocking socket the plaintext path uses.
+        const int nodelay = 1;
+        setsockopt(s.fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay));
+        const int flags = fcntl(s.fd, F_GETFL, 0);
+        fcntl(s.fd, F_SETFL, flags | O_NONBLOCK);
+    } else {
+        s.fd = connect_to(cfg_.host, cfg_.port);
+        if (s.fd < 0) {
+            return false;
+        }
     }
 
     nghttp2_session_callbacks* cbs = nullptr;
@@ -514,7 +578,7 @@ bool ControlClient::run_session() {
                   static_cast<unsigned>(cfg_.port));
     const nghttp2_nv hdrs[] = {
         make_nv(":method", "POST"),
-        make_nv(":scheme", "http"),
+        make_nv(":scheme", use_tls ? "https" : "http"),
         make_nv(":authority", authority),
         make_nv(":path", "/gate.v1.FieldControllerService/Control"),
         make_nv("content-type", "application/grpc"),
@@ -529,11 +593,15 @@ bool ControlClient::run_session() {
     if (s.stream_id < 0) {
         ESP_LOGE(kTag, "submit_request failed: %s", nghttp2_strerror(s.stream_id));
         nghttp2_session_del(s.ng);
-        close(s.fd);
+        if (s.tls != nullptr) {
+            esp_tls_conn_destroy(s.tls);  // closes the fd too
+        } else {
+            close(s.fd);
+        }
         return false;
     }
-    ESP_LOGI(kTag, "Control stream opening to %s (stream=%ld)", authority,
-             static_cast<long>(s.stream_id));
+    ESP_LOGI(kTag, "Control stream opening to %s (stream=%ld%s)", authority,
+             static_cast<long>(s.stream_id), use_tls ? ", TLS" : ", h2c");
 
     // The stream exists client-side the moment submit_request returns;
     // queue the first telemetry now so it rides out right behind the
@@ -591,21 +659,45 @@ bool ControlClient::run_session() {
             ESP_LOGW(kTag, "socket error/hangup");
             break;
         }
-        if ((pfd.revents & POLLIN) != 0) {
-            std::uint8_t buf[1024];
-            const ssize_t n = recv(s.fd, buf, sizeof(buf), 0);
-            if (n == 0) {
-                ESP_LOGW(kTag, "server closed connection");
-                break;
-            }
-            if (n < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
-                ESP_LOGW(kTag, "recv failed (errno=%d)", errno);
-                break;
-            }
-            if (n > 0) {
+        // mbedTLS decrypts in records: one socket wakeup can yield
+        // more plaintext than one read returns, and already-decrypted
+        // bytes can sit buffered with nothing left on the socket to
+        // poll. So the TLS path drains until would-block and treats
+        // buffered bytes as readable; plain sockets keep the original
+        // one-read-per-poll shape.
+        const bool readable =
+            (pfd.revents & POLLIN) != 0 || (s.tls != nullptr && esp_tls_get_bytes_avail(s.tls) > 0);
+        if (readable) {
+            bool drain = true;
+            while (drain) {
+                std::uint8_t buf[1024];
+                ssize_t n;
+                if (s.tls != nullptr) {
+                    n = esp_tls_conn_read(s.tls, buf, sizeof(buf));
+                    if (n == ESP_TLS_ERR_SSL_WANT_READ || n == ESP_TLS_ERR_SSL_WANT_WRITE) {
+                        break;
+                    }
+                } else {
+                    n = recv(s.fd, buf, sizeof(buf), 0);
+                    if (n < 0 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+                        break;
+                    }
+                    drain = false;  // single read per poll, as before
+                }
+                if (n == 0) {
+                    ESP_LOGW(kTag, "server closed connection");
+                    s.closed = true;
+                    break;
+                }
+                if (n < 0) {
+                    ESP_LOGW(kTag, "transport read failed (%d)", static_cast<int>(n));
+                    s.closed = true;
+                    break;
+                }
                 const ssize_t rv = nghttp2_session_mem_recv(s.ng, buf, static_cast<size_t>(n));
                 if (rv < 0) {
                     ESP_LOGW(kTag, "session recv: %s", nghttp2_strerror(static_cast<int>(rv)));
+                    s.closed = true;
                     break;
                 }
             }
@@ -618,7 +710,11 @@ bool ControlClient::run_session() {
     const bool reached_stream = s.headers_seen;
     connected_.store(false, std::memory_order_relaxed);
     nghttp2_session_del(s.ng);
-    close(s.fd);
+    if (s.tls != nullptr) {
+        esp_tls_conn_destroy(s.tls);  // closes the fd too
+    } else {
+        close(s.fd);
+    }
     ESP_LOGI(kTag, "session ended (reached_stream=%d)", reached_stream ? 1 : 0);
     return reached_stream;
 }

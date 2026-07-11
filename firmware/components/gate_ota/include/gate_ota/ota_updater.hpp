@@ -48,6 +48,11 @@ public:
         // 32-byte ed25519 public key, hex-encoded (64 chars), or ""
         // until the Phase 4.8 deployment keypair exists.
         const char* pubkey_hex = "";
+        // Site CA (PEM, NUL-terminated) for https manifest/image URLs
+        // (Phase 4.10.3 — the nginx TLS mirror on 8444). nullptr keeps
+        // plain http legal: image integrity comes from the manifest
+        // SHA-256 + ed25519 signature, not the transport.
+        const char* server_ca_pem = nullptr;
     };
 
     explicit OtaUpdater(const Config& cfg) : cfg_(cfg) {}

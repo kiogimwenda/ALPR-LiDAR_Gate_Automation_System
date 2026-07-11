@@ -20,8 +20,22 @@ menu "Gate Firmware Configuration"
         range 1 65535
         default 50051
         help
-            Cleartext (h2c) gRPC port — must match the server's
-            --listen address (default 0.0.0.0:50051, ADR-011).
+            gRPC port — must match the server's --listen address
+            (default 0.0.0.0:50051, ADR-011). Cleartext h2c unless
+            GATE_TLS_ENABLE is set.
+
+    config GATE_TLS_ENABLE
+        bool "TLS + mTLS client identity for server connections"
+        default n
+        help
+            Phase 4.10.3: encrypt the FieldControllerService gRPC
+            channel with esp-tls against the site PKI, presenting
+            this gate's certificate (the production server runs
+            --require-client-cert), and verify https OTA URLs with
+            the same CA. Requires main/certs/site_ca.pem, gate.pem
+            and gate.key — mint them with scripts/gen-tls-certs.sh
+            (see main/certs/README.md). Off = plaintext h2c and
+            http OTA, matching the server's dev posture.
 
     config GATE_SNTP_SERVER
         string "SNTP server"
@@ -38,6 +52,9 @@ menu "Gate Firmware Configuration"
             Self-hosted OTA manifest location (ADR-009). BEGIN_OTA
             commands fetch this JSON manifest, validate it, then
             stream the image it points at into the passive OTA slot.
+            With GATE_TLS_ENABLE, point this at the nginx TLS mirror
+            (https://…:8444/firmware/manifest.json) — the site CA
+            then verifies the transport.
 
     config GATE_OTA_PUBKEY
         string "OTA ed25519 public key (hex)"

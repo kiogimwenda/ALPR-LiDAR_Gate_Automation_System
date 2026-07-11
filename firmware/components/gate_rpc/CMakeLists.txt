@@ -25,6 +25,7 @@ idf_component_register(
         gate_state_machine  # to_wire_state maps sm::State → wire enum
         nanopb              # livekit/nanopb runtime (see idf_component.yml)
     PRIV_REQUIRES
+        esp-tls             # TLS transport (Phase 4.10.3)
         esp_timer
         log
         lwip
