@@ -38,6 +38,13 @@ if(TARGET gate_proto)
     add_subdirectory(dash)
 endif()
 
+# vision/ — sensor-agnostic detection ingest for the gate-vision daemon
+# (Phase 5.2). CPU-only by design; depends only on gate_proto plus
+# vcpkg nlohmann-json/spdlog. Same gating model as auth/ and dash/.
+if(TARGET gate_proto)
+    add_subdirectory(vision)
+endif()
+
 # rpc/ depends on gate_proto + gate_auth + gate_fusion + gate_dash.
 # Gate on the strictest of those (fusion implies the others).
 if(TARGET gate_fusion AND TARGET gate_dash)

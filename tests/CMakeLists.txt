@@ -33,6 +33,14 @@ if(TARGET gate_fusion)
     add_subdirectory(fusion)
 endif()
 
+# Vision ingest tests — gate_vision needs only gate_proto (Phase 5.2):
+# scenario parsing (fail-closed), fake-clock pacing, frame building,
+# and submit-client credential validation. No live gRPC servers here;
+# the wire is covered by the next milestone's E2E pass.
+if(TARGET gate_vision)
+    add_subdirectory(vision)
+endif()
+
 # Dashboard broadcaster tests — gate_dash needs only gate_proto.
 if(TARGET gate_dash)
     add_subdirectory(dash)

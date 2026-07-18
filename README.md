@@ -131,7 +131,7 @@ release on GitHub.
 | # | Milestone | Status |
 |---|---|---|
 | 5.1 | ADR-012: fusion sensing hardware (supersedes ADR-006/007 for production) | ✅ Complete |
-| 5.2 | Vision ingest core: observation seam, scenario source, `SubmitDetection` client | 🔵 In progress |
+| 5.2 | Vision ingest core: observation seam, scenario source, `SubmitDetection` client | ✅ Complete |
 | 5.3 | `gate-vision` daemon + camera capture source + vision E2E | ⏳ Pending |
 | 5.4 | Hardware bench validation plan + Phase 5 closure | ⏳ Pending |
 
@@ -4601,7 +4601,7 @@ real camera, and firmware bench validation on the ESP32-S3 hardware.
 
 ---
 
-## Phase 5.1 — ADR-012: fusion sensing hardware for production (latest)
+## Phase 5.1 — ADR-012: fusion sensing hardware for production
 
 Phase 5 opens the road to hardware: everything between "the software
 is done" and "a prototype is on the bench." Its first milestone is a
@@ -4645,6 +4645,51 @@ PaddleOCR stay on the GPU host; only the frame source changes); and
 the ESP32-S3 never touches sensors (zero firmware impact). ADR-006
 and ADR-007 carry updated Status lines; their prototype guidance is
 untouched.
+
+---
+
+## Phase 5.2 — Vision ingest core: the seam every sensor plugs into (latest)
+
+Nothing in the tree actually *called* `SubmitDetection` outside tests —
+the sims drive gates over the Control stream, but the camera → server
+ingest path had no client. Phase 5.2 builds that path's library,
+`gate_vision` (`server/vision/`), deliberately CPU-only so CI covers
+all of it and the GPU stays a plug-in:
+
+- **`ObservationSource`** — the sensor-agnostic seam (ADR-012's
+  landing pad): a pull-model interface yielding plain-C++
+  `ObservationSet`s (plates + vehicles, one capture timestamp). The
+  next milestone's RTSP + TensorRT camera source and the eventual
+  fusion-unit driver implement this same contract; the daemon's
+  submit loop never learns which sensor is behind it.
+- **`ScenarioSource`** — a deterministic scripted implementation
+  driven by a JSON scenario file (documented schema, loop support).
+  Parsing is **fail-closed**: malformed JSON, a missing field, a
+  negative offset, a confidence outside [0, 1], an unknown vehicle
+  class — all throw with the exact JSON path, never skip. Pacing goes
+  through an injectable `Clock`, so unit tests replay scenarios
+  instantly with a fake clock and assert the exact wake-up schedule
+  (loops re-base their epoch; no drift).
+- **`FrameBuilder`** — the one place plain observations become wire
+  protobuf: field-faithful mapping onto `DetectionFrame`, monotonic
+  `frame_id` per gate, nanosecond-grain timestamp split.
+- **`SubmitClient`** — the daemon's one wire dependency: unary
+  `SubmitDetection` with a per-attempt deadline and bounded
+  exponential backoff on UNAVAILABLE only (a stale frame isn't worth
+  unbounded retries). Transport follows the Phase 4.10.1 ladder
+  exactly — plaintext-but-loud, TLS with a CA, mTLS with a client
+  pair — with one hardening beyond the sim client: any *configured*
+  PEM that is unreadable, empty, half of a pair, or a client cert
+  without a CA **throws at construction**. A vision daemon that
+  silently downgraded to plaintext after a cert typo would defeat the
+  site PKI.
+
+`tests/vision/` pins all of it — 19 Catch2 cases: every fail-closed
+rejection path by exact message, fake-clock pacing order and loop
+re-basing, every proto field crossing the builder boundary, every
+credential-ladder refusal. Suite total: **162**. The wire itself is
+next milestone's job: the `gate-vision` daemon and an E2E pass where
+a scripted scenario opens a simulated gate through the full stack.
 
 ---
 
