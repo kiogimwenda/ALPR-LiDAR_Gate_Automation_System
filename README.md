@@ -75,8 +75,9 @@ release on GitHub.
 | **1** | Clarifications & decisions | ✅ Complete | All 12 design questions answered; defaults accepted; gate type override applied. |
 | **2** | Architecture | ✅ Complete | 7 Mermaid flowcharts, 11 ADRs (ADR-000…ADR-010), full directory skeleton, CI workflows. |
 | **3** | Hardware research & build guides | ✅ Complete | 9 component guides + master build book + complete BOM + 48-page KiCad 9.0 PCB design guide (PDF). |
-| **4** | Implementation | 🔵 **In progress** — see below | Modern C++20 server, ESP-IDF firmware, simulation, dashboard. |
-| 5 | Delivery | ⏳ Pending | Runbook, commissioning checklist, demo script, public release. |
+| **4** | Implementation | ✅ Complete | Modern C++20 server, ESP-IDF firmware, simulation, dashboard, security hardening. |
+| **5** | Vision ingest & hardware readiness | 🔵 **In progress** — see below | ADR-012 fusion sensing, `gate-vision` ingest daemon, bench validation plan. |
+| 6 | Delivery | ⏳ Pending | Runbook, commissioning checklist, demo script, public release. |
 
 ### Phase 4 sub-milestones (current)
 
@@ -124,6 +125,15 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.2 | JWT admin authentication | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.3 | Firmware TLS (esp-tls) + HTTPS OTA | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.10.4 | Phase 4.10 closure | ✅ Complete |
+
+### Phase 5 sub-milestones (current)
+
+| # | Milestone | Status |
+|---|---|---|
+| 5.1 | ADR-012: fusion sensing hardware (supersedes ADR-006/007 for production) | ✅ Complete |
+| 5.2 | Vision ingest core: observation seam, scenario source, `SubmitDetection` client | 🔵 In progress |
+| 5.3 | `gate-vision` daemon + camera capture source + vision E2E | ⏳ Pending |
+| 5.4 | Hardware bench validation plan + Phase 5 closure | ⏳ Pending |
 
 ---
 
@@ -4557,7 +4567,7 @@ Next: **Phase 4.10.4 — Phase 4.10 closure**.
 
 ---
 
-## Phase 4.10.4 — Phase 4.10 closure: the hardened posture, proven whole (latest)
+## Phase 4.10.4 — Phase 4.10 closure: the hardened posture, proven whole
 
 Security milestones love to end as a checklist of parts. This one
 closes with the parts running *together*: `e2e_hardened_stack` boots
@@ -4591,12 +4601,59 @@ real camera, and firmware bench validation on the ESP32-S3 hardware.
 
 ---
 
+## Phase 5.1 — ADR-012: fusion sensing hardware for production (latest)
+
+Phase 5 opens the road to hardware: everything between "the software
+is done" and "a prototype is on the bench." Its first milestone is a
+decision, not code — because the owner's stated hardware preference
+deserved the same ADR rigor as every choice before it.
+
+[`ADR-012`](docs/decisions/ADR-012-fusion-sensing-hardware.md)
+supersedes ADR-006 (LiDAR) and ADR-007 (ALPR camera) **for production
+sensing**: production deployments adopt a **single camera–LiDAR
+fusion unit** instead of two field-calibrated devices software-fused
+by nearest-timestamp. The wins are structural — hardware-synchronized
+frames (one exposure event, so `DetectionFrame.capture_ts` is a real
+capture time), factory alignment with nothing to drift in the field,
+per-pixel depth↔RGB association, and one mount/cable/failure domain
+on the gate pillar.
+
+The candidate table, from published sources:
+
+- **Primary: Innoviz InnovizThree with integrated colored camera**
+  (CES 2026) — factory-aligned RGB, hardware-synced capture, single
+  interface, explicitly marketed beyond automotive OEMs. Low-volume
+  pricing unpublished; carried as an explicit USD 3,000–10,000
+  estimate until sample orders open.
+- **Watch-list: Kyocera Camera-LIDAR Fusion Sensor** — the
+  technically ideal co-axial architecture (true parallax-free shared
+  optics, security systems a named market) but pre-commercial: no
+  published specs, price, or ship date. Promoted to primary the
+  moment it commercializes.
+- **Baseline: the ADR-006/007 discrete pair** — remains the
+  prototype/pilot stack and the shipping stack for residential
+  production installs (~KES 110,000), consistent with the
+  residential-first deployment strategy. The fusion unit debuts in
+  the commercial/industrial tier.
+
+Three consequences make this a cheap decision to take now: the
+software contract is already sensor-agnostic (`DetectionFrame`
+carries plates + vehicles in one timestamped frame — a fusion unit
+lands as a capture driver behind the Phase 5.3 seam, zero proto or
+fusion-engine changes); fusion sensors don't read plates (YOLOv9 +
+PaddleOCR stay on the GPU host; only the frame source changes); and
+the ESP32-S3 never touches sensors (zero firmware impact). ADR-006
+and ADR-007 carry updated Status lines; their prototype guidance is
+untouched.
+
+---
+
 ## Repository layout
 
 ```
 gate-automation/
 ├── docs/                  # ADRs, diagrams, hardware build guides, env audit
-│   ├── decisions/         # 12 ADRs (ADR-000 through ADR-011)
+│   ├── decisions/         # 13 ADRs (ADR-000 through ADR-012)
 │   ├── diagrams/          # 7 Mermaid flowcharts
 │   └── hardware/          # 9 component guides + master build book + KiCad PDF
 ├── hardware/
@@ -4716,7 +4773,7 @@ ctest --preset release
 ## Documentation
 
 - [Environment audit](docs/env-audit.md) — every tool, every version, every challenge solved during bootstrap
-- [Architecture decisions (ADRs)](docs/decisions/) — 11 records covering license, RPC, web framework, MCU, LiDAR, camera, gate actuator, OTA, model licensing
+- [Architecture decisions (ADRs)](docs/decisions/) — 13 records covering license, RPC, web framework, MCU, LiDAR, camera, gate actuator, OTA, model licensing, firmware transport, fusion sensing
 - [System diagrams](docs/diagrams/) — 7 Mermaid flowcharts (system, ALPR, LiDAR, fusion, gate state machine, OTA, sim mode)
 - [Hardware build book](docs/hardware/BUILD_BOOK.md) — bench prototype to working gate in ~3.5 h
 - [PCB design guide (PDF)](docs/hardware/10-pcb-design-kicad9.pdf) — KiCad 9.0 schematic-to-Gerbers
