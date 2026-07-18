@@ -1,0 +1,40 @@
+# gate-vision.service — detection ingest daemon (camera → SubmitDetection).
+#
+# Installed by deployment/install-server.sh; runtime knobs live in
+# /etc/gate/gate-vision.env so the unit never needs editing. Runs on
+# the same host as gate-server (the GPU box) — one instance per
+# camera/gate; for a second lane, instantiate a copy with its own env.
+
+[Unit]
+Description=Gate automation vision ingest (ALPR camera → detections)
+Documentation=https://github.com/kiogimwenda/ALPR-LiDAR_Gate_Automation_System
+# Not Requires=: the daemon retries UNAVAILABLE itself and exits
+# non-zero when the budget runs out, so Restart=on-failure covers a
+# server that comes up late without hard-coupling unit lifecycles.
+After=network-online.target gate-server.service
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=gate
+Group=gate
+EnvironmentFile=/etc/gate/gate-vision.env
+# $SOURCE_ARGS carries the source selection (--camera … --detector-engine …
+# for production, --scenario … for a camera-less dry run); $TLS_EXTRA_ARGS
+# carries the client credential set. Both unbraced on purpose so systemd
+# word-splits them.
+ExecStart=/opt/gate/bin/gate-vision --server ${SERVER_ADDRESS} --site-id ${SITE_ID} --gate-id ${GATE_ID} $SOURCE_ARGS $TLS_EXTRA_ARGS
+Restart=on-failure
+RestartSec=3
+
+# Hardening — mirrors gate-server: needs the GPU, the camera network,
+# and read access to engines/certs; writes nothing.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

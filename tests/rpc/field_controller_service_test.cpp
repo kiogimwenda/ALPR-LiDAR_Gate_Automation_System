@@ -60,10 +60,52 @@ TEST_CASE("FieldControllerService::SubmitDetection delegates to fusion + publish
     REQUIRE(resp.actor() == "firmware-submit");
     REQUIRE(resp.frame_id() == 7);
 
+    // An AUTHORIZED verdict publishes twice: the decision for the
+    // dashboard and the auto-dispatched OPEN_GATE the gate's Control
+    // stream will forward (Phase 5.3 — a valid detection opens the gate
+    // with no human in the loop).
+    const auto evs = sub->drain_now();
+    REQUIRE(evs.size() == 2);
+    REQUIRE(evs[0].payload_case() == DashboardEvent::kDecision);
+    REQUIRE(evs[0].decision().decision_id() == resp.decision_id());
+    REQUIRE(evs[1].payload_case() == DashboardEvent::kCommand);
+    const auto& cmd = evs[1].command();
+    REQUIRE(cmd.gate_id() == "gate-north");
+    REQUIRE(cmd.kind() == gate::v1::COMMAND_KIND_OPEN_GATE);
+    REQUIRE_FALSE(cmd.command_id().empty());
+    // The audit actor ties the command back to the decision that caused it.
+    REQUIRE(cmd.actor() == "auto:" + resp.decision_id());
+}
+
+TEST_CASE("FieldControllerService::SubmitDetection never dispatches on a denial",
+          "[rpc][field][submit]") {
+    AllowlistStore store = AllowlistStore::open(":memory:");  // empty — every plate unknown
+    FusionEngine fusion{store};
+    EventBroadcaster bus;
+    FieldControllerServiceImpl svc{bus, fusion, "default"};
+
+    auto sub = bus.subscribe(DashboardSubscription{});
+
+    DetectionFrame frame;
+    frame.set_gate_id("gate-north");
+    auto* p = frame.add_plates();
+    p->set_plate_text("XXX999X");
+    p->set_detection_conf(0.9f);
+    p->set_ocr_conf(0.85f);
+    auto* v = frame.add_vehicles();
+    v->set_vehicle_class(VehicleClass::VEHICLE_CLASS_SEDAN);
+    v->set_class_conf(0.95f);
+
+    grpc::ServerContext ctx;
+    AuthDecision resp;
+    REQUIRE(svc.SubmitDetection(&ctx, &frame, &resp).ok());
+    REQUIRE(resp.verdict() != AuthVerdict::AUTH_VERDICT_AUTHORIZED);
+
+    // Only the decision reaches the bus — a gate must never move on
+    // anything but an explicit command.
     const auto evs = sub->drain_now();
     REQUIRE(evs.size() == 1);
     REQUIRE(evs[0].payload_case() == DashboardEvent::kDecision);
-    REQUIRE(evs[0].decision().decision_id() == resp.decision_id());
 }
 
 TEST_CASE("FieldControllerService::SubmitDetection rejects empty gate_id",

@@ -48,6 +48,7 @@ install -d -m 0755 /srv/gate/firmware
 # Binaries.
 install_binary "${BUILD}/server/gate-server" gate-server
 install_binary "${BUILD}/dashboard/backend/gate-dashboard" gate-dashboard
+install_binary "${BUILD}/server/vision/gate-vision" gate-vision
 
 # SPA (optional — dashboard runs API-only without it).
 if [[ -n "${WWW}" ]]; then
@@ -59,16 +60,19 @@ fi
 
 # Config — first install only; upgrades never clobber operator edits.
 install -d -m 0755 /etc/gate
-for env_file in gate-server.env gate-dashboard.env; do
+for env_file in gate-server.env gate-dashboard.env gate-vision.env; do
     if [[ ! -f "/etc/gate/${env_file}" ]]; then
         install -m 0644 "${HERE}/config/${env_file}" "/etc/gate/${env_file}"
         echo "installed default /etc/gate/${env_file} — review before first start"
     fi
 done
 
-# Units.
+# Units. gate-vision is installed but NOT enabled: it needs a
+# configured source (camera + engines, or a scenario) in its env
+# before it can start, unlike the self-sufficient server/dashboard.
 install -m 0644 "${HERE}/systemd/gate-server.service" /etc/systemd/system/
 install -m 0644 "${HERE}/systemd/gate-dashboard.service" /etc/systemd/system/
+install -m 0644 "${HERE}/systemd/gate-vision.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable gate-server gate-dashboard
 
@@ -76,6 +80,8 @@ echo
 echo "done. next steps:"
 echo "  1. review /etc/gate/*.env"
 echo "  2. systemctl restart gate-server gate-dashboard"
+echo "     (then configure SOURCE_ARGS in gate-vision.env and"
+echo "      systemctl enable --now gate-vision)"
 echo "  3. OTA hosting: copy deployment/nginx/gate-ota.conf into nginx"
 echo "     sites and publish signed manifests to /srv/gate/firmware"
 echo "     (scripts/gen-ota-keys.sh + scripts/sign-ota-manifest.sh)"

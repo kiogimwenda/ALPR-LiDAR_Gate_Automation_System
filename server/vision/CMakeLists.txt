@@ -32,3 +32,44 @@ target_link_libraries(gate_vision
 )
 
 target_compile_features(gate_vision PUBLIC cxx_std_20)
+
+# --- camera source (GPU builds only) ----------------------------------------
+# The first real sensor behind the seam: OpenCV VideoCapture → TensorRT
+# AlprPipeline. Needs videoio on top of inference's core+imgproc, so it
+# re-runs the OpenCV find (with the shared CUDA shim) in this scope.
+if(ENABLE_GPU AND TARGET gate_inference)
+    include(${CMAKE_SOURCE_DIR}/cmake/opencv-cuda-shim.cmake)
+    find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio)
+
+    add_library(gate_vision_camera STATIC
+        src/camera_source.cpp
+    )
+    target_link_libraries(gate_vision_camera
+        PUBLIC
+            gate_vision
+            gate_inference
+            opencv_videoio
+        PRIVATE
+            spdlog::spdlog
+    )
+    target_compile_features(gate_vision_camera PUBLIC cxx_std_20)
+endif()
+
+# --- gate-vision daemon -----------------------------------------------------
+# Composition root: one source (scenario always; camera when the GPU
+# stack is present), FrameBuilder, SubmitClient. CPU builds produce a
+# fully functional scenario-driven daemon — that's what the E2E runs.
+find_package(CLI11 CONFIG REQUIRED)
+
+add_executable(gate-vision src/gate_vision_main.cpp)
+target_link_libraries(gate-vision
+    PRIVATE
+        gate_vision
+        CLI11::CLI11
+        spdlog::spdlog
+)
+if(TARGET gate_vision_camera)
+    target_link_libraries(gate-vision PRIVATE gate_vision_camera)
+    target_compile_definitions(gate-vision PRIVATE GATE_VISION_HAVE_CAMERA=1)
+endif()
+target_compile_features(gate-vision PRIVATE cxx_std_20)

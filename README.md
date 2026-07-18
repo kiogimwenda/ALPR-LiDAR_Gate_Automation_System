@@ -132,7 +132,7 @@ release on GitHub.
 |---|---|---|
 | 5.1 | ADR-012: fusion sensing hardware (supersedes ADR-006/007 for production) | ✅ Complete |
 | 5.2 | Vision ingest core: observation seam, scenario source, `SubmitDetection` client | ✅ Complete |
-| 5.3 | `gate-vision` daemon + camera capture source + vision E2E | ⏳ Pending |
+| 5.3 | `gate-vision` daemon + camera capture source + vision E2E | ✅ Complete |
 | 5.4 | Hardware bench validation plan + Phase 5 closure | ⏳ Pending |
 
 ---
@@ -4648,7 +4648,7 @@ untouched.
 
 ---
 
-## Phase 5.2 — Vision ingest core: the seam every sensor plugs into (latest)
+## Phase 5.2 — Vision ingest core: the seam every sensor plugs into
 
 Nothing in the tree actually *called* `SubmitDetection` outside tests —
 the sims drive gates over the Control stream, but the camera → server
@@ -4693,6 +4693,57 @@ a scripted scenario opens a simulated gate through the full stack.
 
 ---
 
+## Phase 5.3 — gate-vision: a detection opens the gate, no human in the loop (latest)
+
+Until now an AUTHORIZED verdict was a dashboard event and nothing
+more — dashboard-issued commands were the only thing that moved a
+gate. This milestone closes the product's core loop, in three layers:
+
+**Auto-dispatch.** `SubmitDetection` now publishes an `OPEN_GATE`
+command onto the event bus when the fusion verdict is AUTHORIZED —
+the same bus `IssueCommand` uses, so the gate's Control stream
+forwards it to the field controller exactly like a dashboard click.
+The audit actor is `auto:<decision-id>`, tying every automatic open
+back to the decision that caused it. Every other verdict stays an
+event: a gate only ever moves on an explicit command, and the new
+handler tests pin both directions (authorized dispatches; a denial
+never does).
+
+**The daemon.** `gate-vision` composes the 5.2 pieces into the
+capture-side process for the GPU host: exactly one source (a
+`--scenario` script in every build; `--camera` in GPU builds), the
+frame builder, and the submit client with the standard TLS ladder.
+Construction is a fail-closed gauntlet — credentials first, then the
+source; nothing submits until both stand. Ships with a systemd unit
+(installed but not enabled until a source is configured) and
+`gate-vision.env`, wired into `install-server.sh`.
+
+**The camera source.** `CameraSource` (GPU builds) pulls BGR frames
+from any `cv::VideoCapture` URI — the ADR-007 Hikvision's RTSP URL, a
+recorded clip, a V4L2 index — throttles to a gate-relevant cadence,
+and runs the Phase 4.2 TensorRT `AlprPipeline` per frame.
+Recognizer-rejected boxes are dropped (they can't match an allowlist;
+they'd only be deny-noise); a capture that goes dark past its retry
+budget ends the stream so systemd restarts the daemon and the RTSP
+handshake. Vehicles stay empty by design — LiDAR capture is bench
+work, and the ADR-012 fusion unit replaces this driver wholesale.
+Compile-verified against the local TensorRT 10.16 + CUDA-built
+OpenCV (the legacy-FindCUDA shim moved to
+`cmake/opencv-cuda-shim.cmake` so the camera target can find
+`videoio` in its own scope); the full GPU tree builds and its
+170-test suite passes.
+
+**Proof over the wire.** `e2e_vision_stack` replays a two-frame
+scenario into the live stack: the unknown plate is refused and the
+gate stays shut; the allowlisted plate authorizes, auto-dispatches,
+and the simulated gate physically travels — with the script asserting
+exactly one AUTHORIZED decision and a clean daemon exit.
+`e2e_hardened_stack` now runs the same pass inside the full
+production posture (every channel mTLS, admin surface behind JWT).
+Suite total: **164** CPU / **170** GPU.
+
+---
+
 ## Repository layout
 
 ```
@@ -4712,6 +4763,7 @@ gate-automation/
 │   ├── fusion/            # ✅ Phase 4.3.2 — verdict-ladder decision engine
 │   ├── dash/              # ✅ Phase 4.3.3 — dashboard event broadcaster
 │   ├── rpc/               # ✅ Phase 4.3.4/5 — gRPC services + lifecycle wrapper
+│   ├── vision/            # ✅ Phase 5.2/5.3 — detection ingest + gate-vision daemon
 │   └── src/main.cpp       # ✅ Phase 4.3.5 — gate-server daemon entry point
 ├── firmware/              # ✅ Phase 4.4-4.5 — ESP-IDF field controller firmware (ESP32-S3)
 │   ├── main/              # ✅ app_main — boot banner, ethernet up, GateController start

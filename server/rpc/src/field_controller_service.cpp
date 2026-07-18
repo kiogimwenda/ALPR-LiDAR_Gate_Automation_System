@@ -3,6 +3,7 @@
 #include "rpc/field_controller_service.hpp"
 
 #include <atomic>
+#include <ctime>
 #include <thread>
 #include <utility>
 
@@ -145,6 +146,24 @@ Status FieldControllerServiceImpl::SubmitDetection(ServerContext* /*ctx*/,
     *resp = fusion_.decide(areq);
     AuthDecision copy{*resp};
     bus_.publish_decision(default_site_id_, std::move(copy));
+
+    // An AUTHORIZED verdict *is* the product: dispatch OPEN_GATE to the
+    // detected gate through the same bus IssueCommand publishes on, so
+    // the gate's Control stream forwards it exactly like a dashboard
+    // command. Every other verdict (denied, low-confidence, manual
+    // review) stays a dashboard event — a gate only ever moves on an
+    // explicit command.
+    if (resp->verdict() == gate::v1::AUTH_VERDICT_AUTHORIZED) {
+        gate::v1::GateCommand open;
+        open.set_command_id(gate::fusion::generate_uuidv4());
+        open.mutable_issued_ts()->set_seconds(std::time(nullptr));
+        open.set_gate_id(req->gate_id());
+        open.set_kind(gate::v1::COMMAND_KIND_OPEN_GATE);
+        // Audit trail links the command back to the decision that
+        // caused it, not just a generic "auto".
+        open.set_actor("auto:" + resp->decision_id());
+        bus_.publish_command(default_site_id_, std::move(open));
+    }
     return Status::OK;
 }
 

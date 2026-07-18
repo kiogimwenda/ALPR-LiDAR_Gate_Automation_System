@@ -22,6 +22,11 @@ can cover:
     4. command       POST open → gate physically travels
                      CLOSED → OPENING → OPEN (polled from telemetry),
                      then auto-closes back to CLOSED
+    4v (--vision)    gate-vision replays a scripted scenario into
+                     SubmitDetection: the unknown plate is refused, the
+                     allowlisted one authorizes and auto-dispatches
+                     OPEN_GATE — the gate physically opens with no
+                     human command (Phase 5.3)
     5. teardown      every process exits cleanly on SIGINT
 
 Registered with ctest (see tests/CMakeLists.txt); binary paths arrive
@@ -121,6 +126,8 @@ def main():
                     help="run the whole stack under mTLS (Phase 4.10.1)")
     ap.add_argument("--auth", action="store_true",
                     help="enable JWT admin auth on the dashboard (Phase 4.10.2)")
+    ap.add_argument("--vision", metavar="BIN",
+                    help="path to gate-vision; run the scripted-detection pass (Phase 5.3)")
     args = ap.parse_args()
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -261,6 +268,54 @@ def main():
         if gate_state(api("/api/status")[1], "gate-e2e-02") != "CLOSED":
             fail("gate-e2e-02 moved without a command")
         print("  ok: command addressed exactly one gate")
+
+        if args.vision:
+            print("== 4v: vision ingest — a scripted detection opens the gate ==")
+            code, body = api("/api/allowlist", "POST",
+                             {"plate": "KDV777V", "ownerName": "Vision Resident",
+                              "ownerUnit": "A-1", "allowedClasses": ["SEDAN"]})
+            if code != 200 or body.get("inserted") != 1:
+                fail(f"vision allowlist upsert: {code} {body}")
+
+            # Two-frame script: an unknown plate first (must NOT move the
+            # gate), then the allowlisted one (must). Both against
+            # gate-e2e-02, which section 4 just proved never moved.
+            scenario = {"events": [
+                {"offset_ms": 0,
+                 "plates": [{"text": "KDX000X", "detection_conf": 0.9, "ocr_conf": 0.9}],
+                 "vehicles": [{"class": "sedan", "confidence": 0.9}]},
+                {"offset_ms": 400,
+                 "plates": [{"text": "KDV777V", "detection_conf": 0.95, "ocr_conf": 0.93}],
+                 "vehicles": [{"class": "sedan", "confidence": 0.92}]},
+            ]}
+            scenario_path = f"{tmp}/vision-scenario.json"
+            with open(scenario_path, "w") as f:
+                json.dump(scenario, f)
+
+            vision = launch("gate-vision",
+                            [args.vision, "--server", f"127.0.0.1:{GRPC_PORT}",
+                             "--site-id", "site-e2e", "--gate-id", "gate-e2e-02",
+                             "--scenario", scenario_path] + client_tls)
+            wait_for("gate-e2e-02 opens on the authorized detection",
+                     lambda: gate_state(api("/api/status")[1], "gate-e2e-02")
+                     in ("OPENING", "OPEN"), timeout_s=15)
+            try:
+                code = vision.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                fail("gate-vision did not exit after its scenario finished")
+            if code != 0:
+                fail(f"gate-vision exited {code}")
+            out = vision.stdout.read() or ""
+            decisions = [ln for ln in out.splitlines() if "decision:" in ln]
+            granted = [ln for ln in decisions if "AUTH_VERDICT_AUTHORIZED" in ln]
+            if len(decisions) != 2 or len(granted) != 1:
+                fail(f"wanted 2 decisions with exactly 1 AUTHORIZED, got:\n{out[-2000:]}")
+            if "AUTH_VERDICT_AUTHORIZED" in decisions[0]:
+                fail(f"the unknown plate was authorized:\n{decisions[0]}")
+            print("  ok: unknown plate refused, allowlisted plate opened the gate")
+            code, _ = api("/api/allowlist/KDV777V", "DELETE")
+            if code != 200:
+                fail(f"vision allowlist cleanup: {code}")
 
         print("== 5: clean teardown ==")
         for name, p in procs:
