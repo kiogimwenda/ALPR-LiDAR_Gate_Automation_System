@@ -10,7 +10,7 @@ wrong credentials provably never reach the stack.
 
 | Surface | Mechanism | Introduced |
 |---|---|---|
-| gRPC fabric (server ↔ dashboard, sims, firmware) | mTLS against the site CA; server refuses to start on unreadable certs | 4.10.1 / 4.10.3 |
+| gRPC fabric (server ↔ dashboard, sims, gate-vision, firmware) | mTLS against the site CA; server refuses to start on unreadable certs; clients throw on unreadable/empty/half-configured PEMs | 4.10.1 / 4.10.3 / 5.3 |
 | Dashboard admin API (allowlist, gate commands) | PBKDF2 credential → HS256 JWT; per-route filter | 4.10.2 |
 | OTA images | SHA-256 readback + ed25519 signature over the digest (transport-independent) | 4.5.5 / ADR-009 |
 | OTA transport | https against the site CA (nginx 8444 mirror) | 4.10.3 |
@@ -66,16 +66,21 @@ a gate never ships half-provisioned.
 |---|---|
 | `e2e_tls_stack` | full scenario under mTLS; a plaintext intruder and a certless-TLS intruder never appear in the dashboard's gate map |
 | `e2e_auth_stack` | admin routes 401 bare and on a wrong password; a minted JWT opens them; monitoring stays open |
-| `e2e_hardened_stack` | both at once — the production posture end to end |
+| `e2e_hardened_stack` | both at once plus the vision ingest path — the production posture end to end |
+| `e2e_vision_stack` | an unknown plate never opens the gate; an allowlisted one auto-dispatches OPEN_GATE with an `auto:<decision-id>` audit actor |
 | `test_dashboard_auth` | every credential/token rejection path, incl. expiry, tamper, foreign secret, malformed stored hash |
 
 ## Known residual items
 
-- The GPU inference path (camera → TensorRT → `SubmitDetection`) is
-  not yet covered by E2E and its capture credentials (RTSP) are
-  out of scope until that lands.
+- The ingest path (source → `SubmitDetection` → auto-dispatch) is
+  E2E-covered with a scripted source (Phase 5.3); the TensorRT camera
+  source is compile-verified only — runtime validation against a real
+  RTSP camera, and the handling of its credentials in
+  `gate-vision.env`, land with the hardware phase.
 - Firmware TLS is compile-verified; on-hardware handshake validation
-  is bundled with the 4.5 bench items.
+  is staged in the
+  [bench validation plan](hardware/11-bench-validation-plan.md)
+  (Stage 4, including the SNTP/cold-clock risk item).
 - JWT revocation is expiry-only (no server-side session store) —
   acceptable at the current single-admin scale; revisit if the
   operator model grows.

@@ -76,7 +76,7 @@ release on GitHub.
 | **2** | Architecture | ✅ Complete | 7 Mermaid flowcharts, 11 ADRs (ADR-000…ADR-010), full directory skeleton, CI workflows. |
 | **3** | Hardware research & build guides | ✅ Complete | 9 component guides + master build book + complete BOM + 48-page KiCad 9.0 PCB design guide (PDF). |
 | **4** | Implementation | ✅ Complete | Modern C++20 server, ESP-IDF firmware, simulation, dashboard, security hardening. |
-| **5** | Vision ingest & hardware readiness | 🔵 **In progress** — see below | ADR-012 fusion sensing, `gate-vision` ingest daemon, bench validation plan. |
+| **5** | Vision ingest & hardware readiness | ✅ Complete | ADR-012 fusion sensing, `gate-vision` ingest daemon, auto-open on authorized detection, bench validation plan. |
 | 6 | Delivery | ⏳ Pending | Runbook, commissioning checklist, demo script, public release. |
 
 ### Phase 4 sub-milestones (current)
@@ -133,7 +133,7 @@ release on GitHub.
 | 5.1 | ADR-012: fusion sensing hardware (supersedes ADR-006/007 for production) | ✅ Complete |
 | 5.2 | Vision ingest core: observation seam, scenario source, `SubmitDetection` client | ✅ Complete |
 | 5.3 | `gate-vision` daemon + camera capture source + vision E2E | ✅ Complete |
-| 5.4 | Hardware bench validation plan + Phase 5 closure | ⏳ Pending |
+| 5.4 | Hardware bench validation plan + Phase 5 closure | ✅ Complete |
 
 ---
 
@@ -422,6 +422,7 @@ documented gotcha list.
 | `docs/hardware/09-gpu-server.md` | Production server BOM — RTX 4060, Ryzen 5, 32 GB RAM, NVMe — and why this combination fits the inference workload at the budget. |
 | `docs/hardware/BUILD_BOOK.md` | Master assembly walkthrough — unboxing → first power-on → smoke test, in order. |
 | `docs/hardware/10-pcb-design-kicad9.{html,pdf}` | 48-page step-by-step KiCad 9.0 guide for the custom 4-layer field PCB — schematic capture, footprint selection, layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
+| `docs/hardware/11-bench-validation-plan.md` | Phase 5.4 — staged bench bring-up and validation plan: flash → W5500 → plaintext gRPC → on-hardware mTLS → OTA (with must-reject negatives) → 8 h soak, each stage with pass criteria, debug tables, and a host-test mirror so bench failures isolate to hardware, not logic. |
 | `hardware/bom/prototype-bom.md` | Per-line BOM with KES + USD pricing, supplier names, and a single-gate subtotal. |
 
 ### Technical detail
@@ -4693,7 +4694,7 @@ a scripted scenario opens a simulated gate through the full stack.
 
 ---
 
-## Phase 5.3 — gate-vision: a detection opens the gate, no human in the loop (latest)
+## Phase 5.3 — gate-vision: a detection opens the gate, no human in the loop
 
 Until now an AUTHORIZED verdict was a dashboard event and nothing
 more — dashboard-issued commands were the only thing that moved a
@@ -4741,6 +4742,43 @@ exactly one AUTHORIZED decision and a clean daemon exit.
 `e2e_hardened_stack` now runs the same pass inside the full
 production posture (every channel mTLS, admin surface behind JWT).
 Suite total: **164** CPU / **170** GPU.
+
+---
+
+## Phase 5.4 — Bench validation plan: the software hands over to the workbench (latest)
+
+The last artifact before hardware:
+[`docs/hardware/11-bench-validation-plan.md`](docs/hardware/11-bench-validation-plan.md),
+the staged bring-up plan for the first ESP32-S3 on the bench. Seven
+stages — bench setup, flash + serial smoke, W5500 bring-up, plaintext
+gRPC end-to-end (relays clicking on real GPIOs), mTLS on hardware,
+OTA end-to-end (including the two must-reject negatives: tampered
+digest, bad signature), and an ≥8 h soak — each with prerequisites,
+exact commands against real repo config names, pass-criteria tables,
+and debug/rollback notes.
+
+Its organizing idea: everything *pure* is already host-proven, so
+every stage names the host suite that mirrors its logic. Green host
+test + red bench = the fault is wiring, silicon, or integration —
+never debug transition logic with a multimeter. Grounding the plan
+against the tree also surfaced a seven-item **risk register**, the
+honest kind: two Kconfig defaults that drift from the Build Book IP
+plan, the TLS-handshake-versus-cold-clock question SNTP leaves open
+(measured on the bench, Stage 4.5), the ADR-008 pulse interface vs.
+the firmware's two-contactor profile (the first decision of motor
+integration), and the missing remote fault-clear command.
+[`docs/security.md`](docs/security.md) now points its firmware-TLS
+residual item at the plan, and records the 5.3 ingest path as
+E2E-covered.
+
+**Phase 5 is complete.** The software stack ends here, for now, on
+purpose: the decision loop closes end to end (detection → fusion →
+auto-dispatched open → gate travel, proven in CI under the full
+security posture), the daemons install and run under systemd, the
+fusion-sensor future has an ADR, and the bench has an executable
+plan with exit criteria that gate the move to gate-motor
+integration. **Next step: buy the day-one BOM subset (Stage 0's
+table) and put a board on the bench.**
 
 ---
 
