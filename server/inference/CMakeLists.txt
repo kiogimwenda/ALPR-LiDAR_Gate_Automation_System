@@ -1,0 +1,92 @@
+# server/inference — TensorRT-backed inference primitives.
+#
+# Builds a single static library `gate_inference` that wraps TensorRT, exposes
+# RAII engine handles, and (later in Phase 4.2) hosts the YOLOv9 plate detector,
+# PaddleOCR recognizer, and ALPR pipeline orchestrator.
+#
+# Dependencies that must already be resolved by the parent scope:
+#   * CUDAToolkit::cudart   — set up by `find_package(CUDAToolkit)` in root CMake
+#   * spdlog::spdlog        — vcpkg
+#   * OpenCV (core+imgproc) — system install (source build at /usr/local)
+#   * TensorRT (libnvinfer) — system install; we locate it ourselves below.
+
+# --- OpenCV -----------------------------------------------------------------
+# Built from source against CUDA — see scripts/bootstrap/03-opencv-cuda.sh.
+# The source build installs an OpenCVConfig.cmake; we only need core + imgproc
+# at the inference layer (no GUI / no videoio).
+#
+# The legacy-FindCUDA workaround its config needs under CMake 3.27+ lives in
+# a shared include so server/vision's camera target (which needs videoio) can
+# apply it in its own directory scope too.
+include(${CMAKE_SOURCE_DIR}/cmake/opencv-cuda-shim.cmake)
+
+find_package(OpenCV REQUIRED COMPONENTS core imgproc)
+message(STATUS "Found OpenCV ${OpenCV_VERSION} (components: core, imgproc)")
+
+# --- TensorRT discovery -----------------------------------------------------
+# TensorRT does not ship a CMake config. We locate it through standard system
+# paths (Debian package layout) plus an optional TENSORRT_ROOT override, then
+# expose it as an INTERFACE target the rest of the project can link to.
+
+find_path(TENSORRT_INCLUDE_DIR
+    NAMES NvInferRuntime.h
+    HINTS ${TENSORRT_ROOT} $ENV{TENSORRT_ROOT}
+    PATH_SUFFIXES include include/x86_64-linux-gnu
+    PATHS /usr /usr/local
+    DOC "Directory containing NvInferRuntime.h"
+)
+
+find_library(TENSORRT_NVINFER_LIB
+    NAMES nvinfer
+    HINTS ${TENSORRT_ROOT} $ENV{TENSORRT_ROOT}
+    PATH_SUFFIXES lib lib/x86_64-linux-gnu
+    PATHS /usr /usr/local
+    DOC "Path to libnvinfer.so"
+)
+
+if(NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_NVINFER_LIB)
+    message(FATAL_ERROR
+        "server/inference: TensorRT not found. Install libnvinfer-dev "
+        "or set -DTENSORRT_ROOT=/path/to/tensorrt. "
+        "Headers searched for: NvInferRuntime.h. Library searched for: nvinfer.")
+endif()
+
+message(STATUS "Found TensorRT: ${TENSORRT_NVINFER_LIB} (include: ${TENSORRT_INCLUDE_DIR})")
+
+add_library(TensorRT::nvinfer UNKNOWN IMPORTED)
+set_target_properties(TensorRT::nvinfer PROPERTIES
+    IMPORTED_LOCATION             "${TENSORRT_NVINFER_LIB}"
+    INTERFACE_INCLUDE_DIRECTORIES "${TENSORRT_INCLUDE_DIR}"
+)
+
+# --- gate_inference library -------------------------------------------------
+
+add_library(gate_inference STATIC
+    src/trt_engine.cpp
+    src/yolo_plate_detector.cpp
+    src/paddle_ocr_recognizer.cpp
+    src/alpr_pipeline.cpp
+    src/detail/cpu_algorithms.cpp
+)
+
+target_include_directories(gate_inference
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+
+target_link_libraries(gate_inference
+    PUBLIC
+        TensorRT::nvinfer
+        CUDA::cudart
+        opencv_core
+        opencv_imgproc
+    PRIVATE
+        spdlog::spdlog
+)
+
+target_compile_features(gate_inference PUBLIC cxx_std_20)
+
+# Headers from TensorRT trip -Wpedantic and -Wshadow style warnings; we keep
+# our own code at -Werror but mark the third-party include path as SYSTEM so
+# it's exempt.
+target_include_directories(gate_inference SYSTEM PUBLIC ${TENSORRT_INCLUDE_DIR})

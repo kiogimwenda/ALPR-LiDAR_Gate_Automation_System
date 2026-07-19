@@ -1,0 +1,27 @@
+## IDF Component Manager Manifest File
+dependencies:
+  ## Required IDF version
+  idf:
+    version: '>=4.1.0'
+  # # Put list of dependencies here
+  # # For components maintained by Espressif:
+  # component: "~1.0.0"
+  # # For 3rd party components:
+  # username/component: ">=1.0.0,<2.0.0"
+  # username2/component2:
+  #   version: "~1.0.0"
+  #   # For transient dependencies `public` flag can be set.
+  #   # `public` flag doesn't have an effect dependencies of the `main` component.
+  #   # All dependencies of `main` are public by default.
+  #   public: true
+  # Pin to ==1.0.0 deliberately. Versions 1.1.0+ added optional dependencies
+  # gated by Kconfig `if:` clauses (e.g. `$CONFIG{ETHERNET_SPI_USE_CH390}`).
+  # The IDF component manager evaluates those clauses *during* version
+  # solving — before the component's own Kconfig has been registered — so
+  # the solver throws `MissingKconfigError: ETHERNET_SPI_USE_CH390` and
+  # the build aborts before cmake reaches our component. v1.0.0 (released
+  # 2025-09-24) is the last release whose manifest has no $CONFIG{...}
+  # if-clauses; it still supports W5500 on idf >=5.4 with the SPI Kconfig
+  # symbols we set in sdkconfig.defaults, and it is the simplest workaround
+  # until upstream fixes the solver↔Kconfig ordering bug.
+  espressif/ethernet_init: "==1.0.0"

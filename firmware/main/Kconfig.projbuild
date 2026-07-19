@@ -1,0 +1,68 @@
+menu "Gate Firmware Configuration"
+
+    config GATE_ID
+        string "Gate identifier"
+        default "gate-01"
+        help
+            Site-unique gate name; carried in every Telemetry message
+            and echoed by the server in audit logs and the dashboard.
+
+    config GATE_SERVER_HOST
+        string "Inference server host or IPv4"
+        default "192.168.1.10"
+        help
+            Address of the GPU inference / decision server exposing
+            gate.v1.FieldControllerService. On the reference field LAN
+            this is a static lease; a hostname resolves via DNS.
+
+    config GATE_SERVER_PORT
+        int "Inference server gRPC port"
+        range 1 65535
+        default 50051
+        help
+            gRPC port — must match the server's --listen address
+            (default 0.0.0.0:50051, ADR-011). Cleartext h2c unless
+            GATE_TLS_ENABLE is set.
+
+    config GATE_TLS_ENABLE
+        bool "TLS + mTLS client identity for server connections"
+        default n
+        help
+            Phase 4.10.3: encrypt the FieldControllerService gRPC
+            channel with esp-tls against the site PKI, presenting
+            this gate's certificate (the production server runs
+            --require-client-cert), and verify https OTA URLs with
+            the same CA. Requires main/certs/site_ca.pem, gate.pem
+            and gate.key — mint them with scripts/gen-tls-certs.sh
+            (see main/certs/README.md). Off = plaintext h2c and
+            http OTA, matching the server's dev posture.
+
+    config GATE_SNTP_SERVER
+        string "SNTP server"
+        default "pool.ntp.org"
+        help
+            Wall-clock source for Telemetry/CommandAck timestamps.
+            Until the first sync completes the firmware omits
+            timestamps rather than sending epoch garbage.
+
+    config GATE_OTA_MANIFEST_URL
+        string "OTA manifest URL"
+        default "http://192.168.1.10:8080/firmware/manifest.json"
+        help
+            Self-hosted OTA manifest location (ADR-009). BEGIN_OTA
+            commands fetch this JSON manifest, validate it, then
+            stream the image it points at into the passive OTA slot.
+            With GATE_TLS_ENABLE, point this at the nginx TLS mirror
+            (https://…:8444/firmware/manifest.json) — the site CA
+            then verifies the transport.
+
+    config GATE_OTA_PUBKEY
+        string "OTA ed25519 public key (hex)"
+        default ""
+        help
+            64 hex chars (32-byte ed25519 public key) used to verify
+            the manifest signature over the image digest. Empty until
+            the Phase 4.8 deployment keypair is generated — updates
+            then proceed on the SHA-256 alone, with a loud warning.
+
+endmenu

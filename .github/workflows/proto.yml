@@ -1,0 +1,44 @@
+name: Proto Contract
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'shared/proto/**'
+      - 'tests/proto/**'
+      - '.github/workflows/proto.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'shared/proto/**'
+      - 'tests/proto/**'
+
+jobs:
+  validate-schema:
+    name: Validate gate_service.proto
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y protobuf-compiler python3-protobuf
+
+      - name: Compile descriptor
+        run: |
+          protoc --proto_path=shared/proto \
+                 --descriptor_set_out=/tmp/gate_service.desc \
+                 --include_imports \
+                 shared/proto/gate_service.proto
+          ls -la /tmp/gate_service.desc
+
+      - name: Run contract validator
+        run: python3 tests/proto/validate_descriptor.py
+
+      - name: Lint with buf (optional, non-blocking)
+        continue-on-error: true
+        run: |
+          curl -sSL "https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64" \
+            -o /tmp/buf && chmod +x /tmp/buf
+          /tmp/buf lint --path shared/proto || true

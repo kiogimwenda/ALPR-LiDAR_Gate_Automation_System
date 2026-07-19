@@ -11,6 +11,7 @@
     "spdlog",
     "fmt",
     "sqlite3",
-    "cli11"
+    "cli11",
+    "jwt-cpp"
   ]
 }

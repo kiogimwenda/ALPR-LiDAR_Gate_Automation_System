@@ -17,8 +17,11 @@ jobs:
 
       - name: Check formatting
         run: |
-          find server/ firmware/ shared/ dashboard/backend/ \
-            -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cu' \
+          # gate_rpc/src/pb is nanopb generator output (committed, see
+          # scripts/gen-nanopb.sh) — machine-formatted, not ours to style.
+          find server/ firmware/ shared/ dashboard/backend/ simulation/ \
+            -path firmware/components/gate_rpc/src/pb -prune -o \
+            \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cu' \) -print \
             2>/dev/null | head -500 | \
           xargs -r clang-format --dry-run --Werror 2>&1 || {
             echo "::error::Code formatting issues found. Run: clang-format -i <files>"
@@ -46,8 +49,14 @@ jobs:
 
       - name: Run clang-tidy
         run: |
+          # firmware/ targets ESP-IDF (xtensa), not the host compile_commands
+          # database we just generated. Running host clang-tidy against firmware
+          # would produce bogus errors from x86 vs xtensa assumptions and bloat
+          # the output. clang-format already covers firmware for stylistic
+          # checks; firmware-specific static analysis is run inside the ESP-IDF
+          # build via the firmware CI workflow (Phase 4.4.5).
           if [ -f build/compile_commands.json ]; then
-            find server/ firmware/ shared/ dashboard/backend/ \
+            find server/ shared/ dashboard/backend/ \
               -name '*.cpp' -o -name '*.hpp' 2>/dev/null | head -500 | \
             xargs -r clang-tidy -p build --warnings-as-errors='*' || exit 1
           else
@@ -65,13 +74,17 @@ jobs:
       - name: Run cppcheck
         run: |
           SRC_DIRS=""
-          for d in server/src firmware/src shared/include dashboard/backend/src; do
+          for d in server/src firmware/src shared/include dashboard/backend/src simulation/src; do
             [ -d "$d" ] && SRC_DIRS="$SRC_DIRS $d"
           done
           if [ -n "$SRC_DIRS" ]; then
+            # normalCheckLevelMaxBranches is an informational notice
+            # ("analysis depth limited"), not a finding — but newer
+            # cppcheck releases count it against --error-exitcode.
             cppcheck --enable=warning,performance,portability \
               --error-exitcode=1 --inline-suppr \
               --suppress=missingInclude \
+              --suppress=normalCheckLevelMaxBranches \
               $SRC_DIRS
           else
             echo "No source directories found yet — skipping cppcheck."

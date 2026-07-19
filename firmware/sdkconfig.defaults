@@ -1,0 +1,75 @@
+# sdkconfig.defaults — compile-time defaults for gate-firmware.
+#
+# Anything users configure via `idf.py menuconfig` overrides these.
+# Keep this file readable: short comments above non-obvious settings.
+
+# --- Target ----------------------------------------------------------------
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_IDF_TARGET_ESP32S3=y
+
+# --- Compiler --------------------------------------------------------------
+# C++20 across the codebase, so component code can use std::span etc.
+CONFIG_COMPILER_CXX_EXCEPTIONS=n          # -fno-exceptions saves ~30 KB
+CONFIG_COMPILER_CXX_RTTI=n                # -fno-rtti saves another ~10 KB
+CONFIG_COMPILER_OPTIMIZATION_PERF=y       # -O2 — production default
+
+# --- FreeRTOS --------------------------------------------------------------
+CONFIG_FREERTOS_HZ=1000                   # 1 ms tick — same as Zephyr default
+
+# --- Logging ---------------------------------------------------------------
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_TIMESTAMP_SOURCE_RTOS=y        # log timestamps from xTaskGetTickCount
+
+# --- Watchdog --------------------------------------------------------------
+CONFIG_ESP_TASK_WDT_INIT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10          # 10 s default; main task pets it
+
+# --- Partitions ------------------------------------------------------------
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# --- Bootloader (OTA-capable) ----------------------------------------------
+# We boot from ota_data after the first OTA; without OTA history the
+# bootloader picks ota_0 by default (see the partition layout).
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+# Rollback: a freshly-flashed OTA image boots as PENDING_VERIFY and
+# app_main must mark it valid once steady state is reached; a crash
+# loop before that point reverts to the previous slot (ADR-009).
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# --- OTA transport (Phase 4.5.5) --------------------------------------------
+# The field LAN update server speaks plain HTTP until the Phase 4.8
+# deployment milestone provisions TLS certs (ADR-009 calls for HTTPS
+# in production). Image integrity comes from the manifest SHA-256 +
+# ed25519 signature, not the transport.
+CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y
+
+# --- Flash size ------------------------------------------------------------
+# Most ESP32-S3 dev boards ship with 4 MB. Production hardware will likely
+# be 8 MB; partitions.csv keeps the layout 4-MB-friendly so dev kits work.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+
+# --- Ethernet (W5500 over SPI via espressif/ethernet_init component) -------
+# The ethernet_init component (pinned to v1.0.0 in the gate_drivers
+# component manifest) is Kconfig-driven. ETHERNET_SPI_SUPPORT defaults to
+# `n`, so it must be set explicitly — without it eth_instance_g[] is sized
+# 0 and the component fails to compile under -Werror=array-bounds.
+# Modify via `idf.py menuconfig → Component config → Ethernet Configuration`.
+CONFIG_ETHERNET_INTERNAL_SUPPORT=n
+CONFIG_ETHERNET_SPI_SUPPORT=y
+CONFIG_ETHERNET_SPI_NUMBER=1
+CONFIG_ETHERNET_SPI_DEV0_W5500=y
+CONFIG_ETHERNET_SPI_HOST=1                     # SPI2_HOST = 1 on ESP32-S3
+CONFIG_ETHERNET_SPI_CLOCK_MHZ=20               # W5500 max ~80; 20 is safe
+CONFIG_ETHERNET_SPI_MISO_GPIO=13
+CONFIG_ETHERNET_SPI_MOSI_GPIO=11
+CONFIG_ETHERNET_SPI_SCLK_GPIO=12
+CONFIG_ETHERNET_SPI_CS0_GPIO=10
+CONFIG_ETHERNET_SPI_INT0_GPIO=9
+CONFIG_ETHERNET_SPI_PHY_RST0_GPIO=8
+CONFIG_ETHERNET_SPI_PHY_ADDR0=1
+# LWIP needs a netif slot for ethernet alongside the others.
+CONFIG_LWIP_TCP_MAXRTX=12

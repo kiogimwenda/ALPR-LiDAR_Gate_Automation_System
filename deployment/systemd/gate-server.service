@@ -1,2 +1,44 @@
-# gate-server.service — systemd unit for the GPU inference server.
-# Placeholder — hardened unit file created during deployment phase.
+# gate-server.service — GPU inference + gRPC decision server.
+#
+# Installed by deployment/install-server.sh; runtime knobs live in
+# /etc/gate/gate-server.env so the unit never needs editing.
+
+[Unit]
+Description=Gate automation inference/decision server
+Documentation=https://github.com/kiogimwenda/ALPR-LiDAR_Gate_Automation_System
+After=network-online.target
+Wants=network-online.target
+# Crash-loop brake ([Unit] scope since systemd 230 — in [Service]
+# these are silently ignored, which systemd-analyze verify caught).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=gate
+Group=gate
+EnvironmentFile=/etc/gate/gate-server.env
+# (--db-path, not --db: the Phase 4.9 E2E pass caught the mismatch
+# before any host did.)
+# $TLS_EXTRA_ARGS is unbraced on purpose: systemd word-splits it, so
+# one env var can carry the whole --tls-cert/--tls-key/--tls-ca set
+# (empty in dev = plaintext, and the server logs that loudly).
+ExecStart=/opt/gate/bin/gate-server --listen ${LISTEN_ADDRESS} --site-id ${SITE_ID} --db-path ${DB_PATH} $TLS_EXTRA_ARGS
+Restart=on-failure
+RestartSec=3
+
+# Rollback safety net (ADR-009's server-side analogue of the ESP32's
+# PENDING_VERIFY): if the binary crash-loops right after an update,
+# systemd stops burning restarts and the installer's kept previous
+# binary (/opt/gate/bin/gate-server.prev) can be swapped back.
+
+# Hardening — the server needs its state dir and the GPU, nothing else.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+StateDirectory=gate
+ReadWritePaths=/var/lib/gate
+
+[Install]
+WantedBy=multi-user.target

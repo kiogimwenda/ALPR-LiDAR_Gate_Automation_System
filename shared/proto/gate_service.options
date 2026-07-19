@@ -1,0 +1,43 @@
+# nanopb static-allocation sizing for gate_service.proto.
+#
+# Only the messages the firmware touches get static sizes — everything
+# else (detection frames, dashboard/admin messages) falls back to
+# nanopb's callback fields, which the firmware never registers and the
+# generator emits at zero per-message RAM cost.
+#
+# Growing a string on the wire may require a matching max_size bump
+# here; the firmware truncation behaviour is a decode *error*, not a
+# silent cut, so a mismatch shows up loudly in the reconnect loop.
+# Regenerate with scripts/gen-nanopb.sh after editing (ADR-011).
+
+# --- Control stream ---------------------------------------------------------
+gate.v1.Telemetry.gate_id             max_size:32
+gate.v1.Telemetry.firmware_version    max_size:24
+gate.v1.Telemetry.firmware_sha256     max_size:65   # 64 hex chars + NUL
+
+gate.v1.GateCommand.command_id        max_size:40   # UUIDv4 + NUL
+gate.v1.GateCommand.gate_id           max_size:32
+gate.v1.GateCommand.actor             max_size:48
+gate.v1.GateCommand.signature         max_size:64   # ed25519
+
+gate.v1.CommandAck.command_id         max_size:40
+gate.v1.CommandAck.error_text         max_size:96
+
+gate.v1.FaultEvent.fault_id           max_size:40
+gate.v1.FaultEvent.gate_id            max_size:32
+gate.v1.FaultEvent.code               max_size:32
+gate.v1.FaultEvent.description        max_size:96
+gate.v1.FaultEvent.context            max_count:4
+gate.v1.FaultEvent.ContextEntry.key   max_size:24
+gate.v1.FaultEvent.ContextEntry.value max_size:48
+
+# --- OTA (consumed from Phase 4.5.5) ----------------------------------------
+gate.v1.OtaManifest.target_version    max_size:24
+gate.v1.OtaManifest.image_sha256      max_size:65
+gate.v1.OtaManifest.ed25519_sig       max_size:64
+gate.v1.OtaManifest.signing_key_id    max_size:32
+gate.v1.OtaManifest.release_notes     max_size:128
+
+gate.v1.OtaChunk.data                 max_size:4096  # ESP32 flash sector
+
+gate.v1.OtaProgress.command_id        max_size:40

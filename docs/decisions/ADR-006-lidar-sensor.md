@@ -1,7 +1,8 @@
 # ADR-006: LiDAR Sensor Choice
 
 ## Status
-Accepted
+Superseded by [ADR-012](ADR-012-fusion-sensing-hardware.md) for
+production sensing hardware; retained for the prototype/pilot BOM.
 
 ## Date
 2026-04-19

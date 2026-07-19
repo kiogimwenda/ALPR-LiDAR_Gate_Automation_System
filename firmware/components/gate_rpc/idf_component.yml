@@ -1,0 +1,9 @@
+# Managed-component manifest for gate_rpc (ADR-011).
+#
+# The nanopb runtime version must match the generator pin in
+# scripts/gen-nanopb.sh — the generated headers carry a
+# PB_PROTO_HEADER_VERSION check that fails the build on a mismatch.
+dependencies:
+  idf: ">=5.0"
+  espressif/nghttp: "^1.69.0"
+  livekit/nanopb: "~0.4.9"
