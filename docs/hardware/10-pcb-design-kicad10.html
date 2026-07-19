@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Gate Automation Field PCB — KiCad 9.0 Design Guide</title>
+<title>Gate Automation Field PCB — KiCad 10.0 Design Guide</title>
 <style>
 @page {
   size: A4;
@@ -52,13 +52,14 @@ ol.steps > li { margin-bottom: 14px; }
 <!-- COVER PAGE -->
 <div class="cover">
 <h1>Gate Automation Field PCB</h1>
-<p class="subtitle">Complete KiCad 9.0 Design Guide<br>From Blank Project to Manufacturing-Ready Gerbers</p>
+<p class="subtitle">Complete KiCad 10.0 Design Guide<br>From Blank Project to Manufacturing-Ready Gerbers</p>
 <p class="meta">
 <strong>Project:</strong> ALPR + LiDAR Automated Vehicle Gate Control System<br>
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
-<strong>KiCad Version:</strong> 9.0<br>
-<strong>Date:</strong> April 2026<br>
+<strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
+<strong>Date:</strong> July 2026 — revision 2.0<br>
+<strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
 </div>
@@ -67,8 +68,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="toc">
 <h2>Table of Contents</h2>
 <ul>
-<li><strong>1.</strong> Introduction &amp; Board Overview</li>
-<li><strong>2.</strong> Prerequisites &amp; KiCad 9.0 Installation</li>
+<li><strong>1.</strong> Introduction &amp; Board Overview <em>(§1.4: firmware pin map — the source of truth)</em></li>
+<li><strong>2.</strong> Prerequisites &amp; KiCad 10.0 Installation</li>
 <li><strong>3.</strong> Project Setup</li>
 <li><strong>4.</strong> Component Library &amp; Footprint Selection</li>
   <ul>
@@ -117,7 +118,9 @@ ol.steps > li { margin-bottom: 14px; }
 <!-- CHAPTER 1 -->
 <h2>1. Introduction &amp; Board Overview</h2>
 
-<p>This guide walks you through designing a custom PCB for the gate automation field controller using KiCad 9.0. The board replaces the breadboard prototype and integrates all gate-side electronics into a single, production-ready, 4-layer PCB sized to fit inside a standard IP65 enclosure.</p>
+<p>This guide walks you through designing a custom PCB for the gate automation field controller using KiCad 10.0. The board replaces the breadboard prototype and integrates all gate-side electronics into a single, production-ready, 4-layer PCB sized to fit inside a standard IP65 enclosure.</p>
+
+<div class="note"><strong>Revision 2.0 (July 2026).</strong> This revision supersedes the April 2026 KiCad 9.0 guide. Two things changed: the tooling moved to KiCad 10.0, and — far more important — the pin map was <strong>re-synchronized with the shipped firmware (v1.0.0)</strong>. Revision 1.0 predated the firmware's driver work (Phases 4.4–4.5) and disagreed with it on the entire W5500 SPI bus, the W5500 INT/RST lines, and the status LEDs; it also placed RS-485 on pins the firmware later took for LEDs, and double-booked IO21. A board routed from revision 1.0 will not run the firmware. §1.4 is now the single source of truth for every net; every schematic section and Appendix A have been corrected against it.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -155,30 +158,72 @@ ol.steps > li { margin-bottom: 14px; }
 <li><strong>Expandable:</strong> Two spare relay channels + unpopulated headers for future use</li>
 </ul>
 
-<!-- CHAPTER 2 -->
-<h2>2. Prerequisites &amp; KiCad 9.0 Installation</h2>
+<h3>1.4 Firmware Pin Map — the Source of Truth</h3>
 
-<h3>2.1 Install KiCad 9.0</h3>
+<div class="warning"><strong>Route from this table, never from memory.</strong> The firmware's GPIO assignments are compiled in — <code>firmware/sdkconfig.defaults</code> (Ethernet) and <code>firmware/components/gate_control/include/gate_control/gate_controller.hpp</code> (<code>GateController::Pins</code>). The PCB must match them exactly; a mismatch is a board respin, not a config change. If either file ever changes, this table and Appendix A change in the same commit.</div>
+
+<table>
+<tr><th>Net</th><th>ESP32-S3 pin</th><th>Direction</th><th>Firmware constant</th><th>Source file</th></tr>
+<tr><td>SPI_SCLK (W5500)</td><td><strong>IO12</strong></td><td>out</td><td><code>CONFIG_ETHERNET_SPI_SCLK_GPIO=12</code></td><td>sdkconfig.defaults</td></tr>
+<tr><td>SPI_MOSI (W5500)</td><td><strong>IO11</strong></td><td>out</td><td><code>CONFIG_ETHERNET_SPI_MOSI_GPIO=11</code></td><td>sdkconfig.defaults</td></tr>
+<tr><td>SPI_MISO (W5500)</td><td><strong>IO13</strong></td><td>in</td><td><code>CONFIG_ETHERNET_SPI_MISO_GPIO=13</code></td><td>sdkconfig.defaults</td></tr>
+<tr><td>SPI_CS (W5500 SCSn)</td><td><strong>IO10</strong></td><td>out</td><td><code>CONFIG_ETHERNET_SPI_CS0_GPIO=10</code></td><td>sdkconfig.defaults</td></tr>
+<tr><td>W5500_INT (INTn)</td><td><strong>IO9</strong></td><td>in</td><td><code>CONFIG_ETHERNET_SPI_INT0_GPIO=9</code></td><td>sdkconfig.defaults</td></tr>
+<tr><td>W5500_RST (RSTn)</td><td><strong>IO8</strong></td><td>out</td><td><code>CONFIG_ETHERNET_SPI_PHY_RST0_GPIO=8</code></td><td>sdkconfig.defaults</td></tr>
+<tr><td>RELAY_1 (open contactor)</td><td><strong>IO4</strong></td><td>out</td><td><code>Pins::relay_open</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>RELAY_2 (close contactor)</td><td><strong>IO5</strong></td><td>out</td><td><code>Pins::relay_close</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>LIM_OPEN</td><td><strong>IO6</strong></td><td>in</td><td><code>Pins::limit_open</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>LIM_CLOSED</td><td><strong>IO7</strong></td><td>in</td><td><code>Pins::limit_closed</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>SAFETY_BEAM</td><td><strong>IO15</strong></td><td>in</td><td><code>Pins::safety_beam</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>LED_RED</td><td><strong>IO16</strong></td><td>out</td><td><code>Pins::led_red</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>LED_GREEN</td><td><strong>IO17</strong></td><td>out</td><td><code>Pins::led_green</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>LED_YELLOW</td><td><strong>IO18</strong></td><td>out</td><td><code>Pins::led_yellow</code></td><td>gate_controller.hpp</td></tr>
+<tr><td>USB_D- / USB_D+</td><td><strong>IO19 / IO20</strong></td><td>bidir</td><td>native USB-Serial/JTAG</td><td>ESP32-S3 fixed function</td></tr>
+<tr><td>UART0 TX / RX (console)</td><td><strong>IO43 / IO44</strong></td><td>out / in</td><td>default console</td><td>ESP32-S3 default</td></tr>
+</table>
+
+<p><strong>PCB-only nets</strong> — no firmware driver yet; pins chosen to avoid the strapping pins (IO0, IO3, IO45, IO46) and the octal-PSRAM-reserved IO35–37 of the N16R8 module:</p>
+
+<table>
+<tr><th>Net</th><th>ESP32-S3 pin</th><th>Status</th></tr>
+<tr><td>RELAY_3 (spare)</td><td><strong>IO1</strong></td><td>Unused by firmware v1.0.0; reserved for expansion</td></tr>
+<tr><td>RELAY_4 (spare)</td><td><strong>IO2</strong></td><td>Unused by firmware v1.0.0; reserved for expansion</td></tr>
+<tr><td>RS485_TX</td><td><strong>IO21</strong></td><td rowspan="3">Transceiver populated per <a href="../decisions/ADR-008-gate-actuator-interface.md">ADR-008</a> ("RS-485 driver included in PCB design but disabled in firmware until protocol is implemented") — future CENTURION direct-drive</td></tr>
+<tr><td>RS485_RX</td><td><strong>IO14</strong></td></tr>
+<tr><td>RS485_DE</td><td><strong>IO38</strong></td></tr>
+</table>
+
+<div class="note"><strong>What moved since revision 1.0:</strong> the four SPI signals were shuffled (old CLK=IO10/MISO=IO12/CS=IO13 → correct SCLK=IO12/MISO=IO13/CS=IO10); W5500 INT moved IO14→IO9 and RSTn is now actively driven from IO8 (the firmware pulses the PHY reset at init — an RC alone will not do); RS-485 moved off IO16/17/18 (the firmware's LED pins) to IO21/IO14/IO38; the two GPIO status LEDs (old AUTH=IO47, FAULT=IO21) became the firmware's three-LED red/green/yellow set on IO16/17/18; spare relays moved off IO21 (double-booked in rev 1.0) and IO42 to IO1/IO2.</div>
+
+<!-- CHAPTER 2 -->
+<h2>2. Prerequisites &amp; KiCad 10.0 Installation</h2>
+
+<h3>2.1 Install KiCad 10.0</h3>
 
 <h4>On Ubuntu/Debian (including WSL2):</h4>
-<pre><code># Add the KiCad 9.0 PPA
-sudo add-apt-repository ppa:kicad/kicad-9.0-releases
+<pre><code># Add the KiCad 10.0 PPA
+sudo add-apt-repository ppa:kicad/kicad-10.0-releases
 sudo apt update
 sudo apt install kicad kicad-libraries kicad-doc
 
 # Verify version
 kicad-cli version
-# Should output: 9.0.x</code></pre>
+# Should output: 10.0.x (10.0.1 or later — the .1 point release
+# landed a month after 10.0.0 with the usual first-wave fixes)</code></pre>
 
 <h4>On Windows (recommended for GUI work):</h4>
 <pre><code># Download from https://www.kicad.org/download/windows/
-# Install KiCad 9.0.x (64-bit)
+# Install KiCad 10.0.x (64-bit)
 # Include all libraries during installation</code></pre>
+
+<div class="warning"><strong>File format is one-way.</strong> KiCad 10 opens KiCad 9 projects and upgrades them on save, but files saved by v10 <strong>cannot be opened in v9 or earlier</strong>. Everyone touching <code>hardware/pcb/</code> must be on 10.x before the first save, and the KiCad version belongs in the commit message when the design files land in git.</div>
+
+<div class="tip"><strong>New in 10.0, used later in this guide:</strong> the graphical DRC rule editor (§6), reusable <em>design blocks</em> for the repeated relay-driver channel (§7), and 3D PDF export for checking enclosure fit (§9). Cosmetic but welcome: system dark mode is honored (theme under <strong>Preferences → Colors</strong>) and toolbars are freely rearrangeable.</div>
 
 <div class="tip"><strong>Tip:</strong> If developing on WSL2 but want the KiCad GUI, install KiCad natively on Windows and keep the project files in a Windows-accessible path (e.g., <code>\\wsl$\Debian\home\deby\projects\gate-automation\hardware\pcb\</code>).</div>
 
 <h3>2.2 Required Libraries</h3>
-<p>KiCad 9.0 ships with comprehensive libraries. All components in this design use <strong>official KiCad libraries</strong> — no custom libraries needed. The following library sets are used:</p>
+<p>KiCad 10.0 ships with comprehensive libraries (the v10 release alone added ~950 symbols and ~1,200 footprints). All components in this design use <strong>official KiCad libraries</strong> — no custom libraries needed. The following library sets are used:</p>
 <table>
 <tr><th>Library</th><th>Type</th><th>Used For</th></tr>
 <tr><td>Connector_PinSocket</td><td>Symbol + Footprint</td><td>ESP32-S3 module castellated pads</td></tr>
@@ -198,7 +243,7 @@ kicad-cli version
 
 <h3>3.1 Create the KiCad Project</h3>
 <ol class="steps">
-<li>Open KiCad 9.0</li>
+<li>Open KiCad 10.0</li>
 <li>Click <strong>File → New Project</strong></li>
 <li>Navigate to: <code>/home/deby/projects/gate-automation/hardware/pcb/</code></li>
 <li>Name the project: <code>gate-field-controller</code></li>
@@ -237,7 +282,7 @@ kicad-cli version
 ├── sensor_inputs.kicad_sch      (limit switches, safety beam, TVS)
 └── rs485_leds.kicad_sch         (MAX485 transceiver, status LEDs)</code></pre>
 
-<p>To create a hierarchical sheet in KiCad 9.0:</p>
+<p>To create a hierarchical sheet in KiCad 10.0:</p>
 <ol>
 <li>In the root schematic, click <strong>Place → Hierarchical Sheet</strong></li>
 <li>Draw a rectangle, name it (e.g., "Power Supply")</li>
@@ -269,7 +314,7 @@ kicad-cli version
 <li>The module is soldered directly to the PCB via castellated half-hole pads — no pin headers needed</li>
 <li>Much more compact and reliable than mounting a DevKit board</li>
 <li>The center GND pad provides excellent thermal and electrical grounding</li>
-<li>KiCad 9.0's official footprint matches Espressif's recommended land pattern exactly</li>
+<li>KiCad 10.0's official footprint matches Espressif's recommended land pattern exactly</li>
 </ul>
 
 <h4>Critical Layout Rules</h4>
@@ -428,7 +473,7 @@ kicad-cli version
 <tr><td>Relay</td><td>Songle SRD-05VDC-SL-C (SPDT, 5V coil, 10A/250VAC contacts)</td></tr>
 <tr><td>KiCad Symbol</td><td><code>Relay:SANYOU_SRD_Series_Form_C</code></td></tr>
 <tr><td>Footprint</td><td><code>Relay_THT:Relay_SPDT_SANYOU_SRD_Series_Form_C</code></td></tr>
-<tr><td>Quantity</td><td>4 (REL1: Leaf 1 trigger, REL2: Leaf 2 trigger, REL3: Spare, REL4: Spare)</td></tr>
+<tr><td>Quantity</td><td>4 (REL1: OPEN contactor — IO4, REL2: CLOSE contactor — IO5, REL3/REL4: spare — IO1/IO2)</td></tr>
 <tr><td>LCSC P/N</td><td>C35449</td></tr>
 </table>
 
@@ -449,6 +494,8 @@ kicad-cli version
 <li>Easily replaceable in the field (just desolder and swap) — important for a residential product.</li>
 <li>The 5V coil draws ~90mA, well within our 5V rail's 3A budget.</li>
 </ul>
+
+<div class="note"><strong>Actuator-profile decision (bench-plan risk R4).</strong> The firmware's residential profile drives REL1/REL2 as two motion contactors, while <a href="../decisions/ADR-008-gate-actuator-interface.md">ADR-008</a> specifies a single dry-contact <em>trigger pulse</em> into the Centurion controller. The four-channel board deliberately covers <em>both</em> outcomes of that decision (recorded at commissioning, §3.3 of the <a href="../commissioning.md">commissioning checklist</a>): pulse profile uses one channel, two-contactor uses two, and the spares absorb a pedestrian-open or lock output later. No PCB change is needed either way — that's why the channel count survives the open decision.</div>
 </div>
 
 <h3>4.6 RS-485 Transceiver</h3>
@@ -474,11 +521,13 @@ kicad-cli version
 
 <h4>Connections</h4>
 <ul>
-<li>DI (pin 4) → ESP32-S3 IO16 (UART TX)</li>
-<li>RO (pin 1) → ESP32-S3 IO17 (UART RX)</li>
-<li>DE + RE tied together → ESP32-S3 IO18 (direction control: HIGH=TX, LOW=RX)</li>
+<li>DI (pin 4) → ESP32-S3 <strong>IO21</strong> (UART TX)</li>
+<li>RO (pin 1) → ESP32-S3 <strong>IO14</strong> (UART RX)</li>
+<li>DE + RE tied together → ESP32-S3 <strong>IO38</strong> (direction control: HIGH=TX, LOW=RX)</li>
 <li>A, B → screw terminal for RS-485 bus cable</li>
 </ul>
+
+<div class="warning"><strong>Pin change from rev 1.0:</strong> RS-485 moved off IO16/17/18 — the firmware's Phase 4.4.4 status-LED driver owns those pins (§1.4). The transceiver stays on the board per ADR-008 ("included in PCB design but disabled in firmware until protocol is implemented"); any future ESP32-S3 UART peripheral routes to these pins via the GPIO matrix, so the choice costs nothing in firmware.</div>
 </div>
 
 <h3>4.7 Input Protection (Limit Switches &amp; Safety Beam)</h3>
@@ -506,10 +555,11 @@ kicad-cli version
 <div class="footprint-card">
 <table>
 <tr><th>LED</th><th>Color</th><th>GPIO</th><th>Meaning</th><th>Footprint</th></tr>
-<tr><td>LED_PWR</td><td>Green</td><td>Always on (5V rail)</td><td>Board powered</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_NET</td><td>Yellow</td><td>W5500 LINK pin</td><td>Ethernet link active</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_AUTH</td><td>Green</td><td>IO47</td><td>Vehicle authorized</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_FAULT</td><td>Red</td><td>IO21</td><td>System fault</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_PWR</td><td>Green</td><td>Always on (5V rail)</td><td>Board powered (no firmware involvement)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_NET</td><td>Yellow</td><td>W5500 LINK pin</td><td>Ethernet link active (driven by the W5500)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_RED</td><td>Red</td><td><strong>IO16</strong></td><td rowspan="3">The firmware's three-LED status set — patterns (auth flash, deny, fault blink, OTA pulse) are defined by the <code>StatusLed</code> driver in <code>firmware/components/gate_drivers/</code> (Phase 4.4.4). The PCB provides plain active-high LEDs; all behavior is firmware.</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_GREEN</td><td>Green</td><td><strong>IO17</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_YELLOW</td><td>Yellow</td><td><strong>IO18</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
 </table>
 
 <h4>LED Resistor Values</h4>
@@ -641,25 +691,30 @@ kicad-cli version
                     ┌────────────────────┐
         +3V3 ──────┤ 3V3            GND  ├────── GND
                     │                    │
-  W5500_CLK ◄──────┤ IO10          IO4  ├──────► RELAY_1
- W5500_MOSI ◄──────┤ IO11          IO5  ├──────► RELAY_2
- W5500_MISO ──────►┤ IO12          IO6  ├◄────── LIM_OPEN
-   W5500_CS ◄──────┤ IO13          IO7  ├◄────── LIM_CLOSED
-  W5500_INT ──────►┤ IO14         IO15  ├◄────── SAFETY_BEAM
-                    │                    │
-  RS485_TX  ◄──────┤ IO16         IO47  ├──────► LED_AUTH
-  RS485_RX  ──────►┤ IO17         IO21  ├──────► LED_FAULT
-  RS485_DE  ◄──────┤ IO18         IO48  ├──────► (RGB LED onboard)
-                    │                    │
-    USB_D-  ◄─────►┤ IO19               │
+  W5500_RST ◄──────┤ IO8           IO4  ├──────► RELAY_1 (open)
+  W5500_INT ──────►┤ IO9           IO5  ├──────► RELAY_2 (close)
+   W5500_CS ◄──────┤ IO10          IO6  ├◄────── LIM_OPEN
+ W5500_MOSI ◄──────┤ IO11          IO7  ├◄────── LIM_CLOSED
+ W5500_SCLK ◄──────┤ IO12         IO15  ├◄────── SAFETY_BEAM
+ W5500_MISO ──────►┤ IO13               │
+                    │              IO16  ├──────► LED_RED
+  RS485_RX  ──────►┤ IO14         IO17  ├──────► LED_GREEN
+  RS485_TX  ◄──────┤ IO21         IO18  ├──────► LED_YELLOW
+  RS485_DE  ◄──────┤ IO38               │
+                    │               IO1  ├──────► RELAY_3 (spare)
+    USB_D-  ◄─────►┤ IO19          IO2  ├──────► RELAY_4 (spare)
     USB_D+  ◄─────►┤ IO20               │
-                    │                    │
-             EN ───┤ EN (with RC reset) │
-                    │                    │
+                    │              IO43  ├──────► UART0_TX (console)
+             EN ───┤ EN            IO44  ├◄────── UART0_RX (console)
+                    │  (RC reset)        │
                     │    GND_PAD         │
                     └───────┬────────────┘
                             │
-                           GND (9× vias to ground plane)</code></pre>
+                           GND (9× vias to ground plane)
+
+  All assignments per §1.4 (firmware source of truth). Avoided on
+  purpose: IO0/IO3/IO45/IO46 (strapping), IO35–37 (octal PSRAM,
+  reserved on the N16R8), IO26–32 (SPI flash).</code></pre>
 </div>
 
 <h4>ESP32-S3 Supporting Circuitry</h4>
@@ -689,15 +744,15 @@ kicad-cli version
 <div class="schematic-block">
 <pre><code>                         W5500 (LQFP-48)
                     ┌─────────────────────────┐
-ESP32 IO10 (CLK)───┤ SCLK              AVDD  ├───Ferrite───+3V3
+ESP32 IO12 (SCLK)──┤ SCLK              AVDD  ├───Ferrite───+3V3
 ESP32 IO11 (MOSI)──┤ MOSI              DVDD  ├───+3V3
-ESP32 IO12 (MISO)──┤ MISO              1V8OUT├───C(10µF)───GND
-ESP32 IO13 (CS)────┤ SCSn                    │
-ESP32 IO14 (INT)───┤ INTn              RSVD  ├───R(12.4k)───GND
+ESP32 IO13 (MISO)──┤ MISO              1V8OUT├───C(10µF)───GND
+ESP32 IO10 (CS)────┤ SCSn                    │
+ESP32 IO9  (INT)───┤ INTn              RSVD  ├───R(12.4k)───GND
                     │                         │
-            GND ───┤ GND               EXRES1├───R(12.4k)───GND
+ESP32 IO8  (RST)───┤ RSTn (+10k PU)   EXRES1├───R(12.4k)───GND
                     │                         │
-            GND ───┤ RSTn (via RC)     TOCAP ├───C(4.7µF)───GND
+            GND ───┤ GND               TOCAP ├───C(4.7µF)───GND
                     │                         │
     25MHz XTAL ────┤ XI               TXP/TXN├───┐
     25MHz XTAL ────┤ XO               RXP/RXN├───┤── To RJ45 magjack
@@ -710,17 +765,17 @@ ESP32 IO14 (INT)───┤ INTn              RSVD  ├───R(12.4k)──�
 <h4>Key W5500 Schematic Notes</h4>
 <ol>
 <li><strong>AVDD:</strong> Must be filtered from DVDD through a ferrite bead (600Ω@100MHz). Do NOT connect directly to 3.3V.</li>
-<li><strong>RSTn:</strong> 10kΩ pull-up to 3.3V + 100nF to GND (ensures clean reset). Optionally connect to ESP32 GPIO for software-controlled reset.</li>
+<li><strong>RSTn:</strong> Driven by ESP32 <strong>IO8</strong> — not optional: the firmware's ethernet driver (<code>CONFIG_ETHERNET_SPI_PHY_RST0_GPIO=8</code>) pulses a hardware reset during init and will not bring the link up without it. Keep the 10kΩ pull-up to 3.3V so the chip is held out of reset before the GPIO is configured; drop rev 1.0's RC-to-GND arrangement.</li>
 <li><strong>Crystal routing:</strong> Keep XI/XO traces under 10mm, with ground guard ring. Load caps (2× 20pF) placed within 2mm of crystal pads.</li>
 <li><strong>PMODE pins:</strong> PMODE[2:0] all pulled up to 3.3V via 10kΩ for "all capable, auto-negotiation" mode.</li>
-<li><strong>SPI signals:</strong> Add 33Ω series resistors on SCLK and MOSI close to the W5500 for signal integrity (optional but recommended for traces >30mm).</li>
+<li><strong>SPI signals:</strong> Add 33Ω series resistors on SCLK and MOSI close to the ESP32 for signal integrity (optional but recommended for traces >30mm). The firmware clocks the bus at 20 MHz (<code>CONFIG_ETHERNET_SPI_CLOCK_MHZ=20</code>); the bench plan's Stage 2 note about halving that clock is a <em>jumper-wire</em> mitigation — on this PCB's &lt;50mm matched traces, 20 MHz has comfortable margin.</li>
 </ol>
 
 <h3>5.4 Relay Output Section</h3>
 
 <div class="schematic-block">
 <h4>Per-Channel Relay Driver (×4)</h4>
-<pre><code>ESP32 IO4/IO5/IO21/IO42 ───[R_base 1kΩ]───┐
+<pre><code>ESP32 IO4/IO5/IO1/IO2 ─────[R_base 1kΩ]───┐
                                             │ Base
                                        ┌────┴────┐
                                        │ SS8050  │
@@ -764,9 +819,9 @@ J_SENSE ── R_series ──────────┤
 <h3>5.6 RS-485 Section</h3>
 
 <div class="schematic-block">
-<pre><code>ESP32 IO16 (TX) ─────────────────────── DI (pin 4)  ┐
-ESP32 IO17 (RX) ─────────────────────── RO (pin 1)  │  MAX485ESA+
-ESP32 IO18 (DE) ──┬──────────────────── DE (pin 3)  │  (SOIC-8)
+<pre><code>ESP32 IO21 (TX) ─────────────────────── DI (pin 4)  ┐
+ESP32 IO14 (RX) ─────────────────────── RO (pin 1)  │  MAX485ESA+
+ESP32 IO38 (DE) ──┬──────────────────── DE (pin 3)  │  (SOIC-8)
                   └──────────────────── /RE (pin 2)  │
                                                      │
                 +5V ──── VCC (pin 8)                 │
@@ -807,11 +862,11 @@ ESP32 IO18 (DE) ──┬──────────────────�
 <div class="warning"><strong>Important:</strong> The Schottky diode on VBUS prevents the 12V→5V buck converter from back-feeding power out the USB port. Without this, connecting USB while 12V is applied would try to power the host computer.</div>
 
 <h3>5.8 LED &amp; Indicator Section</h3>
-<pre><code>+5V ──[R 680Ω]──[LED_PWR Green 0805]── GND     (always on)
+<pre><code>+5V ──[R 680Ω]──[LED_PWR Green 0805]── GND      (always on)
 
-IO47 ──[R 330Ω]──[LED_AUTH Green 0805]── GND   (authorized pulse)
-
-IO21 ──[R 330Ω]──[LED_FAULT Red 0805]── GND    (fault active)
+IO16 ──[R 330Ω]──[LED_RED    Red    0805]── GND  ┐ firmware StatusLed
+IO17 ──[R 330Ω]──[LED_GREEN  Green  0805]── GND  │ driver (patterns:
+IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/fault/OTA)
 
 W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></pre>
 
@@ -976,7 +1031,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <ol>
 <li><strong>USB differential pair</strong> — most impedance-sensitive. Route first while the board is uncongested.
 <ul>
-<li>Use <strong>Route → Differential Pair</strong> in KiCad 9.0</li>
+<li>Use <strong>Route → Differential Pair</strong> in KiCad 10.0</li>
 <li>Set pair gap to 0.15 mm in Net Classes</li>
 <li>Route on Top layer only (F.Cu), directly over the unbroken GND plane</li>
 <li>No vias on the differential pair</li>
@@ -1015,12 +1070,14 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 </li>
 </ol>
 
-<h4>Routing Tips in KiCad 9.0</h4>
+<h4>Routing Tips in KiCad 10.0</h4>
 <ul>
 <li><strong>Interactive router:</strong> Press <code>X</code> to start routing, <code>V</code> to place a via and switch layers</li>
 <li><strong>Push-and-shove:</strong> Enable in <strong>Interactive Router Settings</strong> (gear icon) — it moves existing traces out of the way as you route</li>
-<li><strong>Length tuning:</strong> After routing USB pair, use <strong>Route → Tune Track Length</strong> to add serpentine to the shorter trace</li>
+<li><strong>Length tuning:</strong> After routing the USB pair, use the tuning tool to add serpentine to the shorter trace. KiCad 10 overhauled tuning (Tuning Profiles, time-domain constraints) — overkill for USB full-speed, but the profile UI is the same one you'll use.</li>
 <li><strong>Teardrops:</strong> After routing, run <strong>Edit → Apply Teardrops</strong> — adds reliability to pad-trace connections</li>
+<li><strong>Design blocks (new in 10):</strong> The relay driver channel repeats four times — place and route one channel cleanly, save it as a design block, and stamp the other three. Same for the three sensor-input protection channels.</li>
+<li><strong>Lasso selection (new in 10):</strong> Freeform area select makes grabbing one routed channel for duplication much less fiddly than rectangle-select ever was.</li>
 </ul>
 
 <h3>7.5 Antenna Keepout Zone</h3>
@@ -1038,7 +1095,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>The board edge should be at or within this zone (antenna overhangs board edge = best performance)</li>
 </ol>
 
-<div class="warning"><strong>If you skip this step:</strong> The WiFi/BLE range will be reduced by 50–80%. For this project, WiFi is used for OTA updates and BLE for optional commissioning — both need reasonable range to work through an enclosure.</div>
+<div class="warning"><strong>If you skip this step:</strong> The WiFi/BLE range will be reduced by 50–80%. To be clear about today's posture: the shipped system needs <em>no</em> radio — control, telemetry, and OTA all run over the W5500 wired Ethernet (ADR-011 / ADR-009). The keepout is cheap insurance for the futures that do want the radio (WiFi as a network fallback, BLE commissioning) and good RF hygiene regardless — don't spend it on copper.</div>
 
 <h3>7.6 Thermal Relief &amp; Copper Fills</h3>
 
@@ -1054,7 +1111,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li><strong>Via stitching:</strong> After fills, add via stitching to connect F.Cu GND fill to the L2 GND plane:
 <ul>
 <li>Place vias on a 5mm grid across the board (where space allows)</li>
-<li>In KiCad 9.0: <strong>Edit → Fill All Zones</strong>, then use the via stitching plugin or manually place vias connected to GND</li>
+<li>In KiCad 10.0: <strong>Edit → Fill All Zones</strong>, then use the via stitching plugin or manually place vias connected to GND</li>
 </ul>
 </li>
 </ol>
@@ -1068,6 +1125,8 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>Click <strong>Run DRC</strong></li>
 <li>Fix ALL errors before generating manufacturing files. Warnings can be reviewed case-by-case.</li>
 </ol>
+
+<div class="tip"><strong>New in KiCad 10 — graphical DRC rule editor.</strong> Custom rules no longer require hand-writing S-expressions. Two custom rules worth adding through the GUI for this board: (1) a larger clearance (≥1.0mm) between any <code>RELAY_*</code>/relay-contact copper and the SPI net class — the contacts switch inductive loads next to a 20 MHz bus; (2) a clearance ring around the antenna keepout that also catches silkscreen. The old S-expression syntax still works if you have rules from a v9 project.</div>
 
 <h3>8.2 Common DRC Errors and Fixes</h3>
 <table>
@@ -1154,6 +1213,9 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>This file tells the pick-and-place machine where each SMD component goes</li>
 </ol>
 
+<h3>9.5 3D PDF Export (new in KiCad 10)</h3>
+<p>Before ordering, export the board as a 3D PDF and check it against the enclosure: <strong>File → Export</strong> in the PCB editor. Rotate the model and verify connector overhangs (USB-C, RJ45), relay height under the enclosure lid, and that the four mounting holes land on the enclosure bosses. This catches the mechanical mistakes the DRC never will, and the PDF is the right artifact to file next to the order confirmation.</p>
+
 <!-- CHAPTER 10 -->
 <h2>10. Ordering from JLCPCB / PCBWay</h2>
 
@@ -1235,7 +1297,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 </ul>
 </li>
 <li><strong>USB test:</strong> Connect USB-C cable. Computer should enumerate a USB device (ESP32-S3).</li>
-<li><strong>Flash test firmware:</strong> Flash the blink test from <code>docs/hardware/01-esp32-s3-devkit.md</code>. RGB LED should blink.</li>
+<li><strong>Flash test firmware:</strong> Flash the real gate firmware (<code>cd firmware &amp;&amp; idf.py flash monitor</code>). Expect the boot banner and the bare-bench <code>Faulted</code> state described in the <a href="11-bench-validation-plan.md">bench validation plan</a> Stage 1 — on this board the status LEDs (red/green/yellow) show the fault pattern. (Unlike the DevKit, the bare WROOM module has no onboard RGB LED — rev 1.0's "RGB should blink" check was a DevKit-ism.)</li>
 <li><strong>Ethernet test:</strong> Connect Ethernet cable. LED_NET should illuminate. Ping test to server IP.</li>
 <li><strong>Relay test:</strong> Run GPIO toggle test. Listen for relay click. Verify continuity across NO contacts with multimeter.</li>
 <li><strong>Input test:</strong> Short each sensor input to GND. Firmware should register the state change.</li>
@@ -1262,28 +1324,33 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>+5V</td><td>Power</td><td>TPS5430 output</td><td>AMS1117 IN, Relay coils, MAX485 VCC, USB VBUS (via diode)</td></tr>
 <tr><td>+3V3</td><td>Power</td><td>AMS1117 output</td><td>ESP32-S3 3V3, W5500 DVDD/AVDD, Pull-ups, LEDs</td></tr>
 <tr><td>GND</td><td>Power</td><td>Common ground</td><td>All GND pins, plane L2</td></tr>
-<tr><td>SPI_CLK</td><td>Signal</td><td>ESP32 IO10</td><td>W5500 SCLK (pin 31)</td></tr>
-<tr><td>SPI_MOSI</td><td>Signal</td><td>ESP32 IO11</td><td>W5500 MOSI (pin 30)</td></tr>
-<tr><td>SPI_MISO</td><td>Signal</td><td>W5500 MISO (pin 29)</td><td>ESP32 IO12</td></tr>
-<tr><td>SPI_CS</td><td>Signal</td><td>ESP32 IO13</td><td>W5500 SCSn (pin 28)</td></tr>
-<tr><td>SPI_INT</td><td>Signal</td><td>W5500 INTn (pin 27)</td><td>ESP32 IO14</td></tr>
+<tr><td>SPI_SCLK</td><td>Signal</td><td>ESP32 <strong>IO12</strong></td><td>W5500 SCLK (pin 31)</td></tr>
+<tr><td>SPI_MOSI</td><td>Signal</td><td>ESP32 <strong>IO11</strong></td><td>W5500 MOSI (pin 30)</td></tr>
+<tr><td>SPI_MISO</td><td>Signal</td><td>W5500 MISO (pin 29)</td><td>ESP32 <strong>IO13</strong></td></tr>
+<tr><td>SPI_CS</td><td>Signal</td><td>ESP32 <strong>IO10</strong></td><td>W5500 SCSn (pin 28)</td></tr>
+<tr><td>W5500_INT</td><td>Signal</td><td>W5500 INTn (pin 27)</td><td>ESP32 <strong>IO9</strong></td></tr>
+<tr><td>W5500_RST</td><td>Signal</td><td>ESP32 <strong>IO8</strong></td><td>W5500 RSTn (+10kΩ pull-up to 3.3V)</td></tr>
 <tr><td>RELAY_1</td><td>Signal</td><td>ESP32 IO4</td><td>Q1 base (via 1kΩ)</td></tr>
 <tr><td>RELAY_2</td><td>Signal</td><td>ESP32 IO5</td><td>Q2 base (via 1kΩ)</td></tr>
-<tr><td>RELAY_3</td><td>Signal</td><td>ESP32 IO21</td><td>Q3 base (via 1kΩ)</td></tr>
-<tr><td>RELAY_4</td><td>Signal</td><td>ESP32 IO42</td><td>Q4 base (via 1kΩ)</td></tr>
+<tr><td>RELAY_3</td><td>Signal</td><td>ESP32 <strong>IO1</strong></td><td>Q3 base (via 1kΩ)</td></tr>
+<tr><td>RELAY_4</td><td>Signal</td><td>ESP32 <strong>IO2</strong></td><td>Q4 base (via 1kΩ)</td></tr>
 <tr><td>LIM_OPEN</td><td>Signal</td><td>J_SENSE pin 1 (via protection)</td><td>ESP32 IO6</td></tr>
 <tr><td>LIM_CLOSED</td><td>Signal</td><td>J_SENSE pin 3 (via protection)</td><td>ESP32 IO7</td></tr>
 <tr><td>SAFETY_BEAM</td><td>Signal</td><td>J_SENSE pin 5 (via protection)</td><td>ESP32 IO15</td></tr>
-<tr><td>RS485_TX</td><td>Signal</td><td>ESP32 IO16</td><td>MAX485 DI (pin 4)</td></tr>
-<tr><td>RS485_RX</td><td>Signal</td><td>MAX485 RO (pin 1)</td><td>ESP32 IO17</td></tr>
-<tr><td>RS485_DE</td><td>Signal</td><td>ESP32 IO18</td><td>MAX485 DE+/RE (pins 2,3)</td></tr>
+<tr><td>RS485_TX</td><td>Signal</td><td>ESP32 <strong>IO21</strong></td><td>MAX485 DI (pin 4)</td></tr>
+<tr><td>RS485_RX</td><td>Signal</td><td>MAX485 RO (pin 1)</td><td>ESP32 <strong>IO14</strong></td></tr>
+<tr><td>RS485_DE</td><td>Signal</td><td>ESP32 <strong>IO38</strong></td><td>MAX485 DE+/RE (pins 2,3)</td></tr>
 <tr><td>RS485_A</td><td>Signal</td><td>MAX485 A (pin 6)</td><td>J_RS485 pin 1</td></tr>
 <tr><td>RS485_B</td><td>Signal</td><td>MAX485 B (pin 7)</td><td>J_RS485 pin 2</td></tr>
 <tr><td>USB_DP</td><td>Signal</td><td>USB-C D+ (via 22Ω)</td><td>ESP32 IO20</td></tr>
 <tr><td>USB_DN</td><td>Signal</td><td>USB-C D- (via 22Ω)</td><td>ESP32 IO19</td></tr>
-<tr><td>LED_AUTH</td><td>Signal</td><td>ESP32 IO47</td><td>LED via 330Ω</td></tr>
-<tr><td>LED_FAULT</td><td>Signal</td><td>ESP32 IO21</td><td>LED via 330Ω</td></tr>
+<tr><td>LED_RED</td><td>Signal</td><td>ESP32 <strong>IO16</strong></td><td>LED via 330Ω</td></tr>
+<tr><td>LED_GREEN</td><td>Signal</td><td>ESP32 <strong>IO17</strong></td><td>LED via 330Ω</td></tr>
+<tr><td>LED_YELLOW</td><td>Signal</td><td>ESP32 <strong>IO18</strong></td><td>LED via 330Ω</td></tr>
+<tr><td>UART0_TX / UART0_RX</td><td>Signal</td><td>ESP32 IO43 / IO44</td><td>J_PROG header (console — bench plan Stage 1 serial log)</td></tr>
 </table>
+
+<div class="note">This netlist restates §1.4 (the firmware source of truth) with the board-side endpoints attached. If the two tables ever disagree, §1.4 wins and this appendix is the typo.</div>
 
 <!-- APPENDIX B -->
 <h2 style="page-break-before: always;">Appendix B: Full BOM with LCSC Part Numbers</h2>
@@ -1316,15 +1383,16 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>24</td><td>F1</td><td>Polyfuse</td><td>2A hold / 4A trip</td><td>1206</td><td>C70069</td><td>1</td></tr>
 <tr><td>25</td><td>LED1</td><td>Power LED</td><td>Green 0805</td><td>0805</td><td>C2297</td><td>1</td></tr>
 <tr><td>26</td><td>LED2</td><td>Network LED</td><td>Yellow 0805</td><td>0805</td><td>C2296</td><td>1</td></tr>
-<tr><td>27</td><td>LED3</td><td>Auth LED</td><td>Green 0805</td><td>0805</td><td>C2297</td><td>1</td></tr>
-<tr><td>28</td><td>LED4</td><td>Fault LED</td><td>Red 0805</td><td>0805</td><td>C2286</td><td>1</td></tr>
-<tr><td>29</td><td>LED5–LED8</td><td>Relay Status LED</td><td>Green 0603</td><td>0603</td><td>C72043</td><td>4</td></tr>
+<tr><td>27</td><td>LED3</td><td>Status LED red (IO16)</td><td>Red 0805</td><td>0805</td><td>C2286</td><td>1</td></tr>
+<tr><td>28</td><td>LED4</td><td>Status LED green (IO17)</td><td>Green 0805</td><td>0805</td><td>C2297</td><td>1</td></tr>
+<tr><td>28b</td><td>LED5</td><td>Status LED yellow (IO18)</td><td>Yellow 0805</td><td>0805</td><td>C2296</td><td>1</td></tr>
+<tr><td>29</td><td>LED6–LED9</td><td>Relay Status LED</td><td>Green 0603</td><td>0603</td><td>C72043</td><td>4</td></tr>
 <tr><td>30</td><td>SW1</td><td>Reset Button</td><td>TL3342 tactile</td><td>SMD 6×3.5mm</td><td>C318884</td><td>1</td></tr>
 <tr><td>31</td><td>SW2</td><td>Boot Button</td><td>TL3342 tactile</td><td>SMD 6×3.5mm</td><td>C318884</td><td>1</td></tr>
 <tr><td colspan="7"><strong>Passive Components</strong></td></tr>
 <tr><td>32</td><td>R (various)</td><td>1kΩ 0603</td><td>1kΩ 1% 1/10W</td><td>0603</td><td>C11702</td><td>12</td></tr>
 <tr><td>33</td><td>R (various)</td><td>10kΩ 0603</td><td>10kΩ 1% 1/10W</td><td>0603</td><td>C25804</td><td>10</td></tr>
-<tr><td>34</td><td>R (various)</td><td>330Ω 0603</td><td>330Ω 1% 1/10W</td><td>0603</td><td>C23138</td><td>7</td></tr>
+<tr><td>34</td><td>R (various)</td><td>330Ω 0603</td><td>330Ω 1% 1/10W</td><td>0603</td><td>C23138</td><td>8</td></tr>
 <tr><td>35</td><td>R (various)</td><td>680Ω 0603</td><td>680Ω 1% 1/10W</td><td>0603</td><td>C23179</td><td>1</td></tr>
 <tr><td>36</td><td>R (various)</td><td>22Ω 0603</td><td>22Ω 1% 1/10W</td><td>0603</td><td>C23345</td><td>2</td></tr>
 <tr><td>37</td><td>R (various)</td><td>5.1kΩ 0603</td><td>5.1kΩ 1% 1/10W</td><td>0603</td><td>C23186</td><td>2</td></tr>
@@ -1404,9 +1472,9 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 
 <hr>
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
-Gate Automation Field PCB Design Guide — KiCad 9.0<br>
+Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 1.0 — April 2026
+Document revision 2.0 — July 2026 (pin map synchronized with firmware v1.0.0; supersedes rev 1.0 / KiCad 9.0, April 2026)
 </p>
 
 </body>

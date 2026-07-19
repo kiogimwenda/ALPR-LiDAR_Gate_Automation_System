@@ -9,6 +9,12 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide rewritten as revision 2.0 for **KiCad 10.0**
+  (`docs/hardware/10-pcb-design-kicad10.{html,pdf}`), with the pin map
+  **re-synchronized to firmware v1.0.0** — rev 1.0 predated the
+  firmware drivers and disagreed with them on the entire W5500 SPI
+  bus, INT/RST, the status LEDs, and RS-485 placement. §1.4 is now
+  the routing source of truth.
 - Hardware prototyping and bench validation
   ([plan](docs/hardware/11-bench-validation-plan.md)), then site
   commissioning ([checklist](docs/commissioning.md)).

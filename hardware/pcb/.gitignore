@@ -1,0 +1,11 @@
+# KiCad volatile/derived files — the committed design is
+# *.kicad_pro / *.kicad_sch / *.kicad_pcb (LFS-tracked via
+# .gitattributes); everything below is per-machine state.
+*.lck
+*.kicad_prl
+_autosave-*
+*-backups/
+.history/
+fp-info-cache
+*.kicad_sch-bak
+*.kicad_pcb-bak

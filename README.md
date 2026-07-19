@@ -405,7 +405,7 @@ because editing the Mermaid is part of the PR workflow.
 > [`docs/hardware/`](docs/hardware/); BOM at
 > [`hardware/bom/prototype-bom.md`](hardware/bom/prototype-bom.md);
 > 48-page PCB design guide at
-> [`docs/hardware/10-pcb-design-kicad9.pdf`](docs/hardware/10-pcb-design-kicad9.pdf).
+> [`docs/hardware/10-pcb-design-kicad10.pdf`](docs/hardware/10-pcb-design-kicad10.pdf).
 
 ### What I built
 
@@ -430,7 +430,7 @@ documented gotcha list.
 | `docs/hardware/08-network-switch.md` | TP-Link TL-SG1005P PoE — VLAN config (per ADR-008's dedicated VLAN constraint), PoE budget math. |
 | `docs/hardware/09-gpu-server.md` | Production server BOM — RTX 4060, Ryzen 5, 32 GB RAM, NVMe — and why this combination fits the inference workload at the budget. |
 | `docs/hardware/BUILD_BOOK.md` | Master assembly walkthrough — unboxing → first power-on → smoke test, in order. |
-| `docs/hardware/10-pcb-design-kicad9.{html,pdf}` | 48-page step-by-step KiCad 9.0 guide for the custom 4-layer field PCB — schematic capture, footprint selection, layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
+| `docs/hardware/10-pcb-design-kicad10.{html,pdf}` | Step-by-step KiCad 10.0 guide (rev 2.0, 59 pp — pin map synchronized with firmware v1.0.0) for the custom 4-layer field PCB — schematic capture, footprint selection, layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
 | `docs/hardware/11-bench-validation-plan.md` | Phase 5.4 — staged bench bring-up and validation plan: flash → W5500 → plaintext gRPC → on-hardware mTLS → OTA (with must-reject negatives) → 8 h soak, each stage with pass criteria, debug tables, and a host-test mirror so bench failures isolate to hardware, not logic. |
 | `hardware/bom/prototype-bom.md` | Per-line BOM with KES + USD pricing, supplier names, and a single-gate subtotal. |
 
@@ -4987,7 +4987,7 @@ Full BOM with sources and prices: [`hardware/bom/prototype-bom.md`](hardware/bom
 Build book (9 step-by-step component guides + master assembly): [`docs/hardware/BUILD_BOOK.md`](docs/hardware/BUILD_BOOK.md).
 
 Production PCB: 4-layer 100×80 mm field controller designed in KiCad 9.0
-— [48-page design guide PDF](docs/hardware/10-pcb-design-kicad9.pdf).
+— [design guide PDF](docs/hardware/10-pcb-design-kicad10.pdf).
 
 ---
 
@@ -5053,7 +5053,7 @@ ctest --preset release
 - [Architecture decisions (ADRs)](docs/decisions/) — 13 records covering license, RPC, web framework, MCU, LiDAR, camera, gate actuator, OTA, model licensing, firmware transport, fusion sensing
 - [System diagrams](docs/diagrams/) — 7 Mermaid flowcharts (system, ALPR, LiDAR, fusion, gate state machine, OTA, sim mode)
 - [Hardware build book](docs/hardware/BUILD_BOOK.md) — bench prototype to working gate in ~3.5 h
-- [PCB design guide (PDF)](docs/hardware/10-pcb-design-kicad9.pdf) — KiCad 9.0 schematic-to-Gerbers
+- [PCB design guide (PDF)](docs/hardware/10-pcb-design-kicad10.pdf) — KiCad 10.0 schematic-to-Gerbers, pin map synced to firmware v1.0.0
 - [Bill of materials](hardware/bom/prototype-bom.md) — every part with KES + USD pricing and Nairobi/AliExpress sources
 
 ---
