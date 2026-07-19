@@ -85,7 +85,7 @@ release on GitHub.
 |---|---|---|
 | 6.1 | Operations runbook | ✅ Complete |
 | 6.2 | Site commissioning checklist | ✅ Complete |
-| 6.3 | One-command demo stack + guided tour | ⏳ Pending |
+| 6.3 | One-command demo stack + guided tour | ✅ Complete |
 | 6.4 | Release engineering (changelog, tags, v1.0.0) + Phase 6 closure | ⏳ Pending |
 
 ### Phase 4 sub-milestones (current)
@@ -4823,7 +4823,7 @@ remote config, not a code comment.
 
 ---
 
-## Phase 6.2 — Commissioning checklist: lab to live gate, sign-off-able (latest)
+## Phase 6.2 — Commissioning checklist: lab to live gate, sign-off-able
 
 [`docs/commissioning.md`](docs/commissioning.md) picks up exactly
 where the bench plan ends — its Stage 7 exit criteria are this
@@ -4852,6 +4852,37 @@ matches the Build Book IP plan. Carried forward as tracked gaps:
 the first multi-gate site), and fail-safe-open on power loss is a
 Centurion configuration behavior — surveyed and observed at
 commissioning (A12) rather than enforced by the repo.
+
+---
+
+## Phase 6.3 — The demo: the whole product in one command (latest)
+
+```bash
+cmake --preset debug-cpu && cmake --build --preset debug-cpu
+scripts/demo-stack.sh          # add --hardened for mTLS + JWT
+```
+
+[`scripts/demo-stack.sh`](scripts/demo-stack.sh) boots the real stack
+on loopback from a CPU-only build — no GPU, no hardware: gate-server
+with a temp allowlist, two virtual gates (one with visible 4-second
+travel and auto-close), the dashboard on :8080 (serving the SPA when
+it's built), and gate-vision replaying a looping scripted scenario.
+Every ~20 seconds the site *lives*: an unknown plate is denied, then
+the allowlisted demo plate authorizes, the server auto-dispatches
+`OPEN_GATE`, and gate-demo-01 travels CLOSED → OPENING → OPEN →
+auto-closes. `--hardened` re-runs the whole thing behind an ephemeral
+site PKI and JWT admin auth, printing the demo credentials so the
+401 → login → 200 flow can be shown live. Ctrl-C tears everything
+down — child processes reaped, temp state deleted, nothing orphaned
+(verified by running both modes and checking).
+
+[`docs/demo.md`](docs/demo.md) is the guided tour: what appears and
+why the auto-open loop is the product's core, a things-to-try table
+(command a gate by hand, delete the demo plate and watch verdicts
+flip to denied, drive a third gate interactively with
+`gate-sim --interactive`), and an honest "what this demo is NOT" —
+no GPU inference, no real camera — pointing at the bench plan and
+ADR-012 for where the hardware story continues.
 
 ---
 
@@ -4980,6 +5011,12 @@ ctest --preset release
 
 ## Documentation
 
+- [Operations runbook](docs/runbook.md) — day-2 operations: health checks, rotation, OTA releases, incident playbooks
+- [Commissioning checklist](docs/commissioning.md) — bench-validated hardware → live gate, with acceptance tests and sign-off
+- [Demo guide](docs/demo.md) — the one-command demo stack (`scripts/demo-stack.sh`)
+- [Bench validation plan](docs/hardware/11-bench-validation-plan.md) — staged hardware bring-up with pass criteria
+- [Security posture](docs/security.md) — what protects what, key custody, what the tests enforce
+- [Changelog](CHANGELOG.md) — phase-level release history
 - [Environment audit](docs/env-audit.md) — every tool, every version, every challenge solved during bootstrap
 - [Architecture decisions (ADRs)](docs/decisions/) — 13 records covering license, RPC, web framework, MCU, LiDAR, camera, gate actuator, OTA, model licensing, firmware transport, fusion sensing
 - [System diagrams](docs/diagrams/) — 7 Mermaid flowcharts (system, ALPR, LiDAR, fusion, gate state machine, OTA, sim mode)
