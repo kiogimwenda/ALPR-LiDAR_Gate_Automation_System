@@ -84,7 +84,7 @@ release on GitHub.
 | # | Milestone | Status |
 |---|---|---|
 | 6.1 | Operations runbook | ✅ Complete |
-| 6.2 | Site commissioning checklist | 🔵 In progress |
+| 6.2 | Site commissioning checklist | ✅ Complete |
 | 6.3 | One-command demo stack + guided tour | ⏳ Pending |
 | 6.4 | Release engineering (changelog, tags, v1.0.0) + Phase 6 closure | ⏳ Pending |
 
@@ -4791,7 +4791,7 @@ table) and put a board on the bench.**
 
 ---
 
-## Phase 6.1 — Operations runbook: the 2 a.m. document (latest)
+## Phase 6.1 — Operations runbook: the 2 a.m. document
 
 Phase 6 is delivery: making the system operable, installable, and
 demonstrable by someone who didn't build it. It opens with
@@ -4820,6 +4820,38 @@ has no leaf-only renewal mode (the 3-year rotation's most error-prone
 step), and a gate open at outage time stays open under the compiled
 `auto_close_ms = 0` — an operational posture decision that deserves
 remote config, not a code comment.
+
+---
+
+## Phase 6.2 — Commissioning checklist: lab to live gate, sign-off-able (latest)
+
+[`docs/commissioning.md`](docs/commissioning.md) picks up exactly
+where the bench plan ends — its Stage 7 exit criteria are this
+document's entry criteria — and orders everything between a validated
+field controller and a live residential gate. Nine sections, each
+ending in rows that feed a 13-row sign-off sheet: what to bring
+(including the pre-provisioned firmware build); site survey (camera
+geometry for plate readability per guide 04, Centurion dry-contact
+access per ADR-008); physical install with the **R4 actuator-profile
+decision recorded before any wire lands on a motor terminal** — a
+blank decision box is a blocked section, not a skippable one;
+network (dedicated VLAN, the verified port set: 50051 gRPC, 8080
+dashboard, 8081/8444 OTA); server provisioning where the production
+posture is mandatory — `TLS_EXTRA_ARGS` and `AUTH_EXTRA_ARGS`
+uncommented, journal swept for the loud warnings that must NOT be
+there; site PKI + firmware provisioning with every Kconfig value
+confirmed in a table (the R1/R2 drifted defaults explicitly
+overridden, the fail-closed cert build used as provisioning proof);
+13 numbered acceptance tests mirroring the E2E suite on real
+hardware; and handover — credentials with a custody table, the
+runbook in the operator's hands.
+
+Also fixed alongside: `gate-vision.env`'s example RTSP address now
+matches the Build Book IP plan. Carried forward as tracked gaps:
+`gen-tls-certs.sh` can't issue per-gate leaf certs yet (needed before
+the first multi-gate site), and fail-safe-open on power loss is a
+Centurion configuration behavior — surveyed and observed at
+commissioning (A12) rather than enforced by the repo.
 
 ---
 
