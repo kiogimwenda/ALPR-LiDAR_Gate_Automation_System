@@ -77,7 +77,16 @@ release on GitHub.
 | **3** | Hardware research & build guides | ✅ Complete | 9 component guides + master build book + complete BOM + 48-page KiCad 9.0 PCB design guide (PDF). |
 | **4** | Implementation | ✅ Complete | Modern C++20 server, ESP-IDF firmware, simulation, dashboard, security hardening. |
 | **5** | Vision ingest & hardware readiness | ✅ Complete | ADR-012 fusion sensing, `gate-vision` ingest daemon, auto-open on authorized detection, bench validation plan. |
-| 6 | Delivery | ⏳ Pending | Runbook, commissioning checklist, demo script, public release. |
+| **6** | Delivery | 🔵 **In progress** — see below | Runbook, commissioning checklist, demo script, public release. |
+
+### Phase 6 sub-milestones (current)
+
+| # | Milestone | Status |
+|---|---|---|
+| 6.1 | Operations runbook | ✅ Complete |
+| 6.2 | Site commissioning checklist | 🔵 In progress |
+| 6.3 | One-command demo stack + guided tour | ⏳ Pending |
+| 6.4 | Release engineering (changelog, tags, v1.0.0) + Phase 6 closure | ⏳ Pending |
 
 ### Phase 4 sub-milestones (current)
 
@@ -4745,7 +4754,7 @@ Suite total: **164** CPU / **170** GPU.
 
 ---
 
-## Phase 5.4 — Bench validation plan: the software hands over to the workbench (latest)
+## Phase 5.4 — Bench validation plan: the software hands over to the workbench
 
 The last artifact before hardware:
 [`docs/hardware/11-bench-validation-plan.md`](docs/hardware/11-bench-validation-plan.md),
@@ -4779,6 +4788,38 @@ fusion-sensor future has an ADR, and the bench has an executable
 plan with exit criteria that gate the move to gate-motor
 integration. **Next step: buy the day-one BOM subset (Stage 0's
 table) and put a board on the bench.**
+
+---
+
+## Phase 6.1 — Operations runbook: the 2 a.m. document (latest)
+
+Phase 6 is delivery: making the system operable, installable, and
+demonstrable by someone who didn't build it. It opens with
+[`docs/runbook.md`](docs/runbook.md) — the day-2 manual for a
+deployed site, every command verified against the tree before being
+written down.
+
+Nine sections organized for lookup speed: a one-table map of every
+process, unit, port, and log; routine health checks with the exact
+journal lines that flag a degraded posture (the plaintext and
+auth-disabled warnings exist precisely to be grepped for); allowlist
+administration over the JWT-protected REST API; rotation procedures
+for the admin password, the JWT secret, and the site TLS material —
+with the custody rules for the two keys that must stay offline; the
+production OTA signing/publish/rollback flow; live SQLite backup
+(WAL-safe `.backup`) and restore; host upgrades and the `.prev`
+rollback; and the 2 a.m. incident playbooks — gate won't move (verdict
+vs. command vs. hardware triage), server down (what the firmware
+actually does: bounded reconnect backoff, gate holds its last
+commanded state), suspected compromised cert, fleet-wide 401s, stuck
+OTA — closing with an escalate-to-engineering list and the evidence
+to capture first.
+
+Writing it surfaced follow-ups now on the record: `gen-tls-certs.sh`
+has no leaf-only renewal mode (the 3-year rotation's most error-prone
+step), and a gate open at outage time stays open under the compiled
+`auto_close_ms = 0` — an operational posture decision that deserves
+remote config, not a code comment.
 
 ---
 
