@@ -77,7 +77,7 @@ release on GitHub.
 | **3** | Hardware research & build guides | ✅ Complete | 9 component guides + master build book + complete BOM + 48-page KiCad 9.0 PCB design guide (PDF). |
 | **4** | Implementation | ✅ Complete | Modern C++20 server, ESP-IDF firmware, simulation, dashboard, security hardening. |
 | **5** | Vision ingest & hardware readiness | ✅ Complete | ADR-012 fusion sensing, `gate-vision` ingest daemon, auto-open on authorized detection, bench validation plan. |
-| **6** | Delivery | 🔵 **In progress** — see below | Runbook, commissioning checklist, demo script, public release. |
+| **6** | Delivery | ✅ Complete | Runbook, commissioning checklist, one-command demo, v1.0.0 release. |
 
 ### Phase 6 sub-milestones (current)
 
@@ -86,7 +86,7 @@ release on GitHub.
 | 6.1 | Operations runbook | ✅ Complete |
 | 6.2 | Site commissioning checklist | ✅ Complete |
 | 6.3 | One-command demo stack + guided tour | ✅ Complete |
-| 6.4 | Release engineering (changelog, tags, v1.0.0) + Phase 6 closure | ⏳ Pending |
+| 6.4 | Release engineering (changelog, tags, v1.0.0) + Phase 6 closure | ✅ Complete |
 
 ### Phase 4 sub-milestones (current)
 
@@ -4855,7 +4855,7 @@ commissioning (A12) rather than enforced by the repo.
 
 ---
 
-## Phase 6.3 — The demo: the whole product in one command (latest)
+## Phase 6.3 — The demo: the whole product in one command
 
 ```bash
 cmake --preset debug-cpu && cmake --build --preset debug-cpu
@@ -4883,6 +4883,38 @@ flip to denied, drive a third gate interactively with
 `gate-sim --interactive`), and an honest "what this demo is NOT" —
 no GPU inference, no real camera — pointing at the bench plan and
 ADR-012 for where the hardware story continues.
+
+---
+
+## Phase 6.4 — Release engineering: v1.0.0 (latest)
+
+The delivery phase closes with release mechanics:
+[`CHANGELOG.md`](CHANGELOG.md) (Keep-a-Changelog style, one entry per
+phase tag, pointing at the README's chronological log for the full
+story), [`CONTRIBUTING.md`](CONTRIBUTING.md) (the build, the three CI
+gates as local commands, the merge bar — including the non-negotiable
+security posture — and the ADR supersession process), retroactive
+phase tags `v0.5.0-phase4` and `v0.6.0-phase5` on the commits that
+closed those phases, and **`v1.0.0-phase6`** on `main` — `develop`
+merged, the release published on GitHub.
+
+**Phase 6 — and with it the software project — is complete.** Phases
+0 through 6: environment → decisions → architecture → hardware
+research → implementation (server, firmware, simulation, dashboard,
+deployment, E2E, security) → vision ingest and hardware readiness →
+delivery. 164 CPU / 170 GPU tests, five multi-process E2E passes, all
+green in CI at every step of the way.
+
+What remains is deliberately not software: put a board on the bench
+([the plan](docs/hardware/11-bench-validation-plan.md)), commission a
+site ([the checklist](docs/commissioning.md)), and — an owner's
+decision, not a commit — flip the repository public. The
+public-release checklist: make the repo public; switch the CodeQL
+workflow back to `push` triggers (code scanning is free on public
+repos — it was moved to `workflow_dispatch` because GHAS is
+paid-only on private ones); add repo topics and a description;
+protect `main`; and mind Git LFS bandwidth (the PCB PDF ships via
+LFS — public clones count against the quota).
 
 ---
 
