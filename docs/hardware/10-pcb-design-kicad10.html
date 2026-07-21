@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 2.0<br>
+<strong>Date:</strong> July 2026 — revision 2.1<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -121,6 +121,8 @@ ol.steps > li { margin-bottom: 14px; }
 <p>This guide walks you through designing a custom PCB for the gate automation field controller using KiCad 10.0. The board replaces the breadboard prototype and integrates all gate-side electronics into a single, production-ready, 4-layer PCB sized to fit inside a standard IP65 enclosure.</p>
 
 <div class="note"><strong>Revision 2.0 (July 2026).</strong> This revision supersedes the April 2026 KiCad 9.0 guide. Two things changed: the tooling moved to KiCad 10.0, and — far more important — the pin map was <strong>re-synchronized with the shipped firmware (v1.0.0)</strong>. Revision 1.0 predated the firmware's driver work (Phases 4.4–4.5) and disagreed with it on the entire W5500 SPI bus, the W5500 INT/RST lines, and the status LEDs; it also placed RS-485 on pins the firmware later took for LEDs, and double-booked IO21. A board routed from revision 1.0 will not run the firmware. §1.4 is now the single source of truth for every net; every schematic section and Appendix A have been corrected against it.</div>
+
+<div class="note"><strong>Revision 2.1 (July 2026).</strong> Caught during schematic review of the first built power-supply sheet. Three fixes to §4.3 / §5.1 / Appendix B, all on the 5V buck rail: (1) the VSENSE feedback divider's <code>R_top</code> was wrong — 43 kΩ paired with the 10 kΩ bottom leg actually sets ~6.47V, not the claimed 5.0V; corrected to 30.9 kΩ. (2) the power-path diagram and BOM were missing two components that §4.3's own tables required but never drew: the series reverse-polarity diode ahead of the TVS, and the PH-to-GND catch/freewheeling diode the TPS5430 needs (it has no internal low-side switch) — both are now in the diagram and BOM. (3) the "C_comp / R_comp" compensation pair in §4.3 has been removed — the TPS5430 has no external COMP pin; compensation is fixed internally, and those two components never did anything.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -381,11 +383,12 @@ kicad-cli version
 <h4>12V Input Protection</h4>
 <table>
 <tr><th>Component</th><th>Selection</th><th>Footprint</th></tr>
-<tr><td>Reverse polarity MOSFET</td><td>SI2301 (P-ch, SOT-23) or Schottky SS34</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td></tr>
+<tr><td>Reverse-polarity diode</td><td>SS34 (3A, 40V Schottky) — series, downstream of the polyfuse, cathode toward the load</td><td><code>Diode_SMD:D_SMA</code></td></tr>
 <tr><td>Input TVS diode</td><td>SMBJ15A (15V standoff, 600W)</td><td><code>Diode_SMD:D_SMB</code></td></tr>
 <tr><td>Input capacitor</td><td>100 µF, 25V, electrolytic</td><td><code>Capacitor_SMD:CP_Elec_8x10.5</code></td></tr>
 <tr><td>Polyfuse</td><td>MF-MSMF200 (2A hold, 4A trip)</td><td><code>Fuse:Fuse_1206_3216Metric</code></td></tr>
 </table>
+<div class="note">A P-channel MOSFET (e.g. SI2301, gate tied to GND, placed in the return leg) is the lower-drop alternative if the series Schottky's ~0.3–0.5V forward drop matters for your input budget — TPS5430 VIN tolerates it easily either way (5.5–36V range). The reference design and Appendix B BOM use the simpler series Schottky.</div>
 
 <h4>5V Buck Converter (12V → 5V)</h4>
 <table>
@@ -405,12 +408,12 @@ kicad-cli version
 <tr><td>D1 (Schottky)</td><td>SS34 (3A, 40V)</td><td><code>Diode_SMD:D_SMA</code></td><td>Catch diode</td></tr>
 <tr><td>C_in</td><td>22 µF, 25V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Input filter</td></tr>
 <tr><td>C_out (×2)</td><td>47 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Output filter</td></tr>
-<tr><td>C_boot</td><td>100 nF, 16V</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Bootstrap capacitor</td></tr>
-<tr><td>R_top</td><td>43 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider top</td></tr>
-<tr><td>R_bot</td><td>10 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider bottom (Vout = 1.221 × (1 + 43k/10k) ≈ 5.0V)</td></tr>
-<tr><td>C_comp</td><td>3.3 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Compensation</td></tr>
-<tr><td>R_comp</td><td>15 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Compensation</td></tr>
+<tr><td>C_boot</td><td>100 nF, 16V</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Bootstrap capacitor — <strong>BOOT to PH</strong>, not BOOT to GND (see diagram note below)</td></tr>
+<tr><td>D_catch</td><td>SS34 (3A, 40V Schottky)</td><td><code>Diode_SMD:D_SMA</code></td><td>Catch/freewheeling diode, cathode at PH, anode at GND — the TPS5430's high-side switch is not synchronous, this diode carries the low-side current</td></tr>
+<tr><td>R_top</td><td>30.9 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider top</td></tr>
+<tr><td>R_bot</td><td>10 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider bottom (Vout = 1.221 × (1 + 30.9k/10k) ≈ 5.00V)</td></tr>
 </table>
+<div class="note">The TPS5430 has <strong>no external COMP pin</strong> — compensation is fixed internally (TI's on-chip type-III network), so there is nothing to add here. Earlier printings of this table listed a 3.3 nF / 15 kΩ "C_comp / R_comp" pair; that was wrong for this part (it doesn't correspond to any pin on the 8-pin HSOP package) and has been removed.</div>
 
 <h4>3.3V LDO (5V → 3.3V)</h4>
 <table>
@@ -632,39 +635,57 @@ kicad-cli version
 <h4>Complete Power Path</h4>
 <pre><code>J_PWR (12V IN)
   │
-  ├── Polyfuse F1 (2A) ──┬── TVS D_TVS1 (SMBJ15A) ──┐
-  │                       │                            GND
-  │                       │
-  │                       ├── C_in_bulk (100µF/25V electrolytic)
-  │                       │
-  │                       ▼
-  │              ┌─────────────────┐
-  │              │    TPS5430      │
-  │              │                 │
-  │              │ VIN     BOOT────┤── C_boot (100nF)
-  │              │         SW──────┤── L1 (33µH) ──┬── C_out1 (47µF)
-  │              │         GND     │               ├── C_out2 (47µF)
-  │              │         EN      │               │
-  │              │         VSNS────┤── R_top(43k)──┤
-  │              │                 │               ├── R_bot(10k)──GND
-  │              └─────────────────┘               │
-  │                                                ▼
-  │                                           +5V RAIL
-  │                                                │
-  │                                    ┌───────────┤
-  │                                    │           │
-  │                           C_in_ldo(10µF)       │
-  │                                    │           ▼
-  │                                    │   ┌──────────────┐
-  │                                    │   │  AMS1117-3.3 │
-  │                                    │   │ IN    OUT─────┤── C_out_ldo(22µF)
-  │                                    │   │       GND     │
-  │                                    │   └──────────────┘
-  │                                    │           │
-  │                                    │           ▼
-  │                                    │      +3.3V RAIL
-  │                                    │
-  └── 12V RAIL (to safety beams, RS-485 if needed)</code></pre>
+  ├── Polyfuse F1 (2A)
+  │        │
+  │        ▼
+  │   D2 (SS34, series reverse-polarity — anode toward F1, cathode toward load)
+  │        │
+  │        ├──┬── TVS D1 (SMBJ15A, cathode here, anode → GND)
+  │        │  │
+  │        │  ├── C_in_bulk (100µF/25V electrolytic, + here, – GND)
+  │        │  │
+  │        │  ▼
+  │        │ ┌─────────────────┐
+  │        │ │    TPS5430      │
+  │        │ │                 │
+  │        └─┤ VIN     BOOT────┤── C_boot (100nF) ──┐
+  │          │  ▲      PH──────┤── L1 (33µH) ──┬─────┴── C_out1 (47µF)
+  │          │  │              │                ├── C_out2 (47µF)
+  │          │  C_in (22µF     │                │
+  │          │  ceramic, right │      D3 (SS34 catch diode:  │
+  │          │  at pin 7 —     │      cathode → PH, anode → GND)
+  │          │  separate from  │
+  │          │  C_in_bulk)     │
+  │          │         GND     │
+  │          │         EN      │
+  │          │         VSNS────┤── R_top(30.9k)──┬── R_bot(10k)──GND
+  │          └─────────────────┘                 │
+  │                                               ▼
+  │                                          +5V RAIL
+  │                                               │
+  │                                   ┌───────────┤
+  │                                   │           │
+  │                          C_in_ldo(10µF)       │
+  │                                   │           ▼
+  │                                   │   ┌──────────────┐
+  │                                   │   │  AMS1117-3.3 │
+  │                                   │   │ IN    OUT─────┤── C_out_ldo(22µF)
+  │                                   │   │       GND     │
+  │                                   │   └──────────────┘
+  │                                   │           │
+  │                                   │           ▼
+  │                                   │      +3.3V RAIL
+  │                                   │
+  └── 12V RAIL (to safety beams, RS-485 if needed — tap after D2, the same
+                 protected node the TVS and VIN sit on, not the raw J_PWR side)</code></pre>
+</div>
+
+<div class="warning"><strong>Three polarities that are easy to get backwards — verify each in schematic ERC and again visually before layout:</strong>
+<ul>
+<li><strong>C_boot</strong> connects BOOT to <strong>PH</strong>, not to GND. Tying it to GND removes the high-side FET's gate-drive supply — the regulator will not switch correctly.</li>
+<li><strong>D2</strong> (reverse-polarity) must pass forward current in the normal direction: anode toward the polyfuse/connector, cathode toward the TVS/VIN node. Backwards, it blocks all current.</li>
+<li><strong>D3</strong> (catch diode) cathode goes to <strong>PH</strong>, anode to GND — it needs to conduct from GND into PH while the high-side switch is off. Backwards, it does nothing (or clamps the wrong direction).</li>
+</ul>
 </div>
 
 <h4>Schematic Entry Steps</h4>
@@ -673,10 +694,14 @@ kicad-cli version
 <li>Place power symbols: Press <strong>P</strong>, search for <code>+12V</code>, <code>+5V</code>, <code>+3.3V</code>, <code>GND</code>. Place one of each as rail references.</li>
 <li>Place J_PWR: Press <strong>A</strong> (Add Symbol), search <code>Screw_Terminal_01x02</code>. Place it at the left edge of the sheet. Label pins: pin1 = +12V_IN, pin2 = GND.</li>
 <li>Place the polyfuse F1: Symbol <code>Polyfuse</code>. Connect in series with +12V_IN.</li>
-<li>Place TVS D_TVS1: Symbol <code>D_TVS</code>. Connect cathode to the +12V net (after polyfuse), anode to GND.</li>
-<li>Place C_in_bulk (100µF): Symbol <code>C_Polarized</code>. Connect + to +12V, – to GND.</li>
-<li>Place U_BUCK (TPS5430): Symbol <code>TPS5430DDA</code>. Wire VIN to +12V, GND to GND.</li>
-<li>Place all external components for the TPS5430 as shown in the power path diagram above.</li>
+<li>Place D2, the reverse-polarity diode: Symbol <code>D_Schottky</code>. Connect in series after F1 — anode toward F1, cathode toward the rest of the power section.</li>
+<li>Place TVS D1: Symbol <code>D_TVS</code>. Connect cathode to the protected +12V net (after D2), anode to GND.</li>
+<li>Place C_in_bulk (100µF): Symbol <code>C_Polarized</code>. Connect + to the protected +12V net, – to GND.</li>
+<li>Place U_BUCK (TPS5430): Symbol <code>TPS5430DDA</code>. Wire VIN to the protected +12V net, GND (and the GNDPAD exposed-pad pin) to GND.</li>
+<li>Place C_in, a 22µF ceramic, directly across VIN/GND at the TPS5430's own pins — this is in addition to C_in_bulk, not instead of it.</li>
+<li>Place C_boot (100nF) from BOOT to PH — <strong>not</strong> to GND; it needs to be on the switch node to supply the high-side gate driver.</li>
+<li>Place D3, the catch diode: Symbol <code>D_Schottky</code>. Connect cathode to PH, anode to GND.</li>
+<li>Place all remaining external components for the TPS5430 (L1, C_out ×2, the R_top/R_bot feedback divider) as shown in the power path diagram above. Use R_top = 30.9kΩ, R_bot = 10kΩ — this is what sets the output to 5.0V.</li>
 <li>Place U_LDO (AMS1117-3.3): Symbol <code>AMS1117-3.3</code>. Wire VIN to +5V, VOUT to +3.3V, GND to GND.</li>
 <li>Place input/output capacitors for the LDO.</li>
 <li>Add <strong>test points</strong>: Place symbol <code>TestPoint</code> on +12V, +5V, and +3.3V nets.</li>
@@ -1306,7 +1331,8 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <h3>11.3 Troubleshooting</h3>
 <table>
 <tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
-<tr><td>No 5V output</td><td>TPS5430 not switching — check solder on exposed pad</td><td>Reflow TPS5430 with hot air. Verify EN pin is high.</td></tr>
+<tr><td>No 5V output</td><td>TPS5430 not switching — check solder on exposed pad, C_boot on the wrong node, or a missing/backwards catch diode</td><td>Reflow TPS5430 with hot air. Verify EN pin is high. Confirm C_boot goes BOOT→PH (not GND) and D3's cathode is at PH.</td></tr>
+<tr><td>5V rail reads ~6.4–6.5V instead of 5V</td><td>Feedback divider using the old 43kΩ R_top instead of 30.9kΩ (rev 2.0 and earlier BOM error)</td><td>Replace R_top with 30.9kΩ, 1% (§4.3). Re-measure TP_5V — should land 4.9–5.1V.</td></tr>
 <tr><td>3.3V reads 5V</td><td>AMS1117 soldered backwards</td><td>Check tab orientation (tab connects to VOUT on AMS1117)</td></tr>
 <tr><td>ESP32 not enumerating on USB</td><td>USB D+/D- swapped or CC resistors wrong</td><td>Verify D+ goes to IO20, D- to IO19. Check 5.1kΩ on CC pins.</td></tr>
 <tr><td>W5500 no link</td><td>Crystal not oscillating</td><td>Probe XI with oscilloscope. Check crystal solder joints and load caps.</td></tr>
@@ -1320,7 +1346,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 
 <table>
 <tr><th>Net Name</th><th>Type</th><th>Source</th><th>Destination(s)</th></tr>
-<tr><td>+12V</td><td>Power</td><td>J_PWR pin 1 (via polyfuse)</td><td>TPS5430 VIN, Safety beam TX/RX, TVS</td></tr>
+<tr><td>+12V</td><td>Power</td><td>J_PWR pin 1 (via polyfuse F1 + reverse-polarity diode D2)</td><td>TPS5430 VIN, Safety beam TX/RX, TVS D1</td></tr>
 <tr><td>+5V</td><td>Power</td><td>TPS5430 output</td><td>AMS1117 IN, Relay coils, MAX485 VCC, USB VBUS (via diode)</td></tr>
 <tr><td>+3V3</td><td>Power</td><td>AMS1117 output</td><td>ESP32-S3 3V3, W5500 DVDD/AVDD, Pull-ups, LEDs</td></tr>
 <tr><td>GND</td><td>Power</td><td>Common ground</td><td>All GND pins, plane L2</td></tr>
@@ -1373,7 +1399,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>14</td><td>K1–K4</td><td>Relay SPDT</td><td>SRD-05VDC-SL-C</td><td>Through-hole</td><td>C35449</td><td>4</td></tr>
 <tr><td>15</td><td>Q1–Q4</td><td>NPN Transistor</td><td>SS8050 (SOT-23)</td><td>SOT-23</td><td>C164886</td><td>4</td></tr>
 <tr><td>16</td><td>D1–D4</td><td>Flyback Diode</td><td>1N4148W</td><td>SOD-123</td><td>C81598</td><td>4</td></tr>
-<tr><td>17</td><td>D5</td><td>Catch Diode (buck)</td><td>SS34</td><td>SMA</td><td>C8678</td><td>1</td></tr>
+<tr><td>17</td><td>D5, D7</td><td>Catch Diode (buck, PH→GND) + Reverse-Polarity Diode (series, input)</td><td>SS34</td><td>SMA</td><td>C8678</td><td>2</td></tr>
 <tr><td>18</td><td>D6</td><td>USB VBUS Diode</td><td>SS14</td><td>SMA</td><td>C2480</td><td>1</td></tr>
 <tr><td>19</td><td>D_TVS1</td><td>12V TVS</td><td>SMBJ15A</td><td>SMB</td><td>C145448</td><td>1</td></tr>
 <tr><td>20</td><td>D_TVS2</td><td>5V TVS</td><td>SMBJ6.0A</td><td>SMB</td><td>C145431</td><td>1</td></tr>
@@ -1397,24 +1423,23 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>36</td><td>R (various)</td><td>22Ω 0603</td><td>22Ω 1% 1/10W</td><td>0603</td><td>C23345</td><td>2</td></tr>
 <tr><td>37</td><td>R (various)</td><td>5.1kΩ 0603</td><td>5.1kΩ 1% 1/10W</td><td>0603</td><td>C23186</td><td>2</td></tr>
 <tr><td>38</td><td>R (various)</td><td>33Ω 0603</td><td>33Ω 1% 1/10W</td><td>0603</td><td>C22982</td><td>2</td></tr>
-<tr><td>39</td><td>R (various)</td><td>43kΩ 0603</td><td>43kΩ 1% 1/10W</td><td>0603</td><td>C25797</td><td>1</td></tr>
+<tr><td>39</td><td>R (various)</td><td>30.9kΩ 0603</td><td>30.9kΩ 1% 1/10W</td><td>0603</td><td>search†</td><td>1</td></tr>
 <tr><td>40</td><td>R (various)</td><td>12.4kΩ 0603</td><td>12.4kΩ 1% 1/10W</td><td>0603</td><td>C25752</td><td>2</td></tr>
-<tr><td>41</td><td>R (various)</td><td>15kΩ 0603</td><td>15kΩ 1% 1/10W</td><td>0603</td><td>C22809</td><td>1</td></tr>
-<tr><td>42</td><td>R (various)</td><td>560Ω 0603</td><td>560Ω 1% 1/10W</td><td>0603</td><td>C23204</td><td>2</td></tr>
-<tr><td>43</td><td>R (various)</td><td>120Ω 0603</td><td>120Ω 1% 1/10W</td><td>0603</td><td>C22787</td><td>1</td></tr>
-<tr><td>44</td><td>R (various)</td><td>1MΩ 0603</td><td>1MΩ 1% 1/10W</td><td>0603</td><td>C22935</td><td>1</td></tr>
-<tr><td>45</td><td>C (various)</td><td>100nF 0603 X7R</td><td>100nF 25V X7R</td><td>0603</td><td>C14663</td><td>18</td></tr>
-<tr><td>46</td><td>C (various)</td><td>10µF 0805 X5R</td><td>10µF 10V X5R</td><td>0805</td><td>C15850</td><td>5</td></tr>
-<tr><td>47</td><td>C (various)</td><td>22µF 0805 X5R</td><td>22µF 10V X5R</td><td>0805</td><td>C45783</td><td>2</td></tr>
-<tr><td>48</td><td>C (various)</td><td>47µF 1206 X5R</td><td>47µF 10V X5R</td><td>1206</td><td>C96123</td><td>2</td></tr>
-<tr><td>49</td><td>C (various)</td><td>22µF 1206 X5R</td><td>22µF 25V X5R</td><td>1206</td><td>C159843</td><td>1</td></tr>
-<tr><td>50</td><td>C (various)</td><td>100µF Electrolytic</td><td>100µF 25V</td><td>8×10.5mm</td><td>C3339</td><td>1</td></tr>
-<tr><td>51</td><td>C (various)</td><td>20pF 0603 C0G</td><td>20pF 50V C0G</td><td>0603</td><td>C1648</td><td>2</td></tr>
-<tr><td>52</td><td>C (various)</td><td>4.7µF 0805</td><td>4.7µF 10V X5R</td><td>0805</td><td>C1779</td><td>1</td></tr>
-<tr><td>53</td><td>C (various)</td><td>1µF 0603</td><td>1µF 16V X5R</td><td>0603</td><td>C15849</td><td>2</td></tr>
-<tr><td>54</td><td>C (various)</td><td>3.3nF 0603</td><td>3.3nF 50V X7R</td><td>0603</td><td>C1663</td><td>1</td></tr>
-<tr><td>55</td><td>C (various)</td><td>4.7nF 0603</td><td>4.7nF 50V X7R</td><td>0603</td><td>C1664</td><td>1</td></tr>
+<tr><td>41</td><td>R (various)</td><td>560Ω 0603</td><td>560Ω 1% 1/10W</td><td>0603</td><td>C23204</td><td>2</td></tr>
+<tr><td>42</td><td>R (various)</td><td>120Ω 0603</td><td>120Ω 1% 1/10W</td><td>0603</td><td>C22787</td><td>1</td></tr>
+<tr><td>43</td><td>R (various)</td><td>1MΩ 0603</td><td>1MΩ 1% 1/10W</td><td>0603</td><td>C22935</td><td>1</td></tr>
+<tr><td>44</td><td>C (various)</td><td>100nF 0603 X7R</td><td>100nF 25V X7R</td><td>0603</td><td>C14663</td><td>18</td></tr>
+<tr><td>45</td><td>C (various)</td><td>10µF 0805 X5R</td><td>10µF 10V X5R</td><td>0805</td><td>C15850</td><td>5</td></tr>
+<tr><td>46</td><td>C (various)</td><td>22µF 0805 X5R</td><td>22µF 10V X5R</td><td>0805</td><td>C45783</td><td>2</td></tr>
+<tr><td>47</td><td>C (various)</td><td>47µF 1206 X5R</td><td>47µF 10V X5R</td><td>1206</td><td>C96123</td><td>2</td></tr>
+<tr><td>48</td><td>C (various)</td><td>22µF 1206 X5R</td><td>22µF 25V X5R</td><td>1206</td><td>C159843</td><td>1</td></tr>
+<tr><td>49</td><td>C (various)</td><td>100µF Electrolytic</td><td>100µF 25V</td><td>8×10.5mm</td><td>C3339</td><td>1</td></tr>
+<tr><td>50</td><td>C (various)</td><td>20pF 0603 C0G</td><td>20pF 50V C0G</td><td>0603</td><td>C1648</td><td>2</td></tr>
+<tr><td>51</td><td>C (various)</td><td>4.7µF 0805</td><td>4.7µF 10V X5R</td><td>0805</td><td>C1779</td><td>1</td></tr>
+<tr><td>52</td><td>C (various)</td><td>1µF 0603</td><td>1µF 16V X5R</td><td>0603</td><td>C15849</td><td>2</td></tr>
+<tr><td>53</td><td>C (various)</td><td>4.7nF 0603</td><td>4.7nF 50V X7R</td><td>0603</td><td>C1664</td><td>1</td></tr>
 </table>
+<p style="font-size: 9pt; color: #555;">† 30.9 kΩ 1% 0603 is a standard E96 value carried by every major distributor (LCSC, Digikey, Mouser, JLCPCB) — search "30.9K 0603 1%" at order time rather than trust a single pinned C-number here, since stock/preferred-part numbers rotate more often than this document does.</p>
 
 <!-- APPENDIX C -->
 <h2 style="page-break-before: always;">Appendix C: PCB Layer Stackup Detail</h2>
@@ -1474,7 +1499,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 2.0 — July 2026 (pin map synchronized with firmware v1.0.0; supersedes rev 1.0 / KiCad 9.0, April 2026)
+Document revision 2.1 — July 2026 (5V rail feedback divider corrected to 30.9kΩ; reverse-polarity and catch diodes added to the power-path diagram and BOM; erroneous compensation network removed; supersedes rev 2.0)
 </p>
 
 </body>

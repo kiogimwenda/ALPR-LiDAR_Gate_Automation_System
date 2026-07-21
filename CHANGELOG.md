@@ -9,6 +9,14 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 2.1: fixed a wrong 5V-rail feedback
+  divider (43kΩ/10kΩ actually set ~6.47V, not the documented 5.0V;
+  corrected to 30.9kΩ/10kΩ), added the reverse-polarity and buck
+  catch/freewheeling diodes to §5.1's power-path diagram and the BOM
+  (previously only in the §4.3 component table, never drawn — easy to
+  miss), and removed an erroneous compensation-network entry for a
+  chip (TPS5430) that has no COMP pin. Caught during review of the
+  first built power-supply schematic sheet.
 - PCB design guide rewritten as revision 2.0 for **KiCad 10.0**
   (`docs/hardware/10-pcb-design-kicad10.{html,pdf}`), with the pin map
   **re-synchronized to firmware v1.0.0** — rev 1.0 predated the
