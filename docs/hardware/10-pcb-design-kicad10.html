@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 2.1<br>
+<strong>Date:</strong> July 2026 — revision 3.0<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -71,44 +71,30 @@ ol.steps > li { margin-bottom: 14px; }
 <li><strong>1.</strong> Introduction &amp; Board Overview <em>(§1.4: firmware pin map — the source of truth)</em></li>
 <li><strong>2.</strong> Prerequisites &amp; KiCad 10.0 Installation</li>
 <li><strong>3.</strong> Project Setup</li>
-<li><strong>4.</strong> Component Library &amp; Footprint Selection</li>
+<li><strong>4.</strong> Module-by-Module Design <em>(footprints, schematic &amp; direct pin-to-pin connections together, per module)</em></li>
   <ul>
-  <li>4.1 ESP32-S3-WROOM-1 Module</li>
-  <li>4.2 W5500 Ethernet Controller + RJ45 Jack</li>
-  <li>4.3 Power Regulation (12V→5V→3.3V)</li>
-  <li>4.4 USB-C Connector</li>
-  <li>4.5 Relay Driver Stage (4-Channel)</li>
+  <li>4.1 Power Supply (12V→5V→3.3V)</li>
+  <li>4.2 ESP32-S3-WROOM-1-N16R8 Module, USB-C &amp; Programming Headers</li>
+  <li>4.3 W5500 Ethernet Controller + RJ45</li>
+  <li>4.4 Relay Output Stage (4-Channel)</li>
+  <li>4.5 Input Protection (Limit Switches &amp; Safety Beam)</li>
   <li>4.6 RS-485 Transceiver</li>
-  <li>4.7 Input Protection (Limit Switches &amp; Safety Beam)</li>
-  <li>4.8 Status LEDs</li>
-  <li>4.9 Crystal, Decoupling, ESD Protection</li>
-  <li>4.10 Connectors &amp; Terminals</li>
+  <li>4.7 Status LEDs &amp; Indicators</li>
   </ul>
-<li><strong>5.</strong> Schematic Capture — Step by Step</li>
+<li><strong>5.</strong> Design Rules &amp; Constraints</li>
+<li><strong>6.</strong> PCB Layout — Step by Step</li>
   <ul>
-  <li>5.1 Power Supply Section</li>
-  <li>5.2 ESP32-S3 Module Section</li>
-  <li>5.3 W5500 Ethernet Section</li>
-  <li>5.4 Relay Output Section</li>
-  <li>5.5 Input Protection Section</li>
-  <li>5.6 RS-485 Section</li>
-  <li>5.7 USB-C Section</li>
-  <li>5.8 LED &amp; Indicator Section</li>
+  <li>6.1 Board Outline &amp; Mounting Holes</li>
+  <li>6.2 Component Placement Strategy</li>
+  <li>6.3 Power Plane Design</li>
+  <li>6.4 Signal Routing</li>
+  <li>6.5 Antenna Keepout Zone</li>
+  <li>6.6 Thermal Relief &amp; Copper Fills</li>
   </ul>
-<li><strong>6.</strong> Design Rules &amp; Constraints</li>
-<li><strong>7.</strong> PCB Layout — Step by Step</li>
-  <ul>
-  <li>7.1 Board Outline &amp; Mounting Holes</li>
-  <li>7.2 Component Placement Strategy</li>
-  <li>7.3 Power Plane Design</li>
-  <li>7.4 Signal Routing</li>
-  <li>7.5 Antenna Keepout Zone</li>
-  <li>7.6 Thermal Relief &amp; Copper Fills</li>
-  </ul>
-<li><strong>8.</strong> Design Rule Check (DRC)</li>
-<li><strong>9.</strong> Manufacturing Output (Gerbers, Drill, BOM, CPL)</li>
-<li><strong>10.</strong> Ordering from JLCPCB / PCBWay</li>
-<li><strong>11.</strong> Assembly &amp; Testing Checklist</li>
+<li><strong>7.</strong> Design Rule Check (DRC)</li>
+<li><strong>8.</strong> Manufacturing Output (Gerbers, Drill, BOM, CPL)</li>
+<li><strong>9.</strong> Ordering from JLCPCB / PCBWay</li>
+<li><strong>10.</strong> Assembly &amp; Testing Checklist</li>
 <li><strong>Appendix A:</strong> Complete Schematic Net List</li>
 <li><strong>Appendix B:</strong> Full BOM with LCSC Part Numbers</li>
 <li><strong>Appendix C:</strong> PCB Layer Stackup</li>
@@ -122,7 +108,9 @@ ol.steps > li { margin-bottom: 14px; }
 
 <div class="note"><strong>Revision 2.0 (July 2026).</strong> This revision supersedes the April 2026 KiCad 9.0 guide. Two things changed: the tooling moved to KiCad 10.0, and — far more important — the pin map was <strong>re-synchronized with the shipped firmware (v1.0.0)</strong>. Revision 1.0 predated the firmware's driver work (Phases 4.4–4.5) and disagreed with it on the entire W5500 SPI bus, the W5500 INT/RST lines, and the status LEDs; it also placed RS-485 on pins the firmware later took for LEDs, and double-booked IO21. A board routed from revision 1.0 will not run the firmware. §1.4 is now the single source of truth for every net; every schematic section and Appendix A have been corrected against it.</div>
 
-<div class="note"><strong>Revision 2.1 (July 2026).</strong> Caught during schematic review of the first built power-supply sheet. Three fixes to §4.3 / §5.1 / Appendix B, all on the 5V buck rail: (1) the VSENSE feedback divider's <code>R_top</code> was wrong — 43 kΩ paired with the 10 kΩ bottom leg actually sets ~6.47V, not the claimed 5.0V; corrected to 30.9 kΩ. (2) the power-path diagram and BOM were missing two components that §4.3's own tables required but never drew: the series reverse-polarity diode ahead of the TVS, and the PH-to-GND catch/freewheeling diode the TPS5430 needs (it has no internal low-side switch) — both are now in the diagram and BOM. (3) the "C_comp / R_comp" compensation pair in §4.3 has been removed — the TPS5430 has no external COMP pin; compensation is fixed internally, and those two components never did anything.</div>
+<div class="note"><strong>Revision 2.1 (July 2026).</strong> Caught during schematic review of the first built power-supply sheet. Three fixes to what is now §4.1 / Appendix B, all on the 5V buck rail: (1) the VSENSE feedback divider's <code>R_top</code> was wrong — 43 kΩ paired with the 10 kΩ bottom leg actually sets ~6.47V, not the claimed 5.0V; corrected to 30.9 kΩ. (2) the power-path diagram and BOM were missing two components that the component tables required but never drew: the series reverse-polarity diode ahead of the TVS, and the PH-to-GND catch/freewheeling diode the TPS5430 needs (it has no internal low-side switch) — both are now in the diagram and BOM. (3) the "C_comp / R_comp" compensation pair has been removed — the TPS5430 has no external COMP pin; compensation is fixed internally, and those two components never did anything.</div>
+
+<div class="note"><strong>Revision 3.0 (July 2026).</strong> Structural rewrite, prompted by building the actual power-supply and MCU schematic sheets and finding it slower than it should have been to answer "where's everything about module X." Chapters 4 (footprints) and 5 (schematics) are merged into one chapter, §4, with a dedicated section per module — footprints, schematic, and an explicit pin-to-pin connection table together, instead of split across two chapters you had to flip between. Screw terminals/connectors moved out of a standalone chapter into the module they belong to. Getting the pin-to-pin tables right required re-deriving several nets against the WIZnet W5500 datasheet directly rather than trusting this guide's own prior numbers, which turned up real errors predating this rewrite: the SPI/INT pin numbers in Appendix A were off by several positions (real: SCLK=33, MOSI=35, MISO=34, SCSn=32, INTn=36); the 12.4kΩ bias resistor was drawn on a <code>RSVD</code> pin instead of <code>EXRES1</code> (pin 10) — and pin 23, also <code>RSVD</code>, actually needs a direct tie to GND, no resistor; "1V8OUT" doesn't exist on this chip — it's <code>1V2O</code>, and its datasheet-specified cap is 10nF, not 10µF; and the crystal circuit was missing WIZnet's own feedback resistor (R16, 1MΩ) entirely, without which oscillator startup isn't guaranteed. Also folded in: a corrected, pin-count-accurate ESP32 decoupling explanation (schematic step vs. layout step), and an explanation of the module's hidden GND pins (40/41) and why they need a plain <code>GND</code> net to auto-connect to — both raised during review of the built MCU sheet. Chapters 5 onward are renumbered down by one (old §6–§11 → §5–§10) to close the gap left by the merge.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -220,7 +208,7 @@ kicad-cli version
 
 <div class="warning"><strong>File format is one-way.</strong> KiCad 10 opens KiCad 9 projects and upgrades them on save, but files saved by v10 <strong>cannot be opened in v9 or earlier</strong>. Everyone touching <code>hardware/pcb/</code> must be on 10.x before the first save, and the KiCad version belongs in the commit message when the design files land in git.</div>
 
-<div class="tip"><strong>New in 10.0, used later in this guide:</strong> the graphical DRC rule editor (§6), reusable <em>design blocks</em> for the repeated relay-driver channel (§7), and 3D PDF export for checking enclosure fit (§9). Cosmetic but welcome: system dark mode is honored (theme under <strong>Preferences → Colors</strong>) and toolbars are freely rearrangeable.</div>
+<div class="tip"><strong>New in 10.0, used later in this guide:</strong> the graphical DRC rule editor (§7), reusable <em>design blocks</em> for the repeated relay-driver channel (§6), and 3D PDF export for checking enclosure fit (§8). Cosmetic but welcome: system dark mode is honored (theme under <strong>Preferences → Colors</strong>) and toolbars are freely rearrangeable.</div>
 
 <div class="tip"><strong>Tip:</strong> If developing on WSL2 but want the KiCad GUI, install KiCad natively on Windows and keep the project files in a Windows-accessible path (e.g., <code>\\wsl$\Debian\home\deby\projects\gate-automation\hardware\pcb\</code>).</div>
 
@@ -294,128 +282,49 @@ kicad-cli version
 </ol>
 
 <!-- CHAPTER 4 -->
-<h2>4. Component Library &amp; Footprint Selection</h2>
+<h2>4. Module-by-Module Design</h2>
 
-<p>Below is every component used on this PCB with the exact KiCad symbol, the selected footprint, and the justification for each choice.</p>
+<p>Each section below is self-contained for one module: every component and its footprint, the schematic diagram, an explicit pin-to-pin connection list (so you can wire it without cross-referencing three other chapters), and the entry steps. Work through a section, finish its hierarchical sheet, then move to the next. Screw terminals and connectors are grouped with the module they belong to rather than listed separately.</p>
 
-<h3>4.1 ESP32-S3-WROOM-1-N16R8 Module</h3>
-
-<div class="footprint-card">
-<h4>Symbol &amp; Footprint</h4>
-<table>
-<tr><th>Parameter</th><th>Selection</th></tr>
-<tr><td>KiCad Symbol</td><td><code>RF_Module:ESP32-S3-WROOM-1</code></td></tr>
-<tr><td>Footprint</td><td><code>RF_Module:ESP32-S3-WROOM-1</code></td></tr>
-<tr><td>Package</td><td>18mm × 25.5mm × 3.2mm, castellated pads (edge-mount)</td></tr>
-<tr><td>Pad pitch</td><td>1.27 mm</td></tr>
-<tr><td>GND pad</td><td>Large center pad on bottom (must connect to GND plane)</td></tr>
-</table>
-
-<h4>Why This Footprint</h4>
-<ul>
-<li>The module is soldered directly to the PCB via castellated half-hole pads — no pin headers needed</li>
-<li>Much more compact and reliable than mounting a DevKit board</li>
-<li>The center GND pad provides excellent thermal and electrical grounding</li>
-<li>KiCad 10.0's official footprint matches Espressif's recommended land pattern exactly</li>
-</ul>
-
-<h4>Critical Layout Rules</h4>
-<ul>
-<li><strong>Antenna keepout:</strong> No copper (no traces, no ground fill, no vias) within 15 mm of the antenna end of the module. The antenna is at the end opposite the castellated pads.</li>
-<li><strong>Ground plane:</strong> Connect the center pad to the GND plane with at least 9 thermal-relief vias (0.3 mm drill, 0.6 mm pad)</li>
-<li><strong>Board edge:</strong> The antenna end should extend to or overhang the board edge for best RF performance. If WiFi/BLE is needed, place the module at a board corner.</li>
-</ul>
-</div>
-
-<h3>4.2 W5500 Ethernet Controller + RJ45</h3>
+<h3>4.1 Power Supply (12V → 5V → 3.3V)</h3>
 
 <div class="footprint-card">
-<h4>W5500 IC</h4>
-<table>
-<tr><th>Parameter</th><th>Selection</th></tr>
-<tr><td>KiCad Symbol</td><td><code>Interface_Ethernet:W5500</code></td></tr>
-<tr><td>Footprint</td><td><code>Package_QFP:LQFP-48_7x7mm_P0.5mm</code></td></tr>
-<tr><td>Package</td><td>LQFP-48, 7×7 mm, 0.5 mm pitch</td></tr>
-<tr><td>Manufacturer P/N</td><td>W5500 (WIZnet)</td></tr>
-<tr><td>LCSC P/N</td><td>C32843</td></tr>
-</table>
+<h4>4.1.1 Components &amp; Footprints</h4>
 
-<h4>25 MHz Crystal (for W5500)</h4>
-<table>
-<tr><th>Parameter</th><th>Selection</th></tr>
-<tr><td>KiCad Symbol</td><td><code>Device:Crystal</code></td></tr>
-<tr><td>Footprint</td><td><code>Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm</code></td></tr>
-<tr><td>Value</td><td>25 MHz, 20 pF load, ±20 ppm</td></tr>
-<tr><td>LCSC P/N</td><td>C32346</td></tr>
-</table>
-
-<h4>RJ45 Jack with Integrated Magnetics</h4>
-<table>
-<tr><th>Parameter</th><th>Selection</th></tr>
-<tr><td>KiCad Symbol</td><td><code>Connector:RJ45_Shielded_Magjack</code> (or use <code>Connector_RJ:8P8C_Shielded</code>)</td></tr>
-<tr><td>Footprint</td><td><code>Connector_RJ:RJ45_Amphenol_ARJM11C7</code></td></tr>
-<tr><td>Part</td><td>HR911105A (or Amphenol ARJM11C7-114-AB-EW2) — single-port, with integrated magnetics + LEDs</td></tr>
-<tr><td>LCSC P/N</td><td>C12074 (HR911105A)</td></tr>
-</table>
-
-<h4>Why These Footprints</h4>
-<ul>
-<li><strong>LQFP-48:</strong> Hand-solderable with a fine-tip iron or hot air. Exposed pads are accessible for inspection. 7×7mm is compact but not punishing.</li>
-<li><strong>3215 crystal:</strong> The 3.2×1.5mm SMD form factor is the sweet spot — small enough to place close to the W5500 (critical for signal integrity) but large enough to hand-solder.</li>
-<li><strong>HR911105A:</strong> The most common integrated magjack in the market. Has built-in Bob Smith termination, center-tap capacitors, and link/activity LEDs. Eliminates the need for discrete transformers, which saves PCB area and reduces EMI issues. Single-piece solution.</li>
-</ul>
-
-<h4>Supporting Passives for W5500</h4>
-<table>
-<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>C_dec (×6)</td><td>100 nF, 25V, X7R</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Decoupling on each VCC pin</td></tr>
-<tr><td>C_bulk (×1)</td><td>10 µF, 16V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Bulk decoupling near VCC</td></tr>
-<tr><td>R_bias</td><td>12.4 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>RSVD pin bias resistor</td></tr>
-<tr><td>C_crystal (×2)</td><td>20 pF, C0G</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Crystal load capacitors</td></tr>
-<tr><td>R_LED (×2)</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>RJ45 LED current limit</td></tr>
-<tr><td>Ferrite bead</td><td>600Ω@100MHz, 500mA</td><td><code>Inductor_SMD:L_0805_2012Metric</code></td><td>AVDD filter</td></tr>
-</table>
-</div>
-
-<h3>4.3 Power Regulation</h3>
-
-<div class="footprint-card">
-<h4>12V Input Protection</h4>
+<p><strong>12V input protection</strong></p>
 <table>
 <tr><th>Component</th><th>Selection</th><th>Footprint</th></tr>
-<tr><td>Reverse-polarity diode</td><td>SS34 (3A, 40V Schottky) — series, downstream of the polyfuse, cathode toward the load</td><td><code>Diode_SMD:D_SMA</code></td></tr>
-<tr><td>Input TVS diode</td><td>SMBJ15A (15V standoff, 600W)</td><td><code>Diode_SMD:D_SMB</code></td></tr>
-<tr><td>Input capacitor</td><td>100 µF, 25V, electrolytic</td><td><code>Capacitor_SMD:CP_Elec_8x10.5</code></td></tr>
-<tr><td>Polyfuse</td><td>MF-MSMF200 (2A hold, 4A trip)</td><td><code>Fuse:Fuse_1206_3216Metric</code></td></tr>
+<tr><td>J_PWR</td><td>12V DC input — 2-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-2_5.08mm</code></td></tr>
+<tr><td>F1 — Polyfuse</td><td>MF-MSMF200 (2A hold, 4A trip)</td><td><code>Fuse:Fuse_1206_3216Metric</code></td></tr>
+<tr><td>D7 — Reverse-polarity diode</td><td>SS34 (3A, 40V Schottky) — series, downstream of F1, cathode toward the load</td><td><code>Diode_SMD:D_SMA</code></td></tr>
+<tr><td>D_TVS1 — Input TVS</td><td>SMBJ15A (15V standoff, 600W)</td><td><code>Diode_SMD:D_SMB</code></td></tr>
+<tr><td>C_in_bulk</td><td>100 µF, 25V, electrolytic</td><td><code>Capacitor_SMD:CP_Elec_8x10.5</code></td></tr>
 </table>
-<div class="note">A P-channel MOSFET (e.g. SI2301, gate tied to GND, placed in the return leg) is the lower-drop alternative if the series Schottky's ~0.3–0.5V forward drop matters for your input budget — TPS5430 VIN tolerates it easily either way (5.5–36V range). The reference design and Appendix B BOM use the simpler series Schottky.</div>
+<div class="note">A P-channel MOSFET (e.g. SI2301, gate tied to GND, placed in the return leg) is the lower-drop alternative to D7 if the ~0.3–0.5V Schottky forward drop matters for your input budget — TPS5430 VIN tolerates it easily either way (5.5–36V range). The reference design and Appendix B BOM use the simpler series Schottky.</div>
 
-<h4>5V Buck Converter (12V → 5V)</h4>
+<p><strong>5V buck converter (TPS5430)</strong></p>
 <table>
 <tr><th>Parameter</th><th>Selection</th></tr>
 <tr><td>IC</td><td>TPS5430 (Texas Instruments) — 3A, 5.5–36V input</td></tr>
 <tr><td>KiCad Symbol</td><td><code>Regulator_Switching:TPS5430DDA</code></td></tr>
 <tr><td>Footprint</td><td><code>Package_SO:HSOP-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x2.41mm</code></td></tr>
 <tr><td>LCSC P/N</td><td>C9865</td></tr>
-<tr><td>Output</td><td>5.0V, 3A continuous</td></tr>
-<tr><td>Efficiency</td><td>~90% at 500mA load</td></tr>
+<tr><td>Output</td><td>5.0V, 3A continuous, ~90% efficiency at 500mA load</td></tr>
 </table>
-
-<h4>TPS5430 External Components</h4>
 <table>
 <tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>L1 (inductor)</td><td>33 µH, 3A sat, shielded</td><td><code>Inductor_SMD:L_Bourns_SRN8040</code></td><td>Buck output inductor</td></tr>
-<tr><td>D1 (Schottky)</td><td>SS34 (3A, 40V)</td><td><code>Diode_SMD:D_SMA</code></td><td>Catch diode</td></tr>
-<tr><td>C_in</td><td>22 µF, 25V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Input filter</td></tr>
+<tr><td>C_in</td><td>22 µF, 25V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Local input filter, right at VIN — in addition to C_in_bulk, not instead of it</td></tr>
+<tr><td>L1</td><td>33 µH, 3A sat, shielded</td><td><code>Inductor_SMD:L_Bourns_SRN8040</code></td><td>Buck output inductor</td></tr>
 <tr><td>C_out (×2)</td><td>47 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Output filter</td></tr>
-<tr><td>C_boot</td><td>100 nF, 16V</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Bootstrap capacitor — <strong>BOOT to PH</strong>, not BOOT to GND (see diagram note below)</td></tr>
-<tr><td>D_catch</td><td>SS34 (3A, 40V Schottky)</td><td><code>Diode_SMD:D_SMA</code></td><td>Catch/freewheeling diode, cathode at PH, anode at GND — the TPS5430's high-side switch is not synchronous, this diode carries the low-side current</td></tr>
+<tr><td>C_boot</td><td>100 nF, 16V</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Bootstrap capacitor — BOOT to PH, not BOOT to GND</td></tr>
+<tr><td>D5 — Catch diode</td><td>SS34 (3A, 40V Schottky)</td><td><code>Diode_SMD:D_SMA</code></td><td>Cathode at PH, anode at GND — the TPS5430's high-side switch is not synchronous, this diode carries the low-side current</td></tr>
 <tr><td>R_top</td><td>30.9 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider top</td></tr>
-<tr><td>R_bot</td><td>10 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider bottom (Vout = 1.221 × (1 + 30.9k/10k) ≈ 5.00V)</td></tr>
+<tr><td>R_bot</td><td>10 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider bottom — Vout = 1.221 × (1 + 30.9k/10k) ≈ 5.00V</td></tr>
+<tr><td>D_TVS2 — 5V rail TVS</td><td>SMBJ6.0A</td><td><code>Diode_SMD:D_SMB</code></td><td>Clamps switching/relay-coil transients on the 5V rail — cathode at +5V, anode at GND</td></tr>
 </table>
-<div class="note">The TPS5430 has <strong>no external COMP pin</strong> — compensation is fixed internally (TI's on-chip type-III network), so there is nothing to add here. Earlier printings of this table listed a 3.3 nF / 15 kΩ "C_comp / R_comp" pair; that was wrong for this part (it doesn't correspond to any pin on the 8-pin HSOP package) and has been removed.</div>
+<div class="note">The TPS5430 has <strong>no external COMP pin</strong> — compensation is fixed internally (TI's on-chip type-III network). D_TVS2 (the 5V-rail TVS) is real board BOM but was missing from every diagram in rev 2.0 and earlier — it's now shown below.</div>
 
-<h4>3.3V LDO (5V → 3.3V)</h4>
+<p><strong>3.3V LDO (AMS1117-3.3)</strong></p>
 <table>
 <tr><th>Parameter</th><th>Selection</th></tr>
 <tr><td>IC</td><td>AMS1117-3.3 (1A LDO, SOT-223)</td></tr>
@@ -423,224 +332,29 @@ kicad-cli version
 <tr><td>Footprint</td><td><code>Package_TO_SOT_SMD:SOT-223-3_TabPin2</code></td></tr>
 <tr><td>LCSC P/N</td><td>C6186</td></tr>
 </table>
-
-<h4>AMS1117 External Components</h4>
 <table>
 <tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>C_in</td><td>10 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Input filter</td></tr>
-<tr><td>C_out</td><td>22 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Output stability (tantalum also OK)</td></tr>
+<tr><td>C_in_ldo</td><td>10 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Input filter</td></tr>
+<tr><td>C_out_ldo</td><td>22 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Output stability (tantalum also OK)</td></tr>
 </table>
 
-<h4>Why These Regulators</h4>
+<h4>Why These Choices</h4>
 <ul>
-<li><strong>TPS5430:</strong> Well-proven 3A buck with excellent documentation. SOIC-8 is easy to hand-solder. 90%+ efficiency means minimal heat at our ~500mA typical load. The wide input range (up to 36V) protects against automotive-style voltage spikes on the 12V line.</li>
-<li><strong>AMS1117-3.3:</strong> Ubiquitous, cheap (KES 5–10), adequate for the ~300mA the ESP32-S3 + W5500 draw on 3.3V. The SOT-223 package has a large tab for heat dissipation. Dropout is only 1.2V, well within our 5V→3.3V margin.</li>
+<li><strong>TPS5430:</strong> SOIC-8 is easy to hand-solder, wide input range (up to 36V) tolerates automotive-style spikes on the 12V line.</li>
+<li><strong>AMS1117-3.3:</strong> Ubiquitous, cheap, SOT-223's tab dissipates heat, 1.2V dropout leaves comfortable margin off 5V.</li>
 </ul>
 </div>
 
-<h3>4.4 USB-C Connector</h3>
-
-<div class="footprint-card">
-<table>
-<tr><th>Parameter</th><th>Selection</th></tr>
-<tr><td>Connector type</td><td>USB-C 2.0 receptacle (16-pin, USB 2.0 only)</td></tr>
-<tr><td>KiCad Symbol</td><td><code>Connector:USB_C_Receptacle_USB2.0</code></td></tr>
-<tr><td>Footprint</td><td><code>Connector_USB:USB_C_Receptacle_GCT_USB4105</code></td></tr>
-<tr><td>Part</td><td>GCT USB4105-GF-A (mid-mount, 16-pin, USB 2.0)</td></tr>
-<tr><td>LCSC P/N</td><td>C2688138 (or Korean Hroparts TYPE-C-31-M-12)</td></tr>
-</table>
-
-<h4>USB-C Circuit</h4>
-<ul>
-<li>CC1 and CC2 pins: Each pulled down to GND via <strong>5.1 kΩ</strong> resistor (signals "device" role to host)</li>
-<li>VBUS: Connected through a Schottky diode (SS14) to prevent back-feeding when external 12V is also connected</li>
-<li>D+ and D-: Connected to ESP32-S3's USB pins (IO19=D-, IO20=D+) via 22Ω series resistors</li>
-<li>Shield: Connected to GND through a 1 MΩ resistor + 4.7 nF cap (RC filter for EMI)</li>
-</ul>
-
-<h4>Why This Footprint</h4>
-<ul>
-<li>The GCT USB4105 is the most popular USB-C 2.0 receptacle in JLCPCB's parts library</li>
-<li>Mid-mount style: the connector body is level with the board surface — flush mounting in an enclosure</li>
-<li>16-pin (not 24-pin) because we only need USB 2.0 data — simpler routing, fewer pads</li>
-<li>Through-hole anchor tabs provide mechanical strength for the cable insertion force</li>
-</ul>
-</div>
-
-<h3>4.5 Relay Driver Stage (4-Channel)</h3>
-
-<div class="footprint-card">
-<h4>Relay Selection</h4>
-<table>
-<tr><th>Parameter</th><th>Selection</th></tr>
-<tr><td>Relay</td><td>Songle SRD-05VDC-SL-C (SPDT, 5V coil, 10A/250VAC contacts)</td></tr>
-<tr><td>KiCad Symbol</td><td><code>Relay:SANYOU_SRD_Series_Form_C</code></td></tr>
-<tr><td>Footprint</td><td><code>Relay_THT:Relay_SPDT_SANYOU_SRD_Series_Form_C</code></td></tr>
-<tr><td>Quantity</td><td>4 (REL1: OPEN contactor — IO4, REL2: CLOSE contactor — IO5, REL3/REL4: spare — IO1/IO2)</td></tr>
-<tr><td>LCSC P/N</td><td>C35449</td></tr>
-</table>
-
-<h4>Relay Driver Circuit (per channel)</h4>
-<table>
-<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>Q1 (NPN transistor)</td><td>SS8050 (SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>Relay coil driver (Ic > 90mA)</td></tr>
-<tr><td>R_base</td><td>1 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Base current limiting (3.3V - 0.7V)/1kΩ = 2.6mA → hFE×2.6mA > 90mA ✓</td></tr>
-<tr><td>D_flyback</td><td>1N4148W (SOD-123)</td><td><code>Diode_SMD:D_SOD-123</code></td><td>Flyback/freewheeling diode across coil</td></tr>
-<tr><td>LED indicator</td><td>Green 0603</td><td><code>LED_SMD:LED_0603_1608Metric</code></td><td>Relay state visual indicator</td></tr>
-<tr><td>R_LED</td><td>1 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>LED current limit (~2mA, sufficient for 0603)</td></tr>
-</table>
-
-<h4>Why Through-Hole Relays</h4>
-<ul>
-<li>Gate motors draw high surge current. The SRD relay's 10A contacts handle the inductive kick from motor contactors without welding.</li>
-<li>Through-hole relays are physically robust — they won't crack off the board under vibration from a sliding gate motor.</li>
-<li>Easily replaceable in the field (just desolder and swap) — important for a residential product.</li>
-<li>The 5V coil draws ~90mA, well within our 5V rail's 3A budget.</li>
-</ul>
-
-<div class="note"><strong>Actuator-profile decision (bench-plan risk R4).</strong> The firmware's residential profile drives REL1/REL2 as two motion contactors, while <a href="../decisions/ADR-008-gate-actuator-interface.md">ADR-008</a> specifies a single dry-contact <em>trigger pulse</em> into the Centurion controller. The four-channel board deliberately covers <em>both</em> outcomes of that decision (recorded at commissioning, §3.3 of the <a href="../commissioning.md">commissioning checklist</a>): pulse profile uses one channel, two-contactor uses two, and the spares absorb a pedestrian-open or lock output later. No PCB change is needed either way — that's why the channel count survives the open decision.</div>
-</div>
-
-<h3>4.6 RS-485 Transceiver</h3>
-
-<div class="footprint-card">
-<table>
-<tr><th>Parameter</th><th>Selection</th></tr>
-<tr><td>IC</td><td>MAX485ESA+ (half-duplex, 2.5 Mbps)</td></tr>
-<tr><td>KiCad Symbol</td><td><code>Interface_UART:MAX485E</code></td></tr>
-<tr><td>Footprint</td><td><code>Package_SO:SOIC-8_3.9x4.9mm_P1.27mm</code></td></tr>
-<tr><td>LCSC P/N</td><td>C14038</td></tr>
-</table>
-
-<h4>External Components</h4>
-<table>
-<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>R_term</td><td>120 Ω (optional, populate for end-of-line)</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Bus termination</td></tr>
-<tr><td>R_bias_A</td><td>560 Ω to VCC</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias (idle = mark)</td></tr>
-<tr><td>R_bias_B</td><td>560 Ω to GND</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias</td></tr>
-<tr><td>TVS (×2)</td><td>PESD5V0U2BT (SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>ESD protection on A/B lines</td></tr>
-<tr><td>C_dec</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>VCC decoupling</td></tr>
-</table>
-
-<h4>Connections</h4>
-<ul>
-<li>DI (pin 4) → ESP32-S3 <strong>IO21</strong> (UART TX)</li>
-<li>RO (pin 1) → ESP32-S3 <strong>IO14</strong> (UART RX)</li>
-<li>DE + RE tied together → ESP32-S3 <strong>IO38</strong> (direction control: HIGH=TX, LOW=RX)</li>
-<li>A, B → screw terminal for RS-485 bus cable</li>
-</ul>
-
-<div class="warning"><strong>Pin change from rev 1.0:</strong> RS-485 moved off IO16/17/18 — the firmware's Phase 4.4.4 status-LED driver owns those pins (§1.4). The transceiver stays on the board per ADR-008 ("included in PCB design but disabled in firmware until protocol is implemented"); any future ESP32-S3 UART peripheral routes to these pins via the GPIO matrix, so the choice costs nothing in firmware.</div>
-</div>
-
-<h3>4.7 Input Protection (Limit Switches &amp; Safety Beam)</h3>
-
-<div class="footprint-card">
-<h4>Circuit per Input Channel (×3: IO6, IO7, IO15)</h4>
-<table>
-<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>R_pullup</td><td>10 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Pull-up to 3.3V (NC sensors go LOW when triggered)</td></tr>
-<tr><td>R_series</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Current limiting for ESD events</td></tr>
-<tr><td>C_filter</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>RC debounce (τ = 330Ω × 100nF = 33µs)</td></tr>
-<tr><td>D_clamp</td><td>BAV99 (dual series, SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>Clamp to GND/3.3V rails</td></tr>
-</table>
-
-<h4>Why This Approach</h4>
-<ul>
-<li>Field wiring (10m+ cable to gate frame) picks up induced noise from the gate motor. The RC filter + clamping diodes prevent false triggers.</li>
-<li>The series resistor limits current if a cable is accidentally shorted to 12V (12V - 3.3V = 8.7V / 330Ω = 26mA → safe for BAV99 + GPIO).</li>
-<li>Hardware debounce means firmware doesn't need to waste cycles on software debouncing.</li>
-</ul>
-</div>
-
-<h3>4.8 Status LEDs</h3>
-
-<div class="footprint-card">
-<table>
-<tr><th>LED</th><th>Color</th><th>GPIO</th><th>Meaning</th><th>Footprint</th></tr>
-<tr><td>LED_PWR</td><td>Green</td><td>Always on (5V rail)</td><td>Board powered (no firmware involvement)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_NET</td><td>Yellow</td><td>W5500 LINK pin</td><td>Ethernet link active (driven by the W5500)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_RED</td><td>Red</td><td><strong>IO16</strong></td><td rowspan="3">The firmware's three-LED status set — patterns (auth flash, deny, fault blink, OTA pulse) are defined by the <code>StatusLed</code> driver in <code>firmware/components/gate_drivers/</code> (Phase 4.4.4). The PCB provides plain active-high LEDs; all behavior is firmware.</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_GREEN</td><td>Green</td><td><strong>IO17</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_YELLOW</td><td>Yellow</td><td><strong>IO18</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-</table>
-
-<h4>LED Resistor Values</h4>
-<ul>
-<li>Power LED (5V rail): R = (5V - 2.0V) / 5mA = <strong>620 Ω</strong> (use 680 Ω standard value)</li>
-<li>GPIO LEDs (3.3V): R = (3.3V - 2.0V) / 5mA = <strong>260 Ω</strong> (use 330 Ω standard value)</li>
-<li>All resistors: <code>Resistor_SMD:R_0603_1608Metric</code></li>
-</ul>
-
-<h4>Why 0805 LEDs</h4>
-<ul>
-<li>0805 (2012 metric) LEDs are bright enough to see through a translucent enclosure lid</li>
-<li>Large enough to place by hand with tweezers, small enough not to waste PCB space</li>
-<li>0603 LEDs are too dim for visibility at distance; 1206 LEDs are unnecessarily large</li>
-</ul>
-</div>
-
-<h3>4.9 Decoupling &amp; ESD Protection</h3>
-
-<div class="footprint-card">
-<h4>ESP32-S3 Module Decoupling</h4>
-<table>
-<tr><th>Component</th><th>Value</th><th>Qty</th><th>Footprint</th><th>Location</th></tr>
-<tr><td>C_dec</td><td>100 nF, X7R, 16V</td><td>4</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>One per VCC pin of ESP32-S3 module</td></tr>
-<tr><td>C_bulk</td><td>10 µF, X5R, 10V</td><td>2</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Near ESP32-S3 3V3 pins</td></tr>
-</table>
-
-<h4>USB ESD Protection</h4>
-<table>
-<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>USBLC6-2SC6</td><td>ESD clamp, SOT-23-6</td><td><code>Package_TO_SOT_SMD:SOT-23-6</code></td><td>Protects USB D+/D- from ESD strikes</td></tr>
-</table>
-
-<h4>Power Rail TVS</h4>
-<table>
-<tr><th>Location</th><th>Part</th><th>Footprint</th></tr>
-<tr><td>12V input</td><td>SMBJ15A</td><td><code>Diode_SMD:D_SMB</code></td></tr>
-<tr><td>5V rail</td><td>SMBJ6.0A</td><td><code>Diode_SMD:D_SMB</code></td></tr>
-</table>
-</div>
-
-<h3>4.10 Connectors &amp; Terminals</h3>
-
-<div class="footprint-card">
-<table>
-<tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
-<tr><td>J_PWR</td><td>12V DC input</td><td>2-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-2_5.08mm</code></td></tr>
-<tr><td>J_RELAY</td><td>Relay outputs (COM/NO/NC × 4)</td><td>12-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-12_3.81mm</code></td></tr>
-<tr><td>J_SENSE</td><td>Sensor inputs (limit×2 + beam)</td><td>6-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-6_3.81mm</code></td></tr>
-<tr><td>J_RS485</td><td>RS-485 A/B/GND</td><td>3-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-3_5.08mm</code></td></tr>
-<tr><td>J_PROG</td><td>UART programming header</td><td>1×4 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical</code></td></tr>
-<tr><td>J_DBG</td><td>SWD/JTAG debug header</td><td>1×5 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical</code></td></tr>
-</table>
-
-<h4>Why Screw Terminals</h4>
-<ul>
-<li>Field wiring (18 AWG stranded) is terminated with bare wire stripped ends — screw terminals accept this directly</li>
-<li>No crimping tools required for installation</li>
-<li>Phoenix-style terminals are industry standard for industrial control panels</li>
-<li>5.08mm pitch for power (thicker wire clearance), 3.81mm for signals (compact)</li>
-</ul>
-</div>
-
-<!-- CHAPTER 5 -->
-<h2>5. Schematic Capture — Step by Step</h2>
-
-<h3>5.1 Power Supply Section</h3>
-
+<h4>4.1.2 Schematic — Complete Power Path</h4>
 <div class="schematic-block">
-<h4>Complete Power Path</h4>
 <pre><code>J_PWR (12V IN)
   │
   ├── Polyfuse F1 (2A)
   │        │
   │        ▼
-  │   D2 (SS34, series reverse-polarity — anode toward F1, cathode toward load)
+  │   D7 (SS34, series reverse-polarity — anode toward F1, cathode toward load)
   │        │
-  │        ├──┬── TVS D1 (SMBJ15A, cathode here, anode → GND)
+  │        ├──┬── TVS D_TVS1 (SMBJ15A, cathode here, anode → GND)
   │        │  │
   │        │  ├── C_in_bulk (100µF/25V electrolytic, + here, – GND)
   │        │  │
@@ -651,11 +365,9 @@ kicad-cli version
   │        └─┤ VIN     BOOT────┤── C_boot (100nF) ──┐
   │          │  ▲      PH──────┤── L1 (33µH) ──┬─────┴── C_out1 (47µF)
   │          │  │              │                ├── C_out2 (47µF)
-  │          │  C_in (22µF     │                │
-  │          │  ceramic, right │      D3 (SS34 catch diode:  │
-  │          │  at pin 7 —     │      cathode → PH, anode → GND)
-  │          │  separate from  │
-  │          │  C_in_bulk)     │
+  │          │  C_in (22µF     │                ├── D_TVS2 (SMBJ6.0A, cathode
+  │          │  ceramic, right │      D5 (SS34 catch diode:  │  here, anode → GND)
+  │          │  at pin 7)      │      cathode → PH, anode → GND)
   │          │         GND     │
   │          │         EN      │
   │          │         VSNS────┤── R_top(30.9k)──┬── R_bot(10k)──GND
@@ -676,42 +388,131 @@ kicad-cli version
   │                                   │           ▼
   │                                   │      +3.3V RAIL
   │                                   │
-  └── 12V RAIL (to safety beams, RS-485 if needed — tap after D2, the same
+  └── 12V RAIL (to safety beams, RS-485 if needed — tap after D7, the same
                  protected node the TVS and VIN sit on, not the raw J_PWR side)</code></pre>
 </div>
 
 <div class="warning"><strong>Three polarities that are easy to get backwards — verify each in schematic ERC and again visually before layout:</strong>
 <ul>
 <li><strong>C_boot</strong> connects BOOT to <strong>PH</strong>, not to GND. Tying it to GND removes the high-side FET's gate-drive supply — the regulator will not switch correctly.</li>
-<li><strong>D2</strong> (reverse-polarity) must pass forward current in the normal direction: anode toward the polyfuse/connector, cathode toward the TVS/VIN node. Backwards, it blocks all current.</li>
-<li><strong>D3</strong> (catch diode) cathode goes to <strong>PH</strong>, anode to GND — it needs to conduct from GND into PH while the high-side switch is off. Backwards, it does nothing (or clamps the wrong direction).</li>
+<li><strong>D7</strong> (reverse-polarity) must pass forward current in the normal direction: anode toward the polyfuse/connector, cathode toward the TVS/VIN node. Backwards, it blocks all current.</li>
+<li><strong>D5</strong> (catch diode) cathode goes to <strong>PH</strong>, anode to GND — it needs to conduct from GND into PH while the high-side switch is off. Backwards, it does nothing (or clamps the wrong direction).</li>
 </ul>
 </div>
 
-<h4>Schematic Entry Steps</h4>
+<h4>4.1.3 Direct Pin-to-Pin Connections</h4>
+<table>
+<tr><th>From</th><th>To</th><th>Net</th></tr>
+<tr><td>J_PWR pin 1</td><td>F1 pin 1</td><td>+12V_IN (raw)</td></tr>
+<tr><td>J_PWR pin 2</td><td>GND</td><td>GND</td></tr>
+<tr><td>F1 pin 2</td><td>D7 anode</td><td>+12V_IN (raw)</td></tr>
+<tr><td>D7 cathode</td><td>D_TVS1 cathode, C_in_bulk (+), TPS5430 pin 7 (VIN)</td><td>+12V (protected)</td></tr>
+<tr><td>TPS5430 pin 1 (BOOT)</td><td>C_boot, one terminal</td><td>BOOT</td></tr>
+<tr><td>C_boot, other terminal</td><td>TPS5430 pin 8 (PH), L1, D5 cathode</td><td>PH</td></tr>
+<tr><td>TPS5430 pin 6 (GND) + pin 9 (GNDPAD)</td><td>D5 anode, GND plane</td><td>GND</td></tr>
+<tr><td>TPS5430 pin 5 (EN)</td><td>— (leave floating)</td><td>—</td></tr>
+<tr><td>L1, far terminal</td><td>C_out1 (+), C_out2 (+), D_TVS2 cathode, R_top</td><td>+5V</td></tr>
+<tr><td>R_top</td><td>TPS5430 pin 4 (VSENSE), R_bot</td><td>VSENSE / feedback node</td></tr>
+<tr><td>R_bot</td><td>GND</td><td>GND</td></tr>
+<tr><td>+5V rail</td><td>C_in_ldo (+), AMS1117 pin 3 (VI)</td><td>+5V</td></tr>
+<tr><td>AMS1117 pin 2 (VO)</td><td>C_out_ldo (+)</td><td>+3.3V</td></tr>
+<tr><td>AMS1117 pin 1 (GND)</td><td>GND</td><td>GND</td></tr>
+</table>
+
+<h4>4.1.4 Schematic Entry Steps</h4>
 <ol class="steps">
 <li>Open the schematic editor. If using hierarchical sheets, open <code>power_supply.kicad_sch</code>.</li>
 <li>Place power symbols: Press <strong>P</strong>, search for <code>+12V</code>, <code>+5V</code>, <code>+3.3V</code>, <code>GND</code>. Place one of each as rail references.</li>
 <li>Place J_PWR: Press <strong>A</strong> (Add Symbol), search <code>Screw_Terminal_01x02</code>. Place it at the left edge of the sheet. Label pins: pin1 = +12V_IN, pin2 = GND.</li>
 <li>Place the polyfuse F1: Symbol <code>Polyfuse</code>. Connect in series with +12V_IN.</li>
-<li>Place D2, the reverse-polarity diode: Symbol <code>D_Schottky</code>. Connect in series after F1 — anode toward F1, cathode toward the rest of the power section.</li>
-<li>Place TVS D1: Symbol <code>D_TVS</code>. Connect cathode to the protected +12V net (after D2), anode to GND.</li>
+<li>Place D7, the reverse-polarity diode: Symbol <code>D_Schottky</code>. Connect in series after F1 — anode toward F1, cathode toward the rest of the power section.</li>
+<li>Place TVS D_TVS1: Symbol <code>D_TVS</code>. Connect cathode to the protected +12V net (after D7), anode to GND.</li>
 <li>Place C_in_bulk (100µF): Symbol <code>C_Polarized</code>. Connect + to the protected +12V net, – to GND.</li>
 <li>Place U_BUCK (TPS5430): Symbol <code>TPS5430DDA</code>. Wire VIN to the protected +12V net, GND (and the GNDPAD exposed-pad pin) to GND.</li>
 <li>Place C_in, a 22µF ceramic, directly across VIN/GND at the TPS5430's own pins — this is in addition to C_in_bulk, not instead of it.</li>
-<li>Place C_boot (100nF) from BOOT to PH — <strong>not</strong> to GND; it needs to be on the switch node to supply the high-side gate driver.</li>
-<li>Place D3, the catch diode: Symbol <code>D_Schottky</code>. Connect cathode to PH, anode to GND.</li>
-<li>Place all remaining external components for the TPS5430 (L1, C_out ×2, the R_top/R_bot feedback divider) as shown in the power path diagram above. Use R_top = 30.9kΩ, R_bot = 10kΩ — this is what sets the output to 5.0V.</li>
+<li>Place C_boot (100nF) from BOOT to PH — <strong>not</strong> to GND.</li>
+<li>Place D5, the catch diode: Symbol <code>D_Schottky</code>. Connect cathode to PH, anode to GND.</li>
+<li>Place L1, C_out ×2, and the R_top/R_bot feedback divider as shown above. Use R_top = 30.9kΩ, R_bot = 10kΩ.</li>
+<li>Place D_TVS2, the 5V-rail TVS: Symbol <code>D_TVS</code>. Connect cathode to +5V, anode to GND.</li>
 <li>Place U_LDO (AMS1117-3.3): Symbol <code>AMS1117-3.3</code>. Wire VIN to +5V, VOUT to +3.3V, GND to GND.</li>
 <li>Place input/output capacitors for the LDO.</li>
 <li>Add <strong>test points</strong>: Place symbol <code>TestPoint</code> on +12V, +5V, and +3.3V nets.</li>
 <li>Add <strong>net labels</strong>: <code>+12V</code>, <code>+5V</code>, <code>+3V3</code> for inter-sheet connectivity.</li>
 </ol>
 
-<h3>5.2 ESP32-S3 Module Section</h3>
+<hr>
 
+<h3>4.2 ESP32-S3-WROOM-1-N16R8 Module, USB-C &amp; Programming Headers</h3>
+
+<div class="footprint-card">
+<h4>4.2.1 Components &amp; Footprints</h4>
+
+<p><strong>Module</strong></p>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>KiCad Symbol</td><td><code>RF_Module:ESP32-S3-WROOM-1</code></td></tr>
+<tr><td>Footprint</td><td><code>RF_Module:ESP32-S3-WROOM-1</code></td></tr>
+<tr><td>Package</td><td>18mm × 25.5mm × 3.2mm, castellated pads (edge-mount), 1.27mm pad pitch</td></tr>
+<tr><td>LCSC P/N</td><td>C2913202</td></tr>
+</table>
+
+<p><strong>Decoupling</strong></p>
+<table>
+<tr><th>Component</th><th>Value</th><th>Qty</th><th>Footprint</th></tr>
+<tr><td>C_dec</td><td>100 nF, X7R, 16V</td><td>4</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td></tr>
+<tr><td>C_bulk</td><td>10 µF, X5R, 10V</td><td>2</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td></tr>
+</table>
+<div class="note"><strong>The module has exactly one 3V3 pin (module pin 2) and GND at three places</strong> (module pins 1 and 40, plus the large exposed EPAD) — not "4 distinct 3V3/GND pin pairs" as earlier printings of this guide implied. At the <strong>schematic</strong> level this is simple: place all 6 caps (4×100nF + 2×10µF) in parallel directly across your existing +3.3V and GND nets, near the ESP32 symbol — no per-pin wiring, they all land on the same two nets. The "near each pin" part is a <strong>layout</strong> instruction: when placing components, physically spread the caps around the module footprint (some close to pin 2, others near pins 1/40/EPAD) to keep loop inductance short from multiple directions.</div>
+
+<p><strong>Reset &amp; boot-mode select</strong></p>
+<table>
+<tr><th>Component</th><th>Value</th><th>Purpose</th></tr>
+<tr><td>R1</td><td>10 kΩ</td><td>EN pull-up to 3.3V</td></tr>
+<tr><td>C2</td><td>1 µF</td><td>EN to GND — power-on reset delay</td></tr>
+<tr><td>RESET</td><td><code>SW_Push</code>, <code>Button_Switch_SMD:SW_SPST_TL3342</code></td><td>Connects EN to GND when pressed</td></tr>
+<tr><td>R2</td><td>10 kΩ</td><td>IO0 (BOOT) pull-up to 3.3V — normal boot</td></tr>
+<tr><td>BOOT</td><td><code>SW_Push</code>, <code>Button_Switch_SMD:SW_SPST_TL3342</code></td><td>Connects IO0 to GND for firmware download mode</td></tr>
+</table>
+<div class="note">Optional: DTR/RTS from a USB-UART bridge can auto-toggle EN and IO0 (same as a DevKit) — not required, the buttons alone are sufficient for bench use.</div>
+
+<p><strong>USB-C connector</strong></p>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>Connector type</td><td>USB-C 2.0 receptacle (16-pin, USB 2.0 only)</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Connector:USB_C_Receptacle_USB2.0</code></td></tr>
+<tr><td>Footprint</td><td><code>Connector_USB:USB_C_Receptacle_GCT_USB4105</code></td></tr>
+<tr><td>Part</td><td>GCT USB4105-GF-A (mid-mount, 16-pin, USB 2.0)</td></tr>
+<tr><td>LCSC P/N</td><td>C2688138</td></tr>
+</table>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>R_CC1, R_CC2</td><td>5.1 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Pull-downs on CC1/CC2 — signals "device" role to host</td></tr>
+<tr><td>D6</td><td>SS14 Schottky, SMA</td><td><code>Diode_SMD:D_SMA</code></td><td>VBUS series diode — prevents the 12V→5V buck from back-feeding the USB port</td></tr>
+<tr><td>R_D+, R_D-</td><td>22 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Series resistors, D+/D- to ESP32</td></tr>
+<tr><td>R_shield</td><td>1 MΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Shield-to-GND, with C_shield below</td></tr>
+<tr><td>C_shield</td><td>4.7 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Shield RC filter for EMI</td></tr>
+<tr><td>U6</td><td>USBLC6-2SC6, <code>Package_TO_SOT_SMD:SOT-23-6</code></td><td>—</td><td>ESD clamp on D+/D-</td></tr>
+</table>
+
+<p><strong>Programming &amp; debug headers</strong></p>
+<table>
+<tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
+<tr><td>J_PROG</td><td>UART programming header</td><td>1×4 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical</code></td></tr>
+<tr><td>J_DBG</td><td>SWD/JTAG debug header</td><td>1×5 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical</code></td></tr>
+</table>
+
+<h4>Critical Layout Rules</h4>
+<ul>
+<li><strong>Antenna keepout:</strong> No copper (traces, ground fill, vias) within 15 mm of the antenna end of the module (opposite the castellated pads).</li>
+<li><strong>Ground plane:</strong> Connect the center EPAD to the GND plane with at least 9 thermal-relief vias (0.3 mm drill, 0.6 mm pad).</li>
+<li><strong>Board edge:</strong> The antenna end should extend to or overhang the board edge. Place the module at a board corner if WiFi/BLE is ever needed.</li>
+</ul>
+
+<div class="note"><strong>The exposed pad's GND connection is automatic — but only if your ground net is literally named "GND" somewhere.</strong> The official KiCad symbol has 39 visible pins plus <strong>two hidden pins, 40 and 41</strong>, both named <code>GND</code> — pin 40 is a real spare ground pin on the physical package, pin 41 maps to the large exposed thermal pad. Neither appears on the schematic canvas or in a casual pin-properties check; they use KiCad's auto-connect mechanism for hidden power pins, which joins by <strong>matching pin name to any globally-named net or power symbol</strong> — not by wire, not by proximity. If your project's ground label is something other than plain <code>GND</code> (e.g. <code>GNDPWR</code>), these hidden pins will not find it and end up on an isolated, undriven net of their own. <strong>Fix:</strong> place one plain <code>GND</code> power symbol anywhere already wired onto your ground net (e.g. right next to the module's visible GND pin) to bridge the two names. <strong>Verify:</strong> run ERC — an unconnected/undriven power pin on the ESP32 symbol before the bridge, clean after, confirms it either way.</div>
+</div>
+
+<h4>4.2.2 Schematic — ESP32-S3 Pinout</h4>
 <div class="schematic-block">
-<h4>ESP32-S3-WROOM-1 Connections</h4>
 <pre><code>                    ESP32-S3-WROOM-1-N16R8
                     ┌────────────────────┐
         +3V3 ──────┤ 3V3            GND  ├────── GND
@@ -732,7 +533,9 @@ kicad-cli version
                     │              IO43  ├──────► UART0_TX (console)
              EN ───┤ EN            IO44  ├◄────── UART0_RX (console)
                     │  (RC reset)        │
-                    │    GND_PAD         │
+                    │   GND (hidden      │
+                    │   pins 40/41 —     │
+                    │   see note above)  │
                     └───────┬────────────┘
                             │
                            GND (9× vias to ground plane)
@@ -742,64 +545,201 @@ kicad-cli version
   reserved on the N16R8), IO26–32 (SPI flash).</code></pre>
 </div>
 
-<h4>ESP32-S3 Supporting Circuitry</h4>
+<h4>4.2.3 Direct Pin-to-Pin Connections</h4>
+<table>
+<tr><th>ESP32-S3 pin</th><th>Connects to</th><th>Net</th></tr>
+<tr><td>3V3 (pin 2)</td><td>+3.3V rail</td><td>+3V3</td></tr>
+<tr><td>GND (pin 1)</td><td>GND plane</td><td>GND</td></tr>
+<tr><td>GND hidden (pins 40, 41 / EPAD)</td><td>GND plane, via the bridge symbol described above</td><td>GND</td></tr>
+<tr><td>EN (pin 3)</td><td>R1 (10k pull-up to 3.3V), C2 (1µF to GND), RESET button</td><td>EN</td></tr>
+<tr><td>IO0 (pin 27)</td><td>R2 (10k pull-up to 3.3V), BOOT button</td><td>IO0 / BOOT</td></tr>
+<tr><td>IO8</td><td>W5500 RSTn</td><td>W5500_RST</td></tr>
+<tr><td>IO9</td><td>W5500 INTn</td><td>W5500_INT</td></tr>
+<tr><td>IO10</td><td>W5500 SCSn</td><td>W5500_CS</td></tr>
+<tr><td>IO11</td><td>W5500 MOSI</td><td>W5500_MOSI</td></tr>
+<tr><td>IO12</td><td>W5500 SCLK</td><td>W5500_SCLK</td></tr>
+<tr><td>IO13</td><td>W5500 MISO</td><td>W5500_MISO</td></tr>
+<tr><td>IO4</td><td>Relay driver Q1 base (via R_base)</td><td>RELAY_1</td></tr>
+<tr><td>IO5</td><td>Relay driver Q2 base (via R_base)</td><td>RELAY_2</td></tr>
+<tr><td>IO1</td><td>Relay driver Q3 base (via R_base)</td><td>RELAY_3 (spare)</td></tr>
+<tr><td>IO2</td><td>Relay driver Q4 base (via R_base)</td><td>RELAY_4 (spare)</td></tr>
+<tr><td>IO6</td><td>J_SENSE limit-open input chain</td><td>LIM_OPEN</td></tr>
+<tr><td>IO7</td><td>J_SENSE limit-closed input chain</td><td>LIM_CLOSED</td></tr>
+<tr><td>IO15</td><td>J_SENSE safety-beam input chain</td><td>SAFETY_BEAM</td></tr>
+<tr><td>IO16 / IO17 / IO18</td><td>LED_RED / LED_GREEN / LED_YELLOW (via 330Ω each)</td><td>LED_RED / LED_GREEN / LED_YELLOW</td></tr>
+<tr><td>IO14</td><td>MAX485 RO (pin 1)</td><td>RS485_RX</td></tr>
+<tr><td>IO21</td><td>MAX485 DI (pin 4)</td><td>RS485_TX</td></tr>
+<tr><td>IO38</td><td>MAX485 DE+RE (pins 2, 3, tied)</td><td>RS485_DE</td></tr>
+<tr><td>IO19</td><td>USB-C D- (via 22Ω)</td><td>USB_D-</td></tr>
+<tr><td>IO20</td><td>USB-C D+ (via 22Ω)</td><td>USB_D+</td></tr>
+<tr><td>IO43 / IO44</td><td>J_PROG header (TXD0/RXD0)</td><td>UART0_TX / UART0_RX</td></tr>
+</table>
 
-<p><strong>Reset circuit:</strong></p>
+<h4>4.2.4 USB-C Schematic</h4>
+<div class="schematic-block">
+<pre><code>USB-C Receptacle (GCT USB4105)
+┌──────────────────────────────┐
+│ VBUS ────[SS14 Schottky]────►│── +5V_USB (OR'd with main 5V)
+│                              │
+│ CC1 ─────[5.1kΩ]──── GND    │
+│ CC2 ─────[5.1kΩ]──── GND    │
+│                              │
+│ D+ ──────[22Ω]──────────────┤── ESP32 IO20
+│ D- ──────[22Ω]──────────────┤── ESP32 IO19
+│                              │
+│ SHIELD ──[1MΩ + 4.7nF]── GND│   (RC filter)
+└──────────────────────────────┘
+         │
+    [USBLC6-2SC6]  (ESD protection on D+/D-)
+         │
+        GND</code></pre>
+</div>
+<div class="warning"><strong>Important:</strong> The Schottky diode on VBUS prevents the 12V→5V buck converter from back-feeding power out the USB port. Without this, connecting USB while 12V is applied would try to power the host computer.</div>
+
+<hr>
+
+<h3>4.3 W5500 Ethernet Controller + RJ45</h3>
+
+<div class="footprint-card">
+<h4>4.3.1 Components &amp; Footprints</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>KiCad Symbol</td><td><code>Interface_Ethernet:W5500</code></td></tr>
+<tr><td>Footprint</td><td><code>Package_QFP:LQFP-48_7x7mm_P0.5mm</code></td></tr>
+<tr><td>Package</td><td>LQFP-48, 7×7 mm, 0.5 mm pitch</td></tr>
+<tr><td>Manufacturer P/N</td><td>W5500 (WIZnet)</td></tr>
+<tr><td>LCSC P/N</td><td>C32843</td></tr>
+</table>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>Crystal</td><td>25 MHz, 20 pF load, ±20 ppm — <code>Device:Crystal</code>, <code>Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm</code>, LCSC C32346</td></tr>
+<tr><td>RJ45</td><td>HR911105A single-port magjack — <code>Connector:RJ45_Shielded_Magjack</code>, <code>Connector_RJ:RJ45_Amphenol_ARJM11C7</code>, LCSC C12074</td></tr>
+</table>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>C_bulk</td><td>10 µF, 16V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Bulk decoupling near VDD</td></tr>
+<tr><td>R_EXRES1</td><td>12.4 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Bias resistor for pin 10 (EXRES1) — sets internal analog bias, per WIZnet's own reference schematic</td></tr>
+<tr><td>C_TOCAP</td><td>4.7 µF</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Required on pin 20 (TOCAP)</td></tr>
+<tr><td>C_1V2O</td><td>10 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Required on pin 22 (1V2O, the internal 1.2V regulator output)</td></tr>
+<tr><td>C19, C20 — crystal load caps</td><td>18 pF, C0G</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Crystal load capacitors, per WIZnet's reference circuit</td></tr>
+<tr><td>R16 — crystal feedback</td><td>1 MΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Oscillator feedback resistor, across XI/XO</td></tr>
+<tr><td>R17 — crystal series</td><td>0 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Series damping resistor, XO side — populate as a 0Ω link unless ringing is observed</td></tr>
+<tr><td>R_LED (×4)</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>LINKLED / SPDLED current limit (RJ45-integrated LEDs, driven directly by the W5500)</td></tr>
+<tr><td>Ferrite bead</td><td>600Ω@100MHz, 500mA</td><td><code>Inductor_SMD:L_0805_2012Metric</code></td><td>AVDD filter, between DVDD and AVDD</td></tr>
+</table>
+
+<div class="note"><strong>Corrected against WIZnet's own datasheet (not just the earlier revision of this guide):</strong> the 12.4kΩ bias resistor belongs on <strong>EXRES1 (pin 10)</strong>, not on any <code>RSVD</code> pin — earlier printings of this guide had that backwards. Pin 23 (also labeled <code>RSVD</code>) is a <em>different</em> pin from EXRES1 and the datasheet is explicit: "it must be tied to GND" — a direct short, no resistor. The other five <code>RSVD</code> pins (38–42) have an internal pull-down and the datasheet marks them "NC" — leave them unconnected. Also corrected: the second regulator-output decoupling pin is <strong>1V2O</strong> (the chip's internal 1.2V rail), not "1V8OUT" as earlier printings named it, and its datasheet-specified cap is <strong>10 nF</strong>, not 10 µF — don't confuse it with pin 20 (TOCAP), which does take 4.7 µF. Crystal load caps are corrected to 18 pF (WIZnet's own reference value for a 20pF-load-rated crystal) and the feedback/damping resistor pair (R16/R17) — present in WIZnet's reference schematic but absent from every earlier version of this diagram — is now included; without R16, oscillator startup is not guaranteed.</div>
+
+<h4>Why These Footprints</h4>
 <ul>
-<li>EN pin: 10 kΩ pull-up to 3.3V + 1 µF capacitor to GND (provides power-on reset delay)</li>
-<li>Tactile switch (reset button): connects EN to GND when pressed</li>
-<li>Symbol: <code>SW_Push</code>, Footprint: <code>Button_Switch_SMD:SW_SPST_TL3342</code></li>
+<li><strong>LQFP-48:</strong> Hand-solderable with a fine-tip iron or hot air. Exposed pads are accessible for inspection.</li>
+<li><strong>3215 crystal:</strong> Small enough to place close to the W5500 (critical for signal integrity) but large enough to hand-solder.</li>
+<li><strong>HR911105A:</strong> Built-in Bob Smith termination, center-tap capacitors, and link/activity LEDs — no discrete transformer needed.</li>
 </ul>
+</div>
 
-<p><strong>Boot mode select:</strong></p>
-<ul>
-<li>IO0 (BOOT): 10 kΩ pull-up to 3.3V (normal boot)</li>
-<li>Tactile switch (boot button): connects IO0 to GND for firmware download mode</li>
-<li>Auto-program circuit (optional): Use DTR/RTS from USB-UART to toggle EN and IO0 automatically (same as DevKit)</li>
-</ul>
-
-<p><strong>Decoupling:</strong></p>
-<ul>
-<li>4× 100 nF (0603) placed within 3mm of each 3V3/GND pin pair</li>
-<li>2× 10 µF (0805) placed within 10mm of the module</li>
-</ul>
-
-<h3>5.3 W5500 Ethernet Section</h3>
-
+<h4>4.3.2 Schematic</h4>
 <div class="schematic-block">
 <pre><code>                         W5500 (LQFP-48)
                     ┌─────────────────────────┐
-ESP32 IO12 (SCLK)──┤ SCLK              AVDD  ├───Ferrite───+3V3
-ESP32 IO11 (MOSI)──┤ MOSI              DVDD  ├───+3V3
-ESP32 IO13 (MISO)──┤ MISO              1V8OUT├───C(10µF)───GND
-ESP32 IO10 (CS)────┤ SCSn                    │
-ESP32 IO9  (INT)───┤ INTn              RSVD  ├───R(12.4k)───GND
+ESP32 IO12 (SCLK)──┤ SCLK (33)         AVDD  ├───Ferrite───+3V3
+ESP32 IO11 (MOSI)──┤ MOSI (35)         DVDD  ├───+3V3
+ESP32 IO13 (MISO)──┤ MISO (34)      1V2O(22) ├───C(10nF)───GND
+ESP32 IO10 (CS)────┤ SCSn (32)     TOCAP(20) ├───C(4.7µF)──GND
+ESP32 IO9  (INT)───┤ INTn (36)   EXRES1(10) ├───R(12.4k)───AGND
                     │                         │
-ESP32 IO8  (RST)───┤ RSTn (+10k PU)   EXRES1├───R(12.4k)───GND
+ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├───────GND (direct tie)
                     │                         │
-            GND ───┤ GND               TOCAP ├───C(4.7µF)───GND
+            GND ───┤ GND (29)         RSVD(38-42) ├───────(leave NC)
                     │                         │
-    25MHz XTAL ────┤ XI               TXP/TXN├───┐
-    25MHz XTAL ────┤ XO               RXP/RXN├───┤── To RJ45 magjack
+    25MHz XTAL(30, XI)──┤ XI/CLKIN       TXP/TXN(2,1)├───┐
+    25MHz XTAL(31, XO)──┤ XO             RXP/RXN(6,5)├───┤── To RJ45 magjack
                     │                         │   │   (HR911105A)
-                    │              LINKLED    ├───┤── LED indicator
-                    │              ACTLED     ├───┘
-                    └─────────────────────────┘</code></pre>
+                    │           LINKLED(25)  ├───┤── LED indicator
+                    │           SPDLED(24)   ├───┘
+                    │           DUPLED(26), ACTLED(27) — optional, R_LED each
+                    └─────────────────────────┘
+
+  Crystal network (WIZnet reference): XO(31)──R16(1M)──XI(30) in
+  parallel with the crystal; C19(18pF) grounds the XO side, R17(0Ω)
+  in series into C20(18pF) grounding the XI side.</code></pre>
 </div>
 
-<h4>Key W5500 Schematic Notes</h4>
+<h4>4.3.3 Direct Pin-to-Pin Connections</h4>
+<table>
+<tr><th>W5500 pin</th><th>Connects to</th><th>Net</th></tr>
+<tr><td>33 (SCLK)</td><td>ESP32 IO12</td><td>W5500_SCLK</td></tr>
+<tr><td>35 (MOSI)</td><td>ESP32 IO11</td><td>W5500_MOSI</td></tr>
+<tr><td>34 (MISO)</td><td>ESP32 IO13</td><td>W5500_MISO</td></tr>
+<tr><td>32 (SCSn)</td><td>ESP32 IO10</td><td>W5500_CS</td></tr>
+<tr><td>36 (INTn)</td><td>ESP32 IO9</td><td>W5500_INT</td></tr>
+<tr><td>37 (RSTn)</td><td>ESP32 IO8, +10kΩ pull-up to 3.3V</td><td>W5500_RST</td></tr>
+<tr><td>10 (EXRES1)</td><td>R_EXRES1 (12.4kΩ) to AGND</td><td>EXRES1 bias</td></tr>
+<tr><td>20 (TOCAP)</td><td>C_TOCAP (4.7µF) to GND</td><td>TOCAP</td></tr>
+<tr><td>22 (1V2O)</td><td>C_1V2O (10nF) to GND</td><td>1V2O</td></tr>
+<tr><td>23 (RSVD)</td><td>GND — direct tie, no resistor</td><td>GND</td></tr>
+<tr><td>38–42 (RSVD ×5)</td><td>— (leave unconnected)</td><td>—</td></tr>
+<tr><td>43/44/45 (PMODE2/1/0)</td><td>10kΩ pull-up to 3.3V each</td><td>Auto-negotiation mode</td></tr>
+<tr><td>30 (XI/CLKIN)</td><td>Crystal pin 1, R16, C19</td><td>XI</td></tr>
+<tr><td>31 (XO)</td><td>Crystal pin 2, R16, R17</td><td>XO</td></tr>
+<tr><td>1/2 (TXN/TXP)</td><td>RJ45 magjack TX pair</td><td>Ethernet TX</td></tr>
+<tr><td>5/6 (RXN/RXP)</td><td>RJ45 magjack RX pair</td><td>Ethernet RX</td></tr>
+<tr><td>25 (LINKLED)</td><td>R_LED → LED_NET</td><td>Link indicator</td></tr>
+<tr><td>4, 8, 11, 15, 17, 21 (AVDD)</td><td>Ferrite bead from DVDD</td><td>AVDD (filtered)</td></tr>
+<tr><td>28 (VDD)</td><td>+3.3V rail</td><td>DVDD</td></tr>
+<tr><td>3, 9, 14, 16, 19, 48 (AGND)</td><td>GND plane</td><td>AGND</td></tr>
+<tr><td>29 (GND)</td><td>GND plane</td><td>DGND</td></tr>
+<tr><td>18 (VBG)</td><td>— (leave floating, per datasheet)</td><td>—</td></tr>
+<tr><td>7 (DNC), 12, 13, 46, 47 (NC)</td><td>— (leave unconnected)</td><td>—</td></tr>
+</table>
+
+<h4>Key Schematic Notes</h4>
 <ol>
 <li><strong>AVDD:</strong> Must be filtered from DVDD through a ferrite bead (600Ω@100MHz). Do NOT connect directly to 3.3V.</li>
-<li><strong>RSTn:</strong> Driven by ESP32 <strong>IO8</strong> — not optional: the firmware's ethernet driver (<code>CONFIG_ETHERNET_SPI_PHY_RST0_GPIO=8</code>) pulses a hardware reset during init and will not bring the link up without it. Keep the 10kΩ pull-up to 3.3V so the chip is held out of reset before the GPIO is configured; drop rev 1.0's RC-to-GND arrangement.</li>
-<li><strong>Crystal routing:</strong> Keep XI/XO traces under 10mm, with ground guard ring. Load caps (2× 20pF) placed within 2mm of crystal pads.</li>
-<li><strong>PMODE pins:</strong> PMODE[2:0] all pulled up to 3.3V via 10kΩ for "all capable, auto-negotiation" mode.</li>
-<li><strong>SPI signals:</strong> Add 33Ω series resistors on SCLK and MOSI close to the ESP32 for signal integrity (optional but recommended for traces >30mm). The firmware clocks the bus at 20 MHz (<code>CONFIG_ETHERNET_SPI_CLOCK_MHZ=20</code>); the bench plan's Stage 2 note about halving that clock is a <em>jumper-wire</em> mitigation — on this PCB's &lt;50mm matched traces, 20 MHz has comfortable margin.</li>
+<li><strong>RSTn:</strong> Driven by ESP32 <strong>IO8</strong> — not optional: the firmware's ethernet driver (<code>CONFIG_ETHERNET_SPI_PHY_RST0_GPIO=8</code>) pulses a hardware reset during init and will not bring the link up without it. Keep the 10kΩ pull-up to 3.3V so the chip is held out of reset before the GPIO is configured.</li>
+<li><strong>SPI signals:</strong> Add 33Ω series resistors on SCLK and MOSI close to the ESP32 for signal integrity (optional but recommended for traces >30mm). The firmware clocks the bus at 20 MHz (<code>CONFIG_ETHERNET_SPI_CLOCK_MHZ=20</code>); on this PCB's &lt;50mm matched traces, that has comfortable margin.</li>
 </ol>
 
-<h3>5.4 Relay Output Section</h3>
+<hr>
 
+<h3>4.4 Relay Output Stage (4-Channel)</h3>
+
+<div class="footprint-card">
+<h4>4.4.1 Components &amp; Footprints</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>Relay</td><td>Songle SRD-05VDC-SL-C (SPDT, 5V coil, 10A/250VAC contacts)</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Relay:SANYOU_SRD_Series_Form_C</code></td></tr>
+<tr><td>Footprint</td><td><code>Relay_THT:Relay_SPDT_SANYOU_SRD_Series_Form_C</code></td></tr>
+<tr><td>Quantity</td><td>4 (REL1: OPEN contactor — IO4, REL2: CLOSE contactor — IO5, REL3/REL4: spare — IO1/IO2)</td></tr>
+<tr><td>LCSC P/N</td><td>C35449</td></tr>
+</table>
+<table>
+<tr><th>Component (per channel, ×4)</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>Q1–Q4 (NPN)</td><td>SS8050 (SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>Relay coil driver (Ic > 90mA)</td></tr>
+<tr><td>R_base</td><td>1 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Base current limiting — (3.3V−0.7V)/1kΩ = 2.6mA; hFE×2.6mA &gt; 90mA ✓</td></tr>
+<tr><td>D_flyback (D1–D4)</td><td>1N4148W (SOD-123)</td><td><code>Diode_SMD:D_SOD-123</code></td><td>Flyback/freewheeling diode across coil</td></tr>
+<tr><td>LED_REL</td><td>Green 0603</td><td><code>LED_SMD:LED_0603_1608Metric</code></td><td>Relay state visual indicator</td></tr>
+<tr><td>R_LED</td><td>1 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>LED current limit (~2mA)</td></tr>
+</table>
+<table>
+<tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
+<tr><td>J_RELAY</td><td>Relay outputs (COM/NO/NC × 4)</td><td>12-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-12_3.81mm</code></td></tr>
+</table>
+
+<h4>Why Through-Hole Relays</h4>
+<ul>
+<li>10A contacts handle the inductive kick from motor contactors without welding.</li>
+<li>Physically robust — won't crack off the board under vibration from a sliding gate motor.</li>
+<li>Field-replaceable — just desolder and swap.</li>
+<li>90mA coil draw is well within the 5V rail's 3A budget.</li>
+</ul>
+
+<div class="note"><strong>Actuator-profile decision (bench-plan risk R4).</strong> The firmware's residential profile drives REL1/REL2 as two motion contactors, while <a href="../decisions/ADR-008-gate-actuator-interface.md">ADR-008</a> specifies a single dry-contact <em>trigger pulse</em> into the Centurion controller. The four-channel board deliberately covers <em>both</em> outcomes of that decision (recorded at commissioning, §3.3 of the <a href="../commissioning.md">commissioning checklist</a>): pulse profile uses one channel, two-contactor uses two, and the spares absorb a pedestrian-open or lock output later. No PCB change is needed either way.</div>
+</div>
+
+<h4>4.4.2 Schematic — Per-Channel Relay Driver (×4)</h4>
 <div class="schematic-block">
-<h4>Per-Channel Relay Driver (×4)</h4>
 <pre><code>ESP32 IO4/IO5/IO1/IO2 ─────[R_base 1kΩ]───┐
                                             │ Base
                                        ┌────┴────┐
@@ -820,13 +760,47 @@ ESP32 IO8  (RST)───┤ RSTn (+10k PU)   EXRES1├───R(12.4k)──�
 
   Relay Contacts: ─── COM ─── NO ─── NC ─── → J_RELAY screw terminal</code></pre>
 </div>
-
 <div class="note"><strong>Note:</strong> The relay coil is powered from the +5V rail, NOT 3.3V. The NPN transistor level-shifts the 3.3V GPIO signal to switch the 5V relay. The flyback diode MUST be present — without it, the back-EMF from the relay coil will destroy the transistor.</div>
 
-<h3>5.5 Input Protection Section</h3>
+<h4>4.4.3 Direct Pin-to-Pin Connections (per channel)</h4>
+<table>
+<tr><th>From</th><th>To</th><th>Net</th></tr>
+<tr><td>ESP32 IOx (4, 5, 1, or 2)</td><td>R_base</td><td>RELAY_n control</td></tr>
+<tr><td>R_base</td><td>Q_n base</td><td>Base drive</td></tr>
+<tr><td>Q_n collector</td><td>Relay coil (–), D_flyback cathode</td><td>Coil low side</td></tr>
+<tr><td>Relay coil (+)</td><td>+5V, D_flyback anode</td><td>+5V</td></tr>
+<tr><td>Q_n emitter</td><td>GND</td><td>GND</td></tr>
+<tr><td>Relay COM/NO/NC</td><td>J_RELAY corresponding pins</td><td>Field wiring</td></tr>
+</table>
 
+<hr>
+
+<h3>4.5 Input Protection (Limit Switches &amp; Safety Beam)</h3>
+
+<div class="footprint-card">
+<h4>4.5.1 Components &amp; Footprints</h4>
+<table>
+<tr><th>Component (per channel, ×3: IO6, IO7, IO15)</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>R_pullup</td><td>10 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Pull-up to 3.3V (NC sensors go LOW when triggered)</td></tr>
+<tr><td>R_series</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Current limiting for ESD events</td></tr>
+<tr><td>C_filter</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>RC debounce (τ = 330Ω × 100nF = 33µs)</td></tr>
+<tr><td>D_clamp</td><td>BAV99 (dual series, SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>Clamp to GND/3.3V rails</td></tr>
+</table>
+<table>
+<tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
+<tr><td>J_SENSE</td><td>Sensor inputs (limit×2 + beam)</td><td>6-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-6_3.81mm</code></td></tr>
+</table>
+
+<h4>Why This Approach</h4>
+<ul>
+<li>Field wiring (10m+ cable to gate frame) picks up induced noise from the gate motor. The RC filter + clamping diodes prevent false triggers.</li>
+<li>The series resistor limits current if a cable is accidentally shorted to 12V (12V−3.3V=8.7V / 330Ω = 26mA → safe for BAV99 + GPIO).</li>
+<li>Hardware debounce means firmware doesn't need to waste cycles on software debouncing.</li>
+</ul>
+</div>
+
+<h4>4.5.2 Schematic — Per-Channel Input (×3)</h4>
 <div class="schematic-block">
-<h4>Per-Channel Input (×3: LIM_OPEN, LIM_CLOSED, SAFETY_BEAM)</h4>
 <pre><code>J_SENSE terminal ───[R_series 330Ω]───┬───[R_pullup 10kΩ]─── +3V3
                                        │
                                  [C_filter 100nF]
@@ -841,8 +815,46 @@ J_SENSE ── R_series ──────────┤
                                        └─── To ESP32 GPIO (IO6/IO7/IO15)</code></pre>
 </div>
 
-<h3>5.6 RS-485 Section</h3>
+<h4>4.5.3 Direct Pin-to-Pin Connections (per channel)</h4>
+<table>
+<tr><th>From</th><th>To</th><th>Net</th></tr>
+<tr><td>J_SENSE terminal pin</td><td>R_series</td><td>Field input</td></tr>
+<tr><td>R_series, far end</td><td>R_pullup (to +3.3V), C_filter (to GND), BAV99 common, ESP32 IOx</td><td>Debounced/clamped signal</td></tr>
+<tr><td>BAV99 pin 1</td><td>+3.3V</td><td>Upper clamp</td></tr>
+<tr><td>BAV99 pin 3</td><td>GND</td><td>Lower clamp</td></tr>
+<tr><td>ESP32 IO6 / IO7 / IO15</td><td>LIM_OPEN / LIM_CLOSED / SAFETY_BEAM channel</td><td>Firmware input</td></tr>
+</table>
 
+<hr>
+
+<h3>4.6 RS-485 Transceiver</h3>
+
+<div class="footprint-card">
+<h4>4.6.1 Components &amp; Footprints</h4>
+<table>
+<tr><th>Parameter</th><th>Selection</th></tr>
+<tr><td>IC</td><td>MAX485ESA+ (half-duplex, 2.5 Mbps)</td></tr>
+<tr><td>KiCad Symbol</td><td><code>Interface_UART:MAX485E</code></td></tr>
+<tr><td>Footprint</td><td><code>Package_SO:SOIC-8_3.9x4.9mm_P1.27mm</code></td></tr>
+<tr><td>LCSC P/N</td><td>C14038</td></tr>
+</table>
+<table>
+<tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
+<tr><td>R_term</td><td>120 Ω (optional, populate for end-of-line)</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Bus termination</td></tr>
+<tr><td>R_bias_A</td><td>560 Ω to VCC</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias (idle = mark)</td></tr>
+<tr><td>R_bias_B</td><td>560 Ω to GND</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias</td></tr>
+<tr><td>TVS (×2)</td><td>PESD5V0U2BT (SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>ESD protection on A/B lines</td></tr>
+<tr><td>C_dec</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>VCC decoupling</td></tr>
+</table>
+<table>
+<tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
+<tr><td>J_RS485</td><td>RS-485 A/B/GND</td><td>3-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-3_5.08mm</code></td></tr>
+</table>
+
+<div class="warning"><strong>Pin change from rev 1.0:</strong> RS-485 moved off IO16/17/18 — the firmware's Phase 4.4.4 status-LED driver owns those pins (§1.4). The transceiver stays on the board per ADR-008 ("included in PCB design but disabled in firmware until protocol is implemented"); any future ESP32-S3 UART peripheral routes to these pins via the GPIO matrix, so the choice costs nothing in firmware.</div>
+</div>
+
+<h4>4.6.2 Schematic</h4>
 <div class="schematic-block">
 <pre><code>ESP32 IO21 (TX) ─────────────────────── DI (pin 4)  ┐
 ESP32 IO14 (RX) ─────────────────────── RO (pin 1)  │  MAX485ESA+
@@ -863,30 +875,49 @@ ESP32 IO38 (DE) ──┬──────────────────�
                                    J_RS485 pin 3 ── GND</code></pre>
 </div>
 
-<h3>5.7 USB-C Section</h3>
+<h4>4.6.3 Direct Pin-to-Pin Connections</h4>
+<table>
+<tr><th>MAX485 pin</th><th>Connects to</th><th>Net</th></tr>
+<tr><td>1 (RO)</td><td>ESP32 IO14</td><td>RS485_RX</td></tr>
+<tr><td>2 (/RE)</td><td>pin 3 (DE), tied together, ESP32 IO38</td><td>RS485_DE</td></tr>
+<tr><td>3 (DE)</td><td>pin 2 (/RE), tied together, ESP32 IO38</td><td>RS485_DE</td></tr>
+<tr><td>4 (DI)</td><td>ESP32 IO21</td><td>RS485_TX</td></tr>
+<tr><td>5 (GND)</td><td>GND plane</td><td>GND</td></tr>
+<tr><td>6 (A)</td><td>R_bias_A (to +5V), TVS, J_RS485 pin 1</td><td>RS485_A</td></tr>
+<tr><td>7 (B)</td><td>R_bias_B (to GND), TVS, J_RS485 pin 2</td><td>RS485_B</td></tr>
+<tr><td>8 (VCC)</td><td>+5V rail</td><td>+5V</td></tr>
+</table>
 
-<div class="schematic-block">
-<pre><code>USB-C Receptacle (GCT USB4105)
-┌──────────────────────────────┐
-│ VBUS ────[SS14 Schottky]────►│── +5V_USB (OR'd with main 5V)
-│                              │
-│ CC1 ─────[5.1kΩ]──── GND    │
-│ CC2 ─────[5.1kΩ]──── GND    │
-│                              │
-│ D+ ──────[22Ω]──────────────┤── ESP32 IO20
-│ D- ──────[22Ω]──────────────┤── ESP32 IO19
-│                              │
-│ SHIELD ──[1MΩ + 4.7nF]── GND│   (RC filter)
-└──────────────────────────────┘
-         │
-    [USBLC6-2SC6]  (ESD protection on D+/D-)
-         │
-        GND</code></pre>
+<hr>
+
+<h3>4.7 Status LEDs &amp; Indicators</h3>
+
+<div class="footprint-card">
+<h4>4.7.1 Components &amp; Footprints</h4>
+<table>
+<tr><th>LED</th><th>Color</th><th>Driven by</th><th>Meaning</th><th>Footprint</th></tr>
+<tr><td>LED_PWR</td><td>Green</td><td>+5V rail, always on</td><td>Board powered (no firmware involvement)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_NET</td><td>Yellow</td><td>W5500 LINKLED pin</td><td>Ethernet link active (driven by the W5500)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_RED</td><td>Red</td><td>ESP32 <strong>IO16</strong></td><td rowspan="3">The firmware's three-LED status set — patterns (auth flash, deny, fault blink, OTA pulse) are defined by the <code>StatusLed</code> driver in <code>firmware/components/gate_drivers/</code>. The PCB provides plain active-high LEDs; all behavior is firmware.</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_GREEN</td><td>Green</td><td>ESP32 <strong>IO17</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_YELLOW</td><td>Yellow</td><td>ESP32 <strong>IO18</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+</table>
+<table>
+<tr><th>Resistor</th><th>Value</th><th>Calculation</th></tr>
+<tr><td>R_PWR (LED_PWR, 5V rail)</td><td>680 Ω</td><td>(5V−2.0V)/5mA = 620Ω → 680Ω standard value</td></tr>
+<tr><td>R_LED ×4 (GPIO LEDs, 3.3V)</td><td>330 Ω</td><td>(3.3V−2.0V)/5mA = 260Ω → 330Ω standard value</td></tr>
+</table>
+
+<h4>Why 0805 LEDs</h4>
+<ul>
+<li>Bright enough to see through a translucent enclosure lid.</li>
+<li>Large enough to place by hand with tweezers, small enough not to waste PCB space.</li>
+<li>0603 is too dim at distance; 1206 is unnecessarily large.</li>
+</ul>
 </div>
 
-<div class="warning"><strong>Important:</strong> The Schottky diode on VBUS prevents the 12V→5V buck converter from back-feeding power out the USB port. Without this, connecting USB while 12V is applied would try to power the host computer.</div>
-
-<h3>5.8 LED &amp; Indicator Section</h3>
+<h4>4.7.2 Schematic</h4>
+<div class="schematic-block">
 <pre><code>+5V ──[R 680Ω]──[LED_PWR Green 0805]── GND      (always on)
 
 IO16 ──[R 330Ω]──[LED_RED    Red    0805]── GND  ┐ firmware StatusLed
@@ -894,11 +925,24 @@ IO17 ──[R 330Ω]──[LED_GREEN  Green  0805]── GND  │ driver (patter
 IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/fault/OTA)
 
 W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></pre>
+</div>
 
-<!-- CHAPTER 6 -->
-<h2>6. Design Rules &amp; Constraints</h2>
+<h4>4.7.3 Direct Pin-to-Pin Connections</h4>
+<table>
+<tr><th>From</th><th>To</th><th>Net</th></tr>
+<tr><td>+5V rail</td><td>R_PWR (680Ω) → LED_PWR anode</td><td>LED_PWR</td></tr>
+<tr><td>ESP32 IO16</td><td>R_LED (330Ω) → LED_RED anode</td><td>LED_RED</td></tr>
+<tr><td>ESP32 IO17</td><td>R_LED (330Ω) → LED_GREEN anode</td><td>LED_GREEN</td></tr>
+<tr><td>ESP32 IO18</td><td>R_LED (330Ω) → LED_YELLOW anode</td><td>LED_YELLOW</td></tr>
+<tr><td>W5500 pin 25 (LINKLED)</td><td>R_LED (330Ω) → LED_NET anode</td><td>LED_NET</td></tr>
+<tr><td>All LED cathodes</td><td>GND</td><td>GND</td></tr>
+</table>
 
-<h3>6.1 Setting Up Design Rules in KiCad</h3>
+
+<!-- CHAPTER 5 -->
+<h2>5. Design Rules &amp; Constraints</h2>
+
+<h3>5.1 Setting Up Design Rules in KiCad</h3>
 <p>Open <strong>Board Setup → Design Rules → Net Classes</strong> in the PCB Editor:</p>
 
 <table>
@@ -910,7 +954,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>SPI</td><td>0.2 mm</td><td>0.2 mm</td><td>0.3 mm</td><td>0.6 mm</td><td>SPI_CLK, SPI_MOSI, SPI_MISO, SPI_CS</td></tr>
 </table>
 
-<h3>6.2 PCB Layer Stackup</h3>
+<h3>5.2 PCB Layer Stackup</h3>
 <table>
 <tr><th>Layer</th><th>Name</th><th>Purpose</th><th>Copper Weight</th></tr>
 <tr><td>L1 (Top)</td><td>F.Cu</td><td>Signal + component pads</td><td>1 oz (35 µm)</td></tr>
@@ -921,7 +965,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 
 <p>To configure this in KiCad: <strong>Board Setup → Board Stackup → Physical Stackup</strong>. Set to 4 layers. Ensure the prepreg/core thicknesses give a total board thickness of 1.6 mm.</p>
 
-<h3>6.3 Trace Width Calculator</h3>
+<h3>5.3 Trace Width Calculator</h3>
 <p>Use KiCad's built-in calculator (<strong>Tools → PCB Calculator → Track Width</strong>) or these pre-calculated values:</p>
 <table>
 <tr><th>Current</th><th>Required Width (outer, 1oz, 20°C rise)</th><th>Used For</th></tr>
@@ -932,7 +976,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>3 A</td><td>1.3 mm (50 mil) — use 1.5 mm</td><td>Buck inductor to output</td></tr>
 </table>
 
-<h3>6.4 USB 2.0 Differential Pair</h3>
+<h3>5.4 USB 2.0 Differential Pair</h3>
 <ul>
 <li>Target impedance: 90 Ω differential</li>
 <li>Trace width: ~0.2 mm with 0.15 mm gap on outer layer over ground plane (verify with KiCad impedance calculator for your stackup)</li>
@@ -941,7 +985,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>Route with 45° angles only (no 90° bends)</li>
 </ul>
 
-<h3>6.5 SPI Bus Rules</h3>
+<h3>5.5 SPI Bus Rules</h3>
 <ul>
 <li>Maximum SPI clock: 33 MHz (W5500 supports up to 80 MHz, but ESP32-S3 SPI master practical limit is ~40 MHz)</li>
 <li>Keep SPI traces under 50 mm total length</li>
@@ -950,10 +994,10 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>Series termination resistors (33 Ω) on CLK and MOSI at the driver end (ESP32) if trace length > 30 mm</li>
 </ul>
 
-<!-- CHAPTER 7 -->
-<h2>7. PCB Layout — Step by Step</h2>
+<!-- CHAPTER 6 -->
+<h2>6. PCB Layout — Step by Step</h2>
 
-<h3>7.1 Board Outline &amp; Mounting Holes</h3>
+<h3>6.1 Board Outline &amp; Mounting Holes</h3>
 
 <ol class="steps">
 <li>In PCB Editor, switch to the <strong>Edge.Cuts</strong> layer</li>
@@ -974,7 +1018,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 </li>
 </ol>
 
-<h3>7.2 Component Placement Strategy</h3>
+<h3>6.2 Component Placement Strategy</h3>
 
 <div class="note"><strong>Golden rule:</strong> Place components in the order that signals flow — power input at one edge, output connectors at the opposite/adjacent edges, MCU in the center.</div>
 
@@ -1025,7 +1069,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li><strong>Screw terminals:</strong> All at board edges for easy wire access.</li>
 </ol>
 
-<h3>7.3 Power Plane Design</h3>
+<h3>6.3 Power Plane Design</h3>
 
 <h4>Layer 2 (In1.Cu) — Ground Plane</h4>
 <ol>
@@ -1050,7 +1094,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>Leave 0.5mm gap between power zones</li>
 </ol>
 
-<h3>7.4 Signal Routing</h3>
+<h3>6.4 Signal Routing</h3>
 
 <h4>Routing Order (route in this sequence for best results)</h4>
 <ol>
@@ -1105,7 +1149,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li><strong>Lasso selection (new in 10):</strong> Freeform area select makes grabbing one routed channel for duplication much less fiddly than rectangle-select ever was.</li>
 </ul>
 
-<h3>7.5 Antenna Keepout Zone</h3>
+<h3>6.5 Antenna Keepout Zone</h3>
 
 <ol>
 <li>Identify the antenna end of the ESP32-S3-WROOM-1 module (the narrow end, opposite the castellated pads)</li>
@@ -1122,7 +1166,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 
 <div class="warning"><strong>If you skip this step:</strong> The WiFi/BLE range will be reduced by 50–80%. To be clear about today's posture: the shipped system needs <em>no</em> radio — control, telemetry, and OTA all run over the W5500 wired Ethernet (ADR-011 / ADR-009). The keepout is cheap insurance for the futures that do want the radio (WiFi as a network fallback, BLE commissioning) and good RF hygiene regardless — don't spend it on copper.</div>
 
-<h3>7.6 Thermal Relief &amp; Copper Fills</h3>
+<h3>6.6 Thermal Relief &amp; Copper Fills</h3>
 
 <ol>
 <li><strong>Top and Bottom copper fills:</strong> After all routing is complete, add GND fills on F.Cu and B.Cu:
@@ -1141,10 +1185,10 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 </li>
 </ol>
 
-<!-- CHAPTER 8 -->
-<h2>8. Design Rule Check (DRC)</h2>
+<!-- CHAPTER 7 -->
+<h2>7. Design Rule Check (DRC)</h2>
 
-<h3>8.1 Running DRC</h3>
+<h3>7.1 Running DRC</h3>
 <ol>
 <li>Click <strong>Inspect → Design Rules Checker</strong></li>
 <li>Click <strong>Run DRC</strong></li>
@@ -1153,7 +1197,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 
 <div class="tip"><strong>New in KiCad 10 — graphical DRC rule editor.</strong> Custom rules no longer require hand-writing S-expressions. Two custom rules worth adding through the GUI for this board: (1) a larger clearance (≥1.0mm) between any <code>RELAY_*</code>/relay-contact copper and the SPI net class — the contacts switch inductive loads next to a 20 MHz bus; (2) a clearance ring around the antenna keepout that also catches silkscreen. The old S-expression syntax still works if you have rules from a v9 project.</div>
 
-<h3>8.2 Common DRC Errors and Fixes</h3>
+<h3>7.2 Common DRC Errors and Fixes</h3>
 <table>
 <tr><th>Error</th><th>Cause</th><th>Fix</th></tr>
 <tr><td>Clearance violation</td><td>Traces too close together</td><td>Move trace or increase spacing. Check net class settings.</td></tr>
@@ -1165,7 +1209,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>Silk over pad</td><td>Silkscreen text overlapping exposed pad</td><td>Move text or set "Exclude pads from silk" in zone properties</td></tr>
 </table>
 
-<h3>8.3 Electrical Rules Check (ERC) — In Schematic</h3>
+<h3>7.3 Electrical Rules Check (ERC) — In Schematic</h3>
 <p>Before moving to layout, run ERC in the Schematic Editor: <strong>Inspect → Electrical Rules Checker</strong>.</p>
 <table>
 <tr><th>Common ERC Error</th><th>Fix</th></tr>
@@ -1174,10 +1218,10 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>Different net names on same wire</td><td>Remove duplicate labels, use a single net name</td></tr>
 </table>
 
-<!-- CHAPTER 9 -->
-<h2>9. Manufacturing Output</h2>
+<!-- CHAPTER 8 -->
+<h2>8. Manufacturing Output</h2>
 
-<h3>9.1 Gerber Files</h3>
+<h3>8.1 Gerber Files</h3>
 <ol>
 <li>In PCB Editor: <strong>File → Fabrication Outputs → Gerbers</strong></li>
 <li>Settings:
@@ -1203,7 +1247,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 </li>
 </ol>
 
-<h3>9.2 Generated Files</h3>
+<h3>8.2 Generated Files</h3>
 <pre><code>gerbers/
 ├── gate-field-controller-F_Cu.gtl        (top copper)
 ├── gate-field-controller-In1_Cu.g2l      (ground plane)
@@ -1218,14 +1262,14 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 ├── gate-field-controller-NPTH.drl        (non-plated hole drill)
 └── gate-field-controller-job.gbrjob      (Gerber job file)</code></pre>
 
-<h3>9.3 Bill of Materials (BOM) Export</h3>
+<h3>8.3 Bill of Materials (BOM) Export</h3>
 <ol>
 <li>In Schematic Editor: <strong>Tools → Generate BOM</strong></li>
 <li>Use the built-in CSV BOM plugin</li>
 <li>Or use <strong>File → Fabrication Outputs → Component Placement</strong> for pick-and-place files</li>
 </ol>
 
-<h3>9.4 Component Placement File (CPL / POS)</h3>
+<h3>8.4 Component Placement File (CPL / POS)</h3>
 <ol>
 <li>In PCB Editor: <strong>File → Fabrication Outputs → Component Placement (.pos)</strong></li>
 <li>Settings:
@@ -1238,13 +1282,13 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>This file tells the pick-and-place machine where each SMD component goes</li>
 </ol>
 
-<h3>9.5 3D PDF Export (new in KiCad 10)</h3>
+<h3>8.5 3D PDF Export (new in KiCad 10)</h3>
 <p>Before ordering, export the board as a 3D PDF and check it against the enclosure: <strong>File → Export</strong> in the PCB editor. Rotate the model and verify connector overhangs (USB-C, RJ45), relay height under the enclosure lid, and that the four mounting holes land on the enclosure bosses. This catches the mechanical mistakes the DRC never will, and the PDF is the right artifact to file next to the order confirmation.</p>
 
-<!-- CHAPTER 10 -->
-<h2>10. Ordering from JLCPCB / PCBWay</h2>
+<!-- CHAPTER 9 -->
+<h2>9. Ordering from JLCPCB / PCBWay</h2>
 
-<h3>10.1 JLCPCB Order Settings</h3>
+<h3>9.1 JLCPCB Order Settings</h3>
 <table>
 <tr><th>Parameter</th><th>Selection</th><th>Cost Impact</th></tr>
 <tr><td>Layers</td><td>4</td><td>~$10 extra vs 2-layer</td></tr>
@@ -1260,7 +1304,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>Confirm Production File</td><td>Yes</td><td>Free — they'll email you a review</td></tr>
 </table>
 
-<h3>10.2 Assembly Service (SMT)</h3>
+<h3>9.2 Assembly Service (SMT)</h3>
 <p>Both JLCPCB and PCBWay offer SMT assembly. Upload:</p>
 <ol>
 <li><strong>BOM file</strong> (CSV with columns: Comment, Designator, Footprint, LCSC Part#)</li>
@@ -1269,7 +1313,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 
 <div class="note"><strong>Tip:</strong> JLCPCB's "Economic" PCBA starts at $8 setup + per-component cost. For 5 boards with ~40 SMD parts, expect ~$50–80 total for assembly. Through-hole components (relays, screw terminals, RJ45) must be hand-soldered.</div>
 
-<h3>10.3 Cost Estimate</h3>
+<h3>9.3 Cost Estimate</h3>
 <table>
 <tr><th>Item</th><th>Cost (USD)</th></tr>
 <tr><td>5× bare PCBs (4-layer, 100×80mm)</td><td>$25–35</td></tr>
@@ -1279,7 +1323,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td><strong>Total for 5 assembled boards</strong></td><td><strong>$120–180</strong></td></tr>
 </table>
 
-<h3>10.4 Ordering Checklist</h3>
+<h3>9.4 Ordering Checklist</h3>
 <ul>
 <li>☐ Run DRC — zero errors</li>
 <li>☐ Run ERC — zero errors</li>
@@ -1292,10 +1336,10 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li>☐ Check that all LCSC part numbers are in stock</li>
 </ul>
 
-<!-- CHAPTER 11 -->
-<h2>11. Assembly &amp; Testing Checklist</h2>
+<!-- CHAPTER 10 -->
+<h2>10. Assembly &amp; Testing Checklist</h2>
 
-<h3>11.1 Solder Order (if hand-assembling)</h3>
+<h3>10.1 Solder Order (if hand-assembling)</h3>
 <ol>
 <li><strong>Shortest components first:</strong> SMD resistors and capacitors (0603) using solder paste + hot air or iron with fine tip</li>
 <li><strong>ICs:</strong> W5500 (LQFP-48) — use flux + drag-solder technique. Then MAX485 (SOIC-8), SS8050 transistors (SOT-23)</li>
@@ -1304,7 +1348,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li><strong>Through-hole last:</strong> Relays (4×), screw terminals, RJ45 jack, pin headers, mounting standoffs</li>
 </ol>
 
-<h3>11.2 First Power-On Test Sequence</h3>
+<h3>10.2 First Power-On Test Sequence</h3>
 <ol>
 <li><strong>Visual inspection:</strong> Check for solder bridges (especially on W5500 QFP and ESP32 module). Use magnification (loupe or microscope).</li>
 <li><strong>Continuity check:</strong> With multimeter in continuity mode:
@@ -1328,11 +1372,11 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <li><strong>Input test:</strong> Short each sensor input to GND. Firmware should register the state change.</li>
 </ol>
 
-<h3>11.3 Troubleshooting</h3>
+<h3>10.3 Troubleshooting</h3>
 <table>
 <tr><th>Symptom</th><th>Likely Cause</th><th>Fix</th></tr>
 <tr><td>No 5V output</td><td>TPS5430 not switching — check solder on exposed pad, C_boot on the wrong node, or a missing/backwards catch diode</td><td>Reflow TPS5430 with hot air. Verify EN pin is high. Confirm C_boot goes BOOT→PH (not GND) and D3's cathode is at PH.</td></tr>
-<tr><td>5V rail reads ~6.4–6.5V instead of 5V</td><td>Feedback divider using the old 43kΩ R_top instead of 30.9kΩ (rev 2.0 and earlier BOM error)</td><td>Replace R_top with 30.9kΩ, 1% (§4.3). Re-measure TP_5V — should land 4.9–5.1V.</td></tr>
+<tr><td>5V rail reads ~6.4–6.5V instead of 5V</td><td>Feedback divider using the old 43kΩ R_top instead of 30.9kΩ (rev 2.0 and earlier BOM error)</td><td>Replace R_top with 30.9kΩ, 1% (§4.1). Re-measure TP_5V — should land 4.9–5.1V.</td></tr>
 <tr><td>3.3V reads 5V</td><td>AMS1117 soldered backwards</td><td>Check tab orientation (tab connects to VOUT on AMS1117)</td></tr>
 <tr><td>ESP32 not enumerating on USB</td><td>USB D+/D- swapped or CC resistors wrong</td><td>Verify D+ goes to IO20, D- to IO19. Check 5.1kΩ on CC pins.</td></tr>
 <tr><td>W5500 no link</td><td>Crystal not oscillating</td><td>Probe XI with oscilloscope. Check crystal solder joints and load caps.</td></tr>
@@ -1499,7 +1543,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 2.1 — July 2026 (5V rail feedback divider corrected to 30.9kΩ; reverse-polarity and catch diodes added to the power-path diagram and BOM; erroneous compensation network removed; supersedes rev 2.0)
+Document revision 3.0 — July 2026 (restructured into one section per module — footprints, schematic, and direct pin-to-pin connections together; W5500 pin numbers, EXRES1/RSVD bias wiring, 1V2O decoupling, and crystal feedback network corrected against the WIZnet datasheet; ESP32 decoupling and exposed-pad grounding clarified; supersedes rev 2.1)
 </p>
 
 </body>

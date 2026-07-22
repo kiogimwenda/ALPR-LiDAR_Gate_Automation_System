@@ -9,6 +9,24 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.0: restructured chapters 4 (footprints)
+  and 5 (schematics) into a single chapter with one section per
+  module — footprints, schematic diagram, and an explicit
+  pin-to-pin connection table together, instead of split across two
+  chapters. Screw terminals/connectors moved into the module section
+  they belong to. Re-deriving the pin-to-pin tables against the
+  WIZnet W5500 datasheet directly turned up real, pre-existing
+  errors: the SPI/INT pin numbers in Appendix A were off by several
+  positions (correct: SCLK=33, MOSI=35, MISO=34, SCSn=32, INTn=36);
+  the 12.4kΩ bias resistor was drawn on a `RSVD` pin instead of
+  `EXRES1` (pin 10), and pin 23 (also `RSVD`) actually needs a
+  direct tie to GND; "1V8OUT" doesn't exist on this chip — it's
+  `1V2O`, needing 10nF, not 10µF; and the crystal circuit was
+  missing WIZnet's own 1MΩ feedback resistor entirely. Also added:
+  a corrected ESP32 decoupling explanation (schematic vs. layout
+  step) and coverage of the module's hidden GND pins (40/41) and
+  why they need a plain `GND` net to auto-connect to. Later chapters
+  renumbered down by one to close the gap.
 - PCB design guide revision 2.1: fixed a wrong 5V-rail feedback
   divider (43kΩ/10kΩ actually set ~6.47V, not the documented 5.0V;
   corrected to 30.9kΩ/10kΩ), added the reverse-polarity and buck
