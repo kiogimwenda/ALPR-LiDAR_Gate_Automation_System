@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.2<br>
+<strong>Date:</strong> July 2026 — revision 3.3<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -115,6 +115,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.1 (July 2026).</strong> Every capacitor value in §4 now states its type in plain words — <strong>ceramic, unpolarized</strong> (X7R/X5R/C0G) or <strong>electrolytic, polarized</strong> — instead of leaving it to be inferred from a dielectric code or a footprint name. This was a real gap: several rows (C_boot, C2, C_TOCAP, C_1V2O, C_filter, C_dec, C_shield) previously gave a value with no dielectric at all, and even the rows that did name a code (X5R, X7R, C0G) never spelled out in words that those codes mean "ceramic — either orientation is fine." Two small corrections came out of the pass: Appendix B's crystal-load-cap BOM row still said 20pF from before the §4.3 rewrite corrected the actual value to 18pF (WIZnet's reference value); and C_1V2O (the W5500's 1V2O decoupling cap, added in §4.3 of rev 3.0) never got a BOM line — added as row 54.</div>
 
 <div class="note"><strong>Revision 3.2 (July 2026).</strong> Caught reviewing the first built USB-C/MCU schematic sheet: the §4.2.4 diagram named the USBLC6-2SC6's ESD-protection pins only as a black box ("ESD protection on D+/D-") without real pin numbers — exactly the kind of ambiguity that led to a real miswiring (pin 5, which is VBUS, wired into the shield/GND chain instead, with the actual D+/D- clamp pins left unconnected). The diagram now gives the IC's real pinout per ST's datasheet. Also clarified that CC1 and CC2 need independent 5.1kΩ pull-downs — never a shared one — since both are easy to read as interchangeable "CC" pins on a simplified schematic symbol. Separately, §4.2.5 "Programming & Debug Header Wiring" is new: J_PROG and J_DBG had footprints and a connector-table entry since revision 2.0 but no pinout anywhere in the document — added GND/3V3/TXD0/RXD0 for J_PROG and the four otherwise-unused JTAG GPIOs (IO39–42) for J_DBG, with the eFuse caveat for the latter.</div>
+
+<div class="note"><strong>Revision 3.3 (July 2026).</strong> §4.2.1's KiCad symbol reference was stale: <code>Connector:USB_C_Receptacle_USB2.0</code> doesn't exist in current KiCad 10 libraries — it was split into <code>_14P</code> and <code>_16P</code> variants at some point. Corrected to <strong><code>USB_C_Receptacle_USB2.0_16P</code></strong>, which matches the GCT USB4105-GF-A's actual 16 physical contacts (the <code>_14P</code> variant omits the SBU1/SBU2 pins this part has); noted the plug-vs-receptacle and USB2.0-vs-USB3 traps in the same row so the correct symbol is a one-line lookup instead of trial and error against the library browser.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -483,7 +485,7 @@ kicad-cli version
 <table>
 <tr><th>Parameter</th><th>Selection</th></tr>
 <tr><td>Connector type</td><td>USB-C 2.0 receptacle (16-pin, USB 2.0 only)</td></tr>
-<tr><td>KiCad Symbol</td><td><code>Connector:USB_C_Receptacle_USB2.0</code></td></tr>
+<tr><td>KiCad Symbol</td><td><code>Connector:USB_C_Receptacle_USB2.0_16P</code> — <strong>not</strong> the plain <code>USB_C_Receptacle_USB2.0</code> (renamed in a recent library update) and <strong>not</strong> the <code>_14P</code> variant, which omits the SBU1/SBU2 pins this 16-contact part actually has. Also not <code>USB_C_Plug*</code> (that's the cable-end connector, not the PCB-mounted socket).</td></tr>
 <tr><td>Footprint</td><td><code>Connector_USB:USB_C_Receptacle_GCT_USB4105</code></td></tr>
 <tr><td>Part</td><td>GCT USB4105-GF-A (mid-mount, 16-pin, USB 2.0)</td></tr>
 <tr><td>LCSC P/N</td><td>C2688138</td></tr>
@@ -1585,7 +1587,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.2 — July 2026 (USB-C ESD IC (U6) wiring corrected against ST's actual USBLC6-2SC6 datasheet — pin 5 is VBUS, not GND/shield, and pins 1/6 and 3/4 need to land on D-/D+; CC1/CC2 pull-downs clarified as independent, never shared; §4.2.5 "Programming & Debug Header Wiring" added for J_PROG/J_DBG, previously undocumented; supersedes rev 3.1)
+Document revision 3.3 — July 2026 (USB-C KiCad symbol corrected to USB_C_Receptacle_USB2.0_16P — the plain USB_C_Receptacle_USB2.0 name no longer exists in current KiCad 10 libraries; supersedes rev 3.2)
 </p>
 
 </body>

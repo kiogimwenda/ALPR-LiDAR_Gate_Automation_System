@@ -9,6 +9,12 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.3: §4.2.1's KiCad symbol name for the
+  USB-C receptacle was stale — `Connector:USB_C_Receptacle_USB2.0`
+  doesn't exist in current KiCad 10 libraries (split into `_14P`/
+  `_16P` variants at some point). Corrected to
+  `USB_C_Receptacle_USB2.0_16P`, matching the GCT USB4105-GF-A's
+  actual 16 contacts (`_14P` omits the SBU1/SBU2 pins this part has).
 - PCB design guide revision 3.2: caught reviewing the first built
   USB-C/MCU sheet — the USB-C ESD IC (USBLC6-2SC6) was miswired
   (pin 5, which is VBUS, tied into the shield/GND chain instead,
