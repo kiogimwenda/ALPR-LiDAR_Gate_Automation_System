@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.1<br>
+<strong>Date:</strong> July 2026 — revision 3.2<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -113,6 +113,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.0 (July 2026).</strong> Structural rewrite, prompted by building the actual power-supply and MCU schematic sheets and finding it slower than it should have been to answer "where's everything about module X." Chapters 4 (footprints) and 5 (schematics) are merged into one chapter, §4, with a dedicated section per module — footprints, schematic, and an explicit pin-to-pin connection table together, instead of split across two chapters you had to flip between. Screw terminals/connectors moved out of a standalone chapter into the module they belong to. Getting the pin-to-pin tables right required re-deriving several nets against the WIZnet W5500 datasheet directly rather than trusting this guide's own prior numbers, which turned up real errors predating this rewrite: the SPI/INT pin numbers in Appendix A were off by several positions (real: SCLK=33, MOSI=35, MISO=34, SCSn=32, INTn=36); the 12.4kΩ bias resistor was drawn on a <code>RSVD</code> pin instead of <code>EXRES1</code> (pin 10) — and pin 23, also <code>RSVD</code>, actually needs a direct tie to GND, no resistor; "1V8OUT" doesn't exist on this chip — it's <code>1V2O</code>, and its datasheet-specified cap is 10nF, not 10µF; and the crystal circuit was missing WIZnet's own feedback resistor (R16, 1MΩ) entirely, without which oscillator startup isn't guaranteed. Also folded in: a corrected, pin-count-accurate ESP32 decoupling explanation (schematic step vs. layout step), and an explanation of the module's hidden GND pins (40/41) and why they need a plain <code>GND</code> net to auto-connect to — both raised during review of the built MCU sheet. Chapters 5 onward are renumbered down by one (old §6–§11 → §5–§10) to close the gap left by the merge.</div>
 
 <div class="note"><strong>Revision 3.1 (July 2026).</strong> Every capacitor value in §4 now states its type in plain words — <strong>ceramic, unpolarized</strong> (X7R/X5R/C0G) or <strong>electrolytic, polarized</strong> — instead of leaving it to be inferred from a dielectric code or a footprint name. This was a real gap: several rows (C_boot, C2, C_TOCAP, C_1V2O, C_filter, C_dec, C_shield) previously gave a value with no dielectric at all, and even the rows that did name a code (X5R, X7R, C0G) never spelled out in words that those codes mean "ceramic — either orientation is fine." Two small corrections came out of the pass: Appendix B's crystal-load-cap BOM row still said 20pF from before the §4.3 rewrite corrected the actual value to 18pF (WIZnet's reference value); and C_1V2O (the W5500's 1V2O decoupling cap, added in §4.3 of rev 3.0) never got a BOM line — added as row 54.</div>
+
+<div class="note"><strong>Revision 3.2 (July 2026).</strong> Caught reviewing the first built USB-C/MCU schematic sheet: the §4.2.4 diagram named the USBLC6-2SC6's ESD-protection pins only as a black box ("ESD protection on D+/D-") without real pin numbers — exactly the kind of ambiguity that led to a real miswiring (pin 5, which is VBUS, wired into the shield/GND chain instead, with the actual D+/D- clamp pins left unconnected). The diagram now gives the IC's real pinout per ST's datasheet. Also clarified that CC1 and CC2 need independent 5.1kΩ pull-downs — never a shared one — since both are easy to read as interchangeable "CC" pins on a simplified schematic symbol. Separately, §4.2.5 "Programming & Debug Header Wiring" is new: J_PROG and J_DBG had footprints and a connector-table entry since revision 2.0 but no pinout anywhere in the document — added GND/3V3/TXD0/RXD0 for J_PROG and the four otherwise-unused JTAG GPIOs (IO39–42) for J_DBG, with the eFuse caveat for the latter.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -499,8 +501,8 @@ kicad-cli version
 <p><strong>Programming &amp; debug headers</strong></p>
 <table>
 <tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
-<tr><td>J_PROG</td><td>UART programming header</td><td>1×4 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical</code></td></tr>
-<tr><td>J_DBG</td><td>SWD/JTAG debug header</td><td>1×5 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical</code></td></tr>
+<tr><td>J_PROG</td><td>UART console header (GND/3V3/TXD0/RXD0 — see §4.2.5 for pinout)</td><td>1×4 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical</code></td></tr>
+<tr><td>J_DBG</td><td>JTAG debug header, optional/external-probe use — ESP32-S3 has no ARM SWD (see §4.2.5 for pinout and the eFuse caveat)</td><td>1×5 male header, 2.54mm</td><td><code>Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical</code></td></tr>
 </table>
 
 <h4>Critical Layout Rules</h4>
@@ -575,28 +577,60 @@ kicad-cli version
 <tr><td>IO19</td><td>USB-C D- (via 22Ω)</td><td>USB_D-</td></tr>
 <tr><td>IO20</td><td>USB-C D+ (via 22Ω)</td><td>USB_D+</td></tr>
 <tr><td>IO43 / IO44</td><td>J_PROG header (TXD0/RXD0)</td><td>UART0_TX / UART0_RX</td></tr>
+<tr><td>IO39 / IO40 / IO41 / IO42</td><td>J_DBG header (MTCK/MTDO/MTDI/MTMS) — optional, see §4.2.5</td><td>JTAG (requires eFuse to activate)</td></tr>
 </table>
 
 <h4>4.2.4 USB-C Schematic</h4>
 <div class="schematic-block">
-<pre><code>USB-C Receptacle (GCT USB4105)
+<pre><code>USB-C RECEPTACLE (GCT USB4105) — note: Receptacle symbol, not Plug
 ┌──────────────────────────────┐
-│ VBUS ────[SS14 Schottky]────►│── +5V_USB (OR'd with main 5V)
+│ VBUS ────[D6 SS14 Schottky]─►│── +5V_USB (OR'd with main 5V)
 │                              │
-│ CC1 ─────[5.1kΩ]──── GND    │
-│ CC2 ─────[5.1kΩ]──── GND    │
+│ CC1(A5) ─[R_CC1 5.1kΩ]── GND│   two INDEPENDENT pull-downs —
+│ CC2(B5) ─[R_CC2 5.1kΩ]── GND│   never tie CC1/CC2 to each other
 │                              │
-│ D+ ──────[22Ω]──────────────┤── ESP32 IO20
-│ D- ──────[22Ω]──────────────┤── ESP32 IO19
+│ D+ ──────[R_D+ 22Ω]─────────┤── ESP32 IO20
+│ D- ──────[R_D- 22Ω]─────────┤── ESP32 IO19
 │                              │
-│ SHIELD ──[1MΩ + 4.7nF]── GND│   (RC filter)
+│ SHIELD ──[R_shield 1MΩ +    │
+│           C_shield 4.7nF]───┤── GND   (RC filter)
 └──────────────────────────────┘
-         │
-    [USBLC6-2SC6]  (ESD protection on D+/D-)
-         │
-        GND</code></pre>
+
+  U6 (USBLC6-2SC6, SOT-23-6) — real pinout per ST datasheet, wire
+  BEFORE the 22Ω resistors (closest to the connector, not the ESP32):
+
+       ┌─────────────┐
+  D- ──┤1 (I/O1) (I/O1) 6├── D-   (pins 1 & 6 are the SAME internal
+       │                 │         channel — tie both to D-)
+  GND ─┤2 (GND)   (VBUS) 5├── VBUS  (NOT GND/shield — this pin needs
+       │                 │          the actual VBUS net)
+  D+ ──┤3 (I/O2) (I/O2) 4├── D+   (pins 3 & 4 — tie both to D+)
+       └─────────────┘</code></pre>
 </div>
 <div class="warning"><strong>Important:</strong> The Schottky diode on VBUS prevents the 12V→5V buck converter from back-feeding power out the USB port. Without this, connecting USB while 12V is applied would try to power the host computer.</div>
+<div class="warning"><strong>U6 pin 5 is VBUS, not a ground/shield pin.</strong> A common mistake (this exact one has been caught during schematic review on this project) is wiring pin 5 into the shield RC-filter chain toward GND instead of to VBUS, and leaving pins 1/3/4/6 — the pins that actually clamp D+/D- — unconnected. Wired that way, the IC sits on the board doing nothing. Double-check pin 5 lands on the VBUS net and pins 1/6 and 3/4 land on D-/D+ respectively.</div>
+
+<h4>4.2.5 Programming &amp; Debug Header Wiring</h4>
+<div class="note"><strong>Neither header is required for normal use.</strong> The primary flash/monitor path is the USB-C port itself — the ESP32-S3's built-in USB-Serial/JTAG peripheral (the same IO19/IO20 already wired in §4.2.4) handles firmware flashing, the serial console, <em>and</em> JTAG debugging over that one connector, no extra hardware needed. J_PROG and J_DBG exist for the cases where that's not enough: J_PROG gives you the UART0 console on a header when you want to tap the boot-time log with a separate USB-serial dongle (useful during bring-up before you trust native USB, or when you want to watch the console <em>and</em> hold the native USB port for something else); J_DBG gives you a classic external JTAG probe (e.g. a J-Link) as an alternative to the native USB-JTAG bridge.</div>
+
+<table>
+<tr><th>J_PROG pin</th><th>Net</th><th>Notes</th></tr>
+<tr><td>1</td><td>GND</td><td>—</td></tr>
+<tr><td>2</td><td>+3.3V</td><td>Reference/power for the external adapter — don't back-feed the board from here if the adapter also has its own 3.3V rail wired up; most USB-serial dongles just use this as a level reference</td></tr>
+<tr><td>3</td><td>UART0_TX (ESP32 <strong>IO43</strong>, TXD0)</td><td>ESP32 output → wire to the adapter's <strong>RX</strong> input</td></tr>
+<tr><td>4</td><td>UART0_RX (ESP32 <strong>IO44</strong>, RXD0)</td><td>ESP32 input ← wire to the adapter's <strong>TX</strong> output</td></tr>
+</table>
+
+<table>
+<tr><th>J_DBG pin</th><th>Net</th><th>Notes</th></tr>
+<tr><td>1</td><td>GND</td><td>—</td></tr>
+<tr><td>2</td><td>MTCK (ESP32 <strong>IO39</strong>)</td><td>JTAG TCK</td></tr>
+<tr><td>3</td><td>MTDO (ESP32 <strong>IO40</strong>)</td><td>JTAG TDO</td></tr>
+<tr><td>4</td><td>MTDI (ESP32 <strong>IO41</strong>)</td><td>JTAG TDI</td></tr>
+<tr><td>5</td><td>MTMS (ESP32 <strong>IO42</strong>)</td><td>JTAG TMS</td></tr>
+</table>
+<div class="warning"><strong>These four GPIOs don't do JTAG by default.</strong> Out of the box, ESP32-S3's JTAG is routed internally to the native USB-Serial/JTAG peripheral (over the USB-C port), not to IO39–42. Routing JTAG to these GPIOs instead requires burning the <code>JTAG_SEL_ENABLE</code> eFuse (or the equivalent strapping condition per Espressif's <a href="https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-guides/jtag-debugging/configure-other-jtag.html">"Configure Other JTAG Interfaces"</a> guide) — this is a one-way, permanent change. Don't burn it unless you specifically need an external probe; the native USB-JTAG path costs nothing and works immediately.</div>
+<div class="note">IO39–42 are otherwise unused by this firmware (§1.4), so populating J_DBG costs nothing pin-wise even if you never burn the eFuse — it's free real estate for a debug option you may never need.</div>
 
 <hr>
 
@@ -1420,6 +1454,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>LED_GREEN</td><td>Signal</td><td>ESP32 <strong>IO17</strong></td><td>LED via 330Ω</td></tr>
 <tr><td>LED_YELLOW</td><td>Signal</td><td>ESP32 <strong>IO18</strong></td><td>LED via 330Ω</td></tr>
 <tr><td>UART0_TX / UART0_RX</td><td>Signal</td><td>ESP32 IO43 / IO44</td><td>J_PROG header (console — bench plan Stage 1 serial log)</td></tr>
+<tr><td>MTCK / MTDO / MTDI / MTMS</td><td>Signal</td><td>ESP32 IO39 / IO40 / IO41 / IO42</td><td>J_DBG header — optional external JTAG, inactive until <code>JTAG_SEL_ENABLE</code> eFuse is burned (§4.2.5)</td></tr>
 </table>
 
 <div class="note">This netlist restates §1.4 (the firmware source of truth) with the board-side endpoints attached. If the two tables ever disagree, §1.4 wins and this appendix is the typo.</div>
@@ -1485,9 +1520,12 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>52</td><td>C (various)</td><td>1µF 0603 (ceramic)</td><td>1µF 16V X5R</td><td>0603</td><td>C15849</td><td>2</td></tr>
 <tr><td>53</td><td>C (various)</td><td>4.7nF 0603 X7R (ceramic)</td><td>4.7nF 50V X7R</td><td>0603</td><td>C1664</td><td>1</td></tr>
 <tr><td>54</td><td>C_1V2O</td><td>10nF 0603 X7R (ceramic)</td><td>10nF 25V X7R</td><td>0603</td><td>search‡</td><td>1</td></tr>
+<tr><td>55</td><td>J_PROG</td><td>UART Console Header</td><td>1×4, 2.54mm vertical male</td><td>Through-hole</td><td>search§</td><td>1</td></tr>
+<tr><td>56</td><td>J_DBG</td><td>JTAG Debug Header (optional)</td><td>1×5, 2.54mm vertical male</td><td>Through-hole</td><td>search§</td><td>1</td></tr>
 </table>
 <p style="font-size: 9pt; color: #555;">† 30.9 kΩ 1% 0603 is a standard E96 value carried by every major distributor (LCSC, Digikey, Mouser, JLCPCB) — search "30.9K 0603 1%" at order time rather than trust a single pinned C-number here, since stock/preferred-part numbers rotate more often than this document does.</p>
 <p style="font-size: 9pt; color: #555;">‡ 10nF 0603 X7R is an extremely common value carried by every major distributor — search "10nF 0603 X7R" at order time rather than trust a single pinned C-number here, same reasoning as the R_top footnote above.</p>
+<p style="font-size: 9pt; color: #555;">§ Generic 2.54mm pin headers — search "1x4 2.54mm pin header vertical" / "1x5 2.54mm pin header vertical" at order time; every distributor stocks dozens of interchangeable options at this pitch.</p>
 
 <!-- APPENDIX C -->
 <h2 style="page-break-before: always;">Appendix C: PCB Layer Stackup Detail</h2>
@@ -1547,7 +1585,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.1 — July 2026 (every capacitor in every module section now states ceramic/unpolarized vs. electrolytic/polarized explicitly, instead of relying on a dielectric code alone; crystal load-cap BOM row corrected from 20pF to 18pF to match §4.3; missing C_1V2O BOM line added; supersedes rev 3.0)
+Document revision 3.2 — July 2026 (USB-C ESD IC (U6) wiring corrected against ST's actual USBLC6-2SC6 datasheet — pin 5 is VBUS, not GND/shield, and pins 1/6 and 3/4 need to land on D-/D+; CC1/CC2 pull-downs clarified as independent, never shared; §4.2.5 "Programming & Debug Header Wiring" added for J_PROG/J_DBG, previously undocumented; supersedes rev 3.1)
 </p>
 
 </body>

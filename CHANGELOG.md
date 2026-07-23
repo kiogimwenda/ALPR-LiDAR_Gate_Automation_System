@@ -9,6 +9,18 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.2: caught reviewing the first built
+  USB-C/MCU sheet — the USB-C ESD IC (USBLC6-2SC6) was miswired
+  (pin 5, which is VBUS, tied into the shield/GND chain instead,
+  with the D+/D- clamp pins left unconnected), traced back to the
+  guide's own diagram only describing it as a black box with no real
+  pin numbers; now gives the IC's actual pinout per ST's datasheet.
+  Also clarified CC1/CC2 need independent 5.1kΩ pull-downs, never a
+  shared one. Added §4.2.5 "Programming & Debug Header Wiring" —
+  J_PROG and J_DBG had footprints since rev 2.0 but no documented
+  pinout anywhere; now: GND/3V3/TXD0/RXD0 for J_PROG, and the four
+  otherwise-unused JTAG GPIOs (IO39-42, with the eFuse caveat) for
+  J_DBG.
 - PCB design guide revision 3.1: every capacitor in §4 now states its
   type in plain words — ceramic/unpolarized (X7R/X5R/C0G) or
   electrolytic/polarized — instead of relying on a dielectric code
