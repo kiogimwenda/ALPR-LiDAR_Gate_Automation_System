@@ -9,6 +9,15 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.4: §4.2.4's USB-C diagram showed a
+  single "D+"/"D-" line each, which doesn't match the
+  `USB_C_Receptacle_USB2.0_16P` symbol's real pins — D+ is two
+  separate visible pins (A6, B6) and D- is two separate visible pins
+  (A7, B7), one per plug orientation, neither hidden/auto-merged
+  (unlike VBUS/GND on the same symbol, which do have hidden
+  duplicates). Diagram now shows both physical pins per signal
+  needing to be tied together, with a single 22Ω resistor on the
+  combined net.
 - PCB design guide revision 3.3: §4.2.1's KiCad symbol name for the
   USB-C receptacle was stale — `Connector:USB_C_Receptacle_USB2.0`
   doesn't exist in current KiCad 10 libraries (split into `_14P`/

@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.3<br>
+<strong>Date:</strong> July 2026 — revision 3.4<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -117,6 +117,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.2 (July 2026).</strong> Caught reviewing the first built USB-C/MCU schematic sheet: the §4.2.4 diagram named the USBLC6-2SC6's ESD-protection pins only as a black box ("ESD protection on D+/D-") without real pin numbers — exactly the kind of ambiguity that led to a real miswiring (pin 5, which is VBUS, wired into the shield/GND chain instead, with the actual D+/D- clamp pins left unconnected). The diagram now gives the IC's real pinout per ST's datasheet. Also clarified that CC1 and CC2 need independent 5.1kΩ pull-downs — never a shared one — since both are easy to read as interchangeable "CC" pins on a simplified schematic symbol. Separately, §4.2.5 "Programming & Debug Header Wiring" is new: J_PROG and J_DBG had footprints and a connector-table entry since revision 2.0 but no pinout anywhere in the document — added GND/3V3/TXD0/RXD0 for J_PROG and the four otherwise-unused JTAG GPIOs (IO39–42) for J_DBG, with the eFuse caveat for the latter.</div>
 
 <div class="note"><strong>Revision 3.3 (July 2026).</strong> §4.2.1's KiCad symbol reference was stale: <code>Connector:USB_C_Receptacle_USB2.0</code> doesn't exist in current KiCad 10 libraries — it was split into <code>_14P</code> and <code>_16P</code> variants at some point. Corrected to <strong><code>USB_C_Receptacle_USB2.0_16P</code></strong>, which matches the GCT USB4105-GF-A's actual 16 physical contacts (the <code>_14P</code> variant omits the SBU1/SBU2 pins this part has); noted the plug-vs-receptacle and USB2.0-vs-USB3 traps in the same row so the correct symbol is a one-line lookup instead of trial and error against the library browser.</div>
+
+<div class="note"><strong>Revision 3.4 (July 2026).</strong> §4.2.4's USB-C diagram showed single "D+"/"D-" lines, which doesn't match how the <code>_16P</code> symbol actually exposes them: D+ is two separate visible pins (A6, B6) and D- is two separate visible pins (A7, B7), one per plug orientation, neither pair hidden or auto-merged — unlike VBUS and GND on the same symbol, which do have hidden duplicate pins that auto-connect by name. The diagram now shows both physical pins per signal and calls out the distinction explicitly, since the two pin classes behave differently for a reason that isn't visible on the schematic canvas either way.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -584,16 +586,21 @@ kicad-cli version
 
 <h4>4.2.4 USB-C Schematic</h4>
 <div class="schematic-block">
-<pre><code>USB-C RECEPTACLE (GCT USB4105) — note: Receptacle symbol, not Plug
+<pre><code>USB-C RECEPTACLE (GCT USB4105, USB_C_Receptacle_USB2.0_16P)
 ┌──────────────────────────────┐
-│ VBUS ────[D6 SS14 Schottky]─►│── +5V_USB (OR'd with main 5V)
+│ VBUS(A4) [+hidden A9/B4/B9]  │
+│      ────[D6 SS14 Schottky]─►│── +5V_USB (OR'd with main 5V)
 │                              │
 │ CC1(A5) ─[R_CC1 5.1kΩ]── GND│   two INDEPENDENT pull-downs —
 │ CC2(B5) ─[R_CC2 5.1kΩ]── GND│   never tie CC1/CC2 to each other
 │                              │
-│ D+ ──────[R_D+ 22Ω]─────────┤── ESP32 IO20
-│ D- ──────[R_D- 22Ω]─────────┤── ESP32 IO19
+│ D+(A6) ─┬────────────────────┤
+│ D+(B6) ─┘  [combined][R_D+ 22Ω]── ESP32 IO20
 │                              │
+│ D-(A7) ─┬────────────────────┤
+│ D-(B7) ─┘  [combined][R_D- 22Ω]── ESP32 IO19
+│                              │
+│ GND(A1) [+hidden A12/B1/B12] │
 │ SHIELD ──[R_shield 1MΩ +    │
 │           C_shield 4.7nF]───┤── GND   (RC filter)
 └──────────────────────────────┘
@@ -609,6 +616,7 @@ kicad-cli version
   D+ ──┤3 (I/O2) (I/O2) 4├── D+   (pins 3 & 4 — tie both to D+)
        └─────────────┘</code></pre>
 </div>
+<div class="note"><strong>D+ and D- are each two separate, both-visible pins — tie them together; VBUS and GND are not.</strong> Unlike VBUS (A4, with A9/B4/B9 hidden) and GND (A1, with A12/B1/B12 hidden) — which auto-connect to their duplicates via KiCad's hidden-power-pin name matching, the same mechanism as the ESP32 module's hidden GND 40/41 in §4.2.1 — D+ and D- have <strong>no hidden pins</strong>. A6/B6 (D+) and A7/B7 (D-) are both ordinary visible pins you must wire together yourself: this is what makes the connector reversible for USB 2.0 signaling, since either physical pin carries the signal depending on which way the plug is inserted. Wire A6 and B6 to the same net, A7 and B7 to the same net, and put a single 22Ω resistor on each combined net — not one resistor per physical pin.</div>
 <div class="warning"><strong>Important:</strong> The Schottky diode on VBUS prevents the 12V→5V buck converter from back-feeding power out the USB port. Without this, connecting USB while 12V is applied would try to power the host computer.</div>
 <div class="warning"><strong>U6 pin 5 is VBUS, not a ground/shield pin.</strong> A common mistake (this exact one has been caught during schematic review on this project) is wiring pin 5 into the shield RC-filter chain toward GND instead of to VBUS, and leaving pins 1/3/4/6 — the pins that actually clamp D+/D- — unconnected. Wired that way, the IC sits on the board doing nothing. Double-check pin 5 lands on the VBUS net and pins 1/6 and 3/4 land on D-/D+ respectively.</div>
 
@@ -1587,7 +1595,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.3 — July 2026 (USB-C KiCad symbol corrected to USB_C_Receptacle_USB2.0_16P — the plain USB_C_Receptacle_USB2.0 name no longer exists in current KiCad 10 libraries; supersedes rev 3.2)
+Document revision 3.4 — July 2026 (USB-C D+/D- diagram corrected to show both physical pins per signal (A6/B6 and A7/B7) needing to be tied together, distinct from VBUS/GND's auto-connecting hidden pins on the same symbol; supersedes rev 3.3)
 </p>
 
 </body>
