@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.0<br>
+<strong>Date:</strong> July 2026 — revision 3.1<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -111,6 +111,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 2.1 (July 2026).</strong> Caught during schematic review of the first built power-supply sheet. Three fixes to what is now §4.1 / Appendix B, all on the 5V buck rail: (1) the VSENSE feedback divider's <code>R_top</code> was wrong — 43 kΩ paired with the 10 kΩ bottom leg actually sets ~6.47V, not the claimed 5.0V; corrected to 30.9 kΩ. (2) the power-path diagram and BOM were missing two components that the component tables required but never drew: the series reverse-polarity diode ahead of the TVS, and the PH-to-GND catch/freewheeling diode the TPS5430 needs (it has no internal low-side switch) — both are now in the diagram and BOM. (3) the "C_comp / R_comp" compensation pair has been removed — the TPS5430 has no external COMP pin; compensation is fixed internally, and those two components never did anything.</div>
 
 <div class="note"><strong>Revision 3.0 (July 2026).</strong> Structural rewrite, prompted by building the actual power-supply and MCU schematic sheets and finding it slower than it should have been to answer "where's everything about module X." Chapters 4 (footprints) and 5 (schematics) are merged into one chapter, §4, with a dedicated section per module — footprints, schematic, and an explicit pin-to-pin connection table together, instead of split across two chapters you had to flip between. Screw terminals/connectors moved out of a standalone chapter into the module they belong to. Getting the pin-to-pin tables right required re-deriving several nets against the WIZnet W5500 datasheet directly rather than trusting this guide's own prior numbers, which turned up real errors predating this rewrite: the SPI/INT pin numbers in Appendix A were off by several positions (real: SCLK=33, MOSI=35, MISO=34, SCSn=32, INTn=36); the 12.4kΩ bias resistor was drawn on a <code>RSVD</code> pin instead of <code>EXRES1</code> (pin 10) — and pin 23, also <code>RSVD</code>, actually needs a direct tie to GND, no resistor; "1V8OUT" doesn't exist on this chip — it's <code>1V2O</code>, and its datasheet-specified cap is 10nF, not 10µF; and the crystal circuit was missing WIZnet's own feedback resistor (R16, 1MΩ) entirely, without which oscillator startup isn't guaranteed. Also folded in: a corrected, pin-count-accurate ESP32 decoupling explanation (schematic step vs. layout step), and an explanation of the module's hidden GND pins (40/41) and why they need a plain <code>GND</code> net to auto-connect to — both raised during review of the built MCU sheet. Chapters 5 onward are renumbered down by one (old §6–§11 → §5–§10) to close the gap left by the merge.</div>
+
+<div class="note"><strong>Revision 3.1 (July 2026).</strong> Every capacitor value in §4 now states its type in plain words — <strong>ceramic, unpolarized</strong> (X7R/X5R/C0G) or <strong>electrolytic, polarized</strong> — instead of leaving it to be inferred from a dielectric code or a footprint name. This was a real gap: several rows (C_boot, C2, C_TOCAP, C_1V2O, C_filter, C_dec, C_shield) previously gave a value with no dielectric at all, and even the rows that did name a code (X5R, X7R, C0G) never spelled out in words that those codes mean "ceramic — either orientation is fine." Two small corrections came out of the pass: Appendix B's crystal-load-cap BOM row still said 20pF from before the §4.3 rewrite corrected the actual value to 18pF (WIZnet's reference value); and C_1V2O (the W5500's 1V2O decoupling cap, added in §4.3 of rev 3.0) never got a BOM line — added as row 54.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -298,7 +300,7 @@ kicad-cli version
 <tr><td>F1 — Polyfuse</td><td>MF-MSMF200 (2A hold, 4A trip)</td><td><code>Fuse:Fuse_1206_3216Metric</code></td></tr>
 <tr><td>D7 — Reverse-polarity diode</td><td>SS34 (3A, 40V Schottky) — series, downstream of F1, cathode toward the load</td><td><code>Diode_SMD:D_SMA</code></td></tr>
 <tr><td>D_TVS1 — Input TVS</td><td>SMBJ15A (15V standoff, 600W)</td><td><code>Diode_SMD:D_SMB</code></td></tr>
-<tr><td>C_in_bulk</td><td>100 µF, 25V, electrolytic</td><td><code>Capacitor_SMD:CP_Elec_8x10.5</code></td></tr>
+<tr><td>C_in_bulk</td><td>100 µF, 25V, electrolytic — polarized</td><td><code>Capacitor_SMD:CP_Elec_8x10.5</code></td></tr>
 </table>
 <div class="note">A P-channel MOSFET (e.g. SI2301, gate tied to GND, placed in the return leg) is the lower-drop alternative to D7 if the ~0.3–0.5V Schottky forward drop matters for your input budget — TPS5430 VIN tolerates it easily either way (5.5–36V range). The reference design and Appendix B BOM use the simpler series Schottky.</div>
 
@@ -313,10 +315,10 @@ kicad-cli version
 </table>
 <table>
 <tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>C_in</td><td>22 µF, 25V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Local input filter, right at VIN — in addition to C_in_bulk, not instead of it</td></tr>
+<tr><td>C_in</td><td>22 µF, 25V, ceramic X5R — unpolarized</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Local input filter, right at VIN — in addition to C_in_bulk, not instead of it</td></tr>
 <tr><td>L1</td><td>33 µH, 3A sat, shielded</td><td><code>Inductor_SMD:L_Bourns_SRN8040</code></td><td>Buck output inductor</td></tr>
-<tr><td>C_out (×2)</td><td>47 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Output filter</td></tr>
-<tr><td>C_boot</td><td>100 nF, 16V</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Bootstrap capacitor — BOOT to PH, not BOOT to GND</td></tr>
+<tr><td>C_out (×2)</td><td>47 µF, 10V, ceramic X5R — unpolarized</td><td><code>Capacitor_SMD:C_1206_3216Metric</code></td><td>Output filter</td></tr>
+<tr><td>C_boot</td><td>100 nF, 16V, ceramic X7R — unpolarized</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Bootstrap capacitor — BOOT to PH, not BOOT to GND. Don't substitute an electrolytic here regardless of what the schematic symbol graphic looks like.</td></tr>
 <tr><td>D5 — Catch diode</td><td>SS34 (3A, 40V Schottky)</td><td><code>Diode_SMD:D_SMA</code></td><td>Cathode at PH, anode at GND — the TPS5430's high-side switch is not synchronous, this diode carries the low-side current</td></tr>
 <tr><td>R_top</td><td>30.9 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider top</td></tr>
 <tr><td>R_bot</td><td>10 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Feedback divider bottom — Vout = 1.221 × (1 + 30.9k/10k) ≈ 5.00V</td></tr>
@@ -334,8 +336,8 @@ kicad-cli version
 </table>
 <table>
 <tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>C_in_ldo</td><td>10 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Input filter</td></tr>
-<tr><td>C_out_ldo</td><td>22 µF, 10V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Output stability (tantalum also OK)</td></tr>
+<tr><td>C_in_ldo</td><td>10 µF, 10V, ceramic X5R — unpolarized</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Input filter</td></tr>
+<tr><td>C_out_ldo</td><td>22 µF, 10V, ceramic X5R — unpolarized</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Output stability. If substituting tantalum instead of ceramic: tantalum <strong>is polarized</strong> — + lead to VOUT.</td></tr>
 </table>
 
 <h4>Why These Choices</h4>
@@ -459,8 +461,8 @@ kicad-cli version
 <p><strong>Decoupling</strong></p>
 <table>
 <tr><th>Component</th><th>Value</th><th>Qty</th><th>Footprint</th></tr>
-<tr><td>C_dec</td><td>100 nF, X7R, 16V</td><td>4</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td></tr>
-<tr><td>C_bulk</td><td>10 µF, X5R, 10V</td><td>2</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td></tr>
+<tr><td>C_dec</td><td>100 nF, ceramic X7R, 16V — unpolarized</td><td>4</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td></tr>
+<tr><td>C_bulk</td><td>10 µF, ceramic X5R, 10V — unpolarized</td><td>2</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td></tr>
 </table>
 <div class="note"><strong>The module has exactly one 3V3 pin (module pin 2) and GND at three places</strong> (module pins 1 and 40, plus the large exposed EPAD) — not "4 distinct 3V3/GND pin pairs" as earlier printings of this guide implied. At the <strong>schematic</strong> level this is simple: place all 6 caps (4×100nF + 2×10µF) in parallel directly across your existing +3.3V and GND nets, near the ESP32 symbol — no per-pin wiring, they all land on the same two nets. The "near each pin" part is a <strong>layout</strong> instruction: when placing components, physically spread the caps around the module footprint (some close to pin 2, others near pins 1/40/EPAD) to keep loop inductance short from multiple directions.</div>
 
@@ -468,7 +470,7 @@ kicad-cli version
 <table>
 <tr><th>Component</th><th>Value</th><th>Purpose</th></tr>
 <tr><td>R1</td><td>10 kΩ</td><td>EN pull-up to 3.3V</td></tr>
-<tr><td>C2</td><td>1 µF</td><td>EN to GND — power-on reset delay</td></tr>
+<tr><td>C2</td><td>1 µF, ceramic X7R — unpolarized</td><td>EN to GND — power-on reset delay</td></tr>
 <tr><td>RESET</td><td><code>SW_Push</code>, <code>Button_Switch_SMD:SW_SPST_TL3342</code></td><td>Connects EN to GND when pressed</td></tr>
 <tr><td>R2</td><td>10 kΩ</td><td>IO0 (BOOT) pull-up to 3.3V — normal boot</td></tr>
 <tr><td>BOOT</td><td><code>SW_Push</code>, <code>Button_Switch_SMD:SW_SPST_TL3342</code></td><td>Connects IO0 to GND for firmware download mode</td></tr>
@@ -490,7 +492,7 @@ kicad-cli version
 <tr><td>D6</td><td>SS14 Schottky, SMA</td><td><code>Diode_SMD:D_SMA</code></td><td>VBUS series diode — prevents the 12V→5V buck from back-feeding the USB port</td></tr>
 <tr><td>R_D+, R_D-</td><td>22 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Series resistors, D+/D- to ESP32</td></tr>
 <tr><td>R_shield</td><td>1 MΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Shield-to-GND, with C_shield below</td></tr>
-<tr><td>C_shield</td><td>4.7 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Shield RC filter for EMI</td></tr>
+<tr><td>C_shield</td><td>4.7 nF, ceramic C0G — unpolarized</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Shield RC filter for EMI</td></tr>
 <tr><td>U6</td><td>USBLC6-2SC6, <code>Package_TO_SOT_SMD:SOT-23-6</code></td><td>—</td><td>ESD clamp on D+/D-</td></tr>
 </table>
 
@@ -617,11 +619,11 @@ kicad-cli version
 </table>
 <table>
 <tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
-<tr><td>C_bulk</td><td>10 µF, 16V, X5R</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Bulk decoupling near VDD</td></tr>
+<tr><td>C_bulk</td><td>10 µF, 16V, ceramic X5R — unpolarized</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Bulk decoupling near VDD</td></tr>
 <tr><td>R_EXRES1</td><td>12.4 kΩ, 1%</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Bias resistor for pin 10 (EXRES1) — sets internal analog bias, per WIZnet's own reference schematic</td></tr>
-<tr><td>C_TOCAP</td><td>4.7 µF</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Required on pin 20 (TOCAP)</td></tr>
-<tr><td>C_1V2O</td><td>10 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Required on pin 22 (1V2O, the internal 1.2V regulator output)</td></tr>
-<tr><td>C19, C20 — crystal load caps</td><td>18 pF, C0G</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Crystal load capacitors, per WIZnet's reference circuit</td></tr>
+<tr><td>C_TOCAP</td><td>4.7 µF, ceramic X5R — unpolarized</td><td><code>Capacitor_SMD:C_0805_2012Metric</code></td><td>Required on pin 20 (TOCAP). WIZnet's datasheet doesn't spell out a dielectric for this pin; ceramic X5R in this footprint is standard practice — don't use an electrolytic here.</td></tr>
+<tr><td>C_1V2O</td><td>10 nF, ceramic X7R — unpolarized</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Required on pin 22 (1V2O, the internal 1.2V regulator output)</td></tr>
+<tr><td>C19, C20 — crystal load caps</td><td>18 pF, ceramic C0G — unpolarized</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Crystal load capacitors, per WIZnet's reference circuit</td></tr>
 <tr><td>R16 — crystal feedback</td><td>1 MΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Oscillator feedback resistor, across XI/XO</td></tr>
 <tr><td>R17 — crystal series</td><td>0 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Series damping resistor, XO side — populate as a 0Ω link unless ringing is observed</td></tr>
 <tr><td>R_LED (×4)</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>LINKLED / SPDLED current limit (RJ45-integrated LEDs, driven directly by the W5500)</td></tr>
@@ -783,7 +785,7 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
 <tr><th>Component (per channel, ×3: IO6, IO7, IO15)</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
 <tr><td>R_pullup</td><td>10 kΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Pull-up to 3.3V (NC sensors go LOW when triggered)</td></tr>
 <tr><td>R_series</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Current limiting for ESD events</td></tr>
-<tr><td>C_filter</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>RC debounce (τ = 330Ω × 100nF = 33µs)</td></tr>
+<tr><td>C_filter</td><td>100 nF, ceramic X7R — unpolarized</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>RC debounce (τ = 330Ω × 100nF = 33µs)</td></tr>
 <tr><td>D_clamp</td><td>BAV99 (dual series, SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>Clamp to GND/3.3V rails</td></tr>
 </table>
 <table>
@@ -844,7 +846,7 @@ J_SENSE ── R_series ──────────┤
 <tr><td>R_bias_A</td><td>560 Ω to VCC</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias (idle = mark)</td></tr>
 <tr><td>R_bias_B</td><td>560 Ω to GND</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Fail-safe bias</td></tr>
 <tr><td>TVS (×2)</td><td>PESD5V0U2BT (SOT-23)</td><td><code>Package_TO_SOT_SMD:SOT-23</code></td><td>ESD protection on A/B lines</td></tr>
-<tr><td>C_dec</td><td>100 nF</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>VCC decoupling</td></tr>
+<tr><td>C_dec</td><td>100 nF, ceramic X7R — unpolarized</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>VCC decoupling</td></tr>
 </table>
 <table>
 <tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
@@ -1472,18 +1474,20 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>41</td><td>R (various)</td><td>560Ω 0603</td><td>560Ω 1% 1/10W</td><td>0603</td><td>C23204</td><td>2</td></tr>
 <tr><td>42</td><td>R (various)</td><td>120Ω 0603</td><td>120Ω 1% 1/10W</td><td>0603</td><td>C22787</td><td>1</td></tr>
 <tr><td>43</td><td>R (various)</td><td>1MΩ 0603</td><td>1MΩ 1% 1/10W</td><td>0603</td><td>C22935</td><td>1</td></tr>
-<tr><td>44</td><td>C (various)</td><td>100nF 0603 X7R</td><td>100nF 25V X7R</td><td>0603</td><td>C14663</td><td>18</td></tr>
-<tr><td>45</td><td>C (various)</td><td>10µF 0805 X5R</td><td>10µF 10V X5R</td><td>0805</td><td>C15850</td><td>5</td></tr>
-<tr><td>46</td><td>C (various)</td><td>22µF 0805 X5R</td><td>22µF 10V X5R</td><td>0805</td><td>C45783</td><td>2</td></tr>
-<tr><td>47</td><td>C (various)</td><td>47µF 1206 X5R</td><td>47µF 10V X5R</td><td>1206</td><td>C96123</td><td>2</td></tr>
-<tr><td>48</td><td>C (various)</td><td>22µF 1206 X5R</td><td>22µF 25V X5R</td><td>1206</td><td>C159843</td><td>1</td></tr>
-<tr><td>49</td><td>C (various)</td><td>100µF Electrolytic</td><td>100µF 25V</td><td>8×10.5mm</td><td>C3339</td><td>1</td></tr>
-<tr><td>50</td><td>C (various)</td><td>20pF 0603 C0G</td><td>20pF 50V C0G</td><td>0603</td><td>C1648</td><td>2</td></tr>
-<tr><td>51</td><td>C (various)</td><td>4.7µF 0805</td><td>4.7µF 10V X5R</td><td>0805</td><td>C1779</td><td>1</td></tr>
-<tr><td>52</td><td>C (various)</td><td>1µF 0603</td><td>1µF 16V X5R</td><td>0603</td><td>C15849</td><td>2</td></tr>
-<tr><td>53</td><td>C (various)</td><td>4.7nF 0603</td><td>4.7nF 50V X7R</td><td>0603</td><td>C1664</td><td>1</td></tr>
+<tr><td>44</td><td>C (various)</td><td>100nF 0603 X7R (ceramic)</td><td>100nF 25V X7R</td><td>0603</td><td>C14663</td><td>18</td></tr>
+<tr><td>45</td><td>C (various)</td><td>10µF 0805 X5R (ceramic)</td><td>10µF 10V X5R</td><td>0805</td><td>C15850</td><td>5</td></tr>
+<tr><td>46</td><td>C (various)</td><td>22µF 0805 X5R (ceramic)</td><td>22µF 10V X5R</td><td>0805</td><td>C45783</td><td>2</td></tr>
+<tr><td>47</td><td>C (various)</td><td>47µF 1206 X5R (ceramic)</td><td>47µF 10V X5R</td><td>1206</td><td>C96123</td><td>2</td></tr>
+<tr><td>48</td><td>C (various)</td><td>22µF 1206 X5R (ceramic)</td><td>22µF 25V X5R</td><td>1206</td><td>C159843</td><td>1</td></tr>
+<tr><td>49</td><td>C_in_bulk</td><td>100µF Electrolytic (polarized)</td><td>100µF 25V</td><td>8×10.5mm</td><td>C3339</td><td>1</td></tr>
+<tr><td>50</td><td>C19, C20</td><td>18pF 0603 C0G (ceramic)</td><td>18pF 50V C0G</td><td>0603</td><td>C1648</td><td>2</td></tr>
+<tr><td>51</td><td>C (various)</td><td>4.7µF 0805 (ceramic)</td><td>4.7µF 10V X5R</td><td>0805</td><td>C1779</td><td>1</td></tr>
+<tr><td>52</td><td>C (various)</td><td>1µF 0603 (ceramic)</td><td>1µF 16V X5R</td><td>0603</td><td>C15849</td><td>2</td></tr>
+<tr><td>53</td><td>C (various)</td><td>4.7nF 0603 X7R (ceramic)</td><td>4.7nF 50V X7R</td><td>0603</td><td>C1664</td><td>1</td></tr>
+<tr><td>54</td><td>C_1V2O</td><td>10nF 0603 X7R (ceramic)</td><td>10nF 25V X7R</td><td>0603</td><td>search‡</td><td>1</td></tr>
 </table>
 <p style="font-size: 9pt; color: #555;">† 30.9 kΩ 1% 0603 is a standard E96 value carried by every major distributor (LCSC, Digikey, Mouser, JLCPCB) — search "30.9K 0603 1%" at order time rather than trust a single pinned C-number here, since stock/preferred-part numbers rotate more often than this document does.</p>
+<p style="font-size: 9pt; color: #555;">‡ 10nF 0603 X7R is an extremely common value carried by every major distributor — search "10nF 0603 X7R" at order time rather than trust a single pinned C-number here, same reasoning as the R_top footnote above.</p>
 
 <!-- APPENDIX C -->
 <h2 style="page-break-before: always;">Appendix C: PCB Layer Stackup Detail</h2>
@@ -1543,7 +1547,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.0 — July 2026 (restructured into one section per module — footprints, schematic, and direct pin-to-pin connections together; W5500 pin numbers, EXRES1/RSVD bias wiring, 1V2O decoupling, and crystal feedback network corrected against the WIZnet datasheet; ESP32 decoupling and exposed-pad grounding clarified; supersedes rev 2.1)
+Document revision 3.1 — July 2026 (every capacitor in every module section now states ceramic/unpolarized vs. electrolytic/polarized explicitly, instead of relying on a dielectric code alone; crystal load-cap BOM row corrected from 20pF to 18pF to match §4.3; missing C_1V2O BOM line added; supersedes rev 3.0)
 </p>
 
 </body>

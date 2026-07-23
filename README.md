@@ -430,7 +430,7 @@ documented gotcha list.
 | `docs/hardware/08-network-switch.md` | TP-Link TL-SG1005P PoE — VLAN config (per ADR-008's dedicated VLAN constraint), PoE budget math. |
 | `docs/hardware/09-gpu-server.md` | Production server BOM — RTX 4060, Ryzen 5, 32 GB RAM, NVMe — and why this combination fits the inference workload at the budget. |
 | `docs/hardware/BUILD_BOOK.md` | Master assembly walkthrough — unboxing → first power-on → smoke test, in order. |
-| `docs/hardware/10-pcb-design-kicad10.{html,pdf}` | KiCad 10.0 guide (rev 3.0, 71 pp), one section per module — footprints, schematic, and direct pin-to-pin connections together — for the custom 4-layer field PCB, through layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
+| `docs/hardware/10-pcb-design-kicad10.{html,pdf}` | KiCad 10.0 guide (rev 3.1, 73 pp), one section per module — footprints (every capacitor marked ceramic/unpolarized or electrolytic/polarized), schematic, and direct pin-to-pin connections together — for the custom 4-layer field PCB, through layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
 | `docs/hardware/11-bench-validation-plan.md` | Phase 5.4 — staged bench bring-up and validation plan: flash → W5500 → plaintext gRPC → on-hardware mTLS → OTA (with must-reject negatives) → 8 h soak, each stage with pass criteria, debug tables, and a host-test mirror so bench failures isolate to hardware, not logic. |
 | `hardware/bom/prototype-bom.md` | Per-line BOM with KES + USD pricing, supplier names, and a single-gate subtotal. |
 

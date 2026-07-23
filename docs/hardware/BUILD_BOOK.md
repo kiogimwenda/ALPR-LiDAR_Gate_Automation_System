@@ -81,7 +81,7 @@ Follow these guides in sequence. Each is self-contained with its own parts list,
 
 ## Custom PCB Design (Production)
 
-Once the breadboard prototype is verified, the gate-side electronics can be migrated to a custom 4-layer PCB. See [10-pcb-design-kicad10.pdf](10-pcb-design-kicad10.pdf) for the complete KiCad 10.0 design guide (rev 3.0 — one section per module: footprints, schematic, and direct pin-to-pin connections together; pin map synchronized with firmware v1.0.0; W5500 pin numbers and crystal circuit corrected against the WIZnet datasheet) covering schematic capture, footprint selection, layout, DRC, and JLCPCB ordering. Estimated cost: USD 120–180 for 5 assembled boards.
+Once the breadboard prototype is verified, the gate-side electronics can be migrated to a custom 4-layer PCB. See [10-pcb-design-kicad10.pdf](10-pcb-design-kicad10.pdf) for the complete KiCad 10.0 design guide (rev 3.1 — one section per module: footprints, schematic, and direct pin-to-pin connections together, with every capacitor's type stated explicitly as ceramic/unpolarized or electrolytic/polarized; pin map synchronized with firmware v1.0.0; W5500 pin numbers and crystal circuit corrected against the WIZnet datasheet) covering schematic capture, footprint selection, layout, DRC, and JLCPCB ordering. Estimated cost: USD 120–180 for 5 assembled boards.
 
 ## Bill of Materials
 

@@ -9,6 +9,14 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.1: every capacitor in §4 now states its
+  type in plain words — ceramic/unpolarized (X7R/X5R/C0G) or
+  electrolytic/polarized — instead of relying on a dielectric code
+  or footprint name alone; several rows previously gave a value with
+  no dielectric at all (C_boot, C2, C_TOCAP, C_1V2O, C_filter, C_dec,
+  C_shield). Also fixed two small rev-3.0 gaps found in the same
+  pass: Appendix B's crystal-load-cap BOM row still said 20pF instead
+  of the corrected 18pF, and C_1V2O never got a BOM line.
 - PCB design guide revision 3.0: restructured chapters 4 (footprints)
   and 5 (schematics) into a single chapter with one section per
   module — footprints, schematic diagram, and an explicit
