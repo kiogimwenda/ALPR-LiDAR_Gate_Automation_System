@@ -9,6 +9,15 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.5: rev 3.4's USB-C diagram split the
+  connector's own pins and the U6 ESD IC's pinout into two separate
+  blocks, and that split turned out ambiguous enough that the next
+  schematic built from it wired U6 downstream of the 22Ω series
+  resistors (same net as the ESP32) instead of upstream, right at
+  the connector — which defeats much of the point of the clamp,
+  since the resistor then sits in the fast-transient path before
+  the clamp engages. Replaced with one linear diagram stating the
+  order explicitly: connector → U6 → resistor → ESP32.
 - PCB design guide revision 3.4: §4.2.4's USB-C diagram showed a
   single "D+"/"D-" line each, which doesn't match the
   `USB_C_Receptacle_USB2.0_16P` symbol's real pins — D+ is two
