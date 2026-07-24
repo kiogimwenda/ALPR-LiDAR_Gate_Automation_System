@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.9<br>
+<strong>Date:</strong> July 2026 — revision 3.10<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -129,6 +129,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.8 (July 2026).</strong> §4.3's crystal network was described in a single sentence of prose ("XO(31)──R16(1M)──XI(30) in parallel with the crystal...") with no actual visual layout — caught when that description alone wasn't enough to wire the network correctly. Replaced with a real diagram: R16 (1MΩ) bridges XI and XO directly, not in series with either crystal leg; the crystal's two terminals connect one each to XI/XO; each terminal gets its own 18pF load cap (C19, C20) to GND; R17, populated as a 0Ω link per WIZnet's reference, sits in series on the XI-side leg before its cap — though since it's 0Ω, which side it's physically placed on doesn't change the circuit's behavior.</div>
 
 <div class="note"><strong>Revision 3.9 (July 2026).</strong> §4.4's KiCad symbol name was wrong: <code>Relay:SANYOU_SRD_Series_Form_C</code> doesn't exist — the symbol is <code>SANYOU_SRD_Form_C</code> (no "Series"), while the matching footprint <em>does</em> keep "Series" in its own name, an inconsistency easy to trip over. This exact symbol also has a documented KiCad bug history (<a href="https://github.com/KiCad/kicad-footprints/issues/1003">kicad-footprints#1003</a>: schematic and footprint disagreed on which pins were connected, fixed in kicad-symbols#1527) — worth knowing about even though current libraries have the fix. Added a verified pin table (1, 2 = coil, no polarity; 5 = COM; 4 = NO; 3 = NC) and real pin numbers throughout the schematic diagram and pin-to-pin table, which previously only referred to contacts generically as "COM/NO/NC" with no pin numbers at all.</div>
+
+<div class="note"><strong>Revision 3.10 (July 2026).</strong> §4.4.1's component table has listed <code>LED_REL</code> and its <code>R_LED</code> (1kΩ, calculated off the 5V rail) since early revisions of this guide, but neither ever appeared in the schematic diagram or the pin-to-pin table — there was nowhere in the document that said where to actually connect it. Added: LED_REL sits in parallel with the relay coil, at Q_n's collector — anode through R_LED to +5V, cathode to the collector node (same node as the coil and D_flyback's cathode). This means it lights when the transistor actually conducts and the relay is energized, not just when the GPIO commands it — and explains why R_LED was always calculated off 5V rather than 3.3V.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -859,28 +861,31 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
                                        │  (NPN)  │
                                        └────┬────┘
                                             │ Collector
-                      ┌─────────────────────┤
-                      │                     │
-              D_flyback (1N4148W)           │
-              cathode ┤     anode           │
-                      │       │             │
-               +5V ───┘       └───pin1/2 (Relay Coil, SRD) ───+5V
-                                            │ Emitter
-                                           GND
+                      ┌─────────────────────┼───────────────┐
+                      │                     │                │
+              D_flyback (1N4148W)           │        LED_REL (Green)
+              cathode ┤     anode           │        cathode ┤  anode
+                      │       │             │                │    │
+               +5V ───┘       └───pin1/2 (Relay Coil, SRD) ───+5V │
+                                            │ Emitter          [R_LED 1kΩ]
+                                           GND                    │
+                                                                 +5V
 
   Relay contacts: pin5(COM) ── pin4(NO) ── pin3(NC) ── → J_RELAY
   (NO is the one carrying the gate-motor trigger circuit; NC routed
   to the terminal block for field flexibility, unused by default)</code></pre>
 </div>
 <div class="note"><strong>Note:</strong> The relay coil is powered from the +5V rail, NOT 3.3V. The NPN transistor level-shifts the 3.3V GPIO signal to switch the 5V relay. The flyback diode MUST be present — without it, the back-EMF from the relay coil will destroy the transistor.</div>
+<div class="note"><strong>LED_REL sits in parallel with the coil, at the same collector node — not off the GPIO.</strong> Anode → R_LED (1kΩ) → +5V; cathode → Q_n's collector (the same node the coil and D_flyback's cathode land on). When Q_n is off, the collector sits near +5V (pulled up through the coil, which drops negligible voltage at zero current), so there's ~0V across the LED and it stays dark. When Q_n conducts, the collector drops to ~0.2V (Vce_sat), putting the full ~4.8V across R_LED+LED_REL and lighting it — exactly when the relay is actually energized, not just commanded. This is also why R_LED is calculated off the 5V rail rather than 3.3V: it's part of the same 5V-side cluster as the coil and flyback diode, not tied directly to the 3.3V GPIO signal.</div>
 
 <h4>4.4.3 Direct Pin-to-Pin Connections (per channel)</h4>
 <table>
 <tr><th>From</th><th>To</th><th>Net</th></tr>
 <tr><td>ESP32 IOx (4, 5, 1, or 2)</td><td>R_base</td><td>RELAY_n control</td></tr>
 <tr><td>R_base</td><td>Q_n base</td><td>Base drive</td></tr>
-<tr><td>Q_n collector</td><td>Relay pin 1 or 2 (coil, either — no polarity), D_flyback cathode</td><td>Coil low side</td></tr>
+<tr><td>Q_n collector</td><td>Relay pin 1 or 2 (coil, either — no polarity), D_flyback cathode, LED_REL cathode</td><td>Coil low side</td></tr>
 <tr><td>Relay pin 2 or 1 (coil, the other one)</td><td>+5V, D_flyback anode</td><td>+5V</td></tr>
+<tr><td>LED_REL anode</td><td>R_LED (1kΩ) → +5V</td><td>+5V</td></tr>
 <tr><td>Q_n emitter</td><td>GND</td><td>GND</td></tr>
 <tr><td>Relay pin 5 (COM)</td><td>J_RELAY COM_n</td><td>Field wiring</td></tr>
 <tr><td>Relay pin 4 (NO)</td><td>J_RELAY NO_n</td><td>Field wiring — gate-motor trigger</td></tr>
@@ -1667,7 +1672,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.9 — July 2026 (§4.4's relay symbol name corrected — SANYOU_SRD_Series_Form_C doesn't exist, the symbol is SANYOU_SRD_Form_C while only the footprint keeps "Series"; real pin numbers added for coil/COM/NO/NC, verified against the current symbol definition after a documented KiCad bug history on this exact part; supersedes rev 3.8)
+Document revision 3.10 — July 2026 (§4.4's LED_REL relay-state indicator was listed in the component table but never actually shown connected anywhere — added to the schematic diagram and pin-to-pin table, wired in parallel with the coil at the transistor's collector so it reflects actual coil energization, not just the GPIO command; supersedes rev 3.9)
 </p>
 
 </body>

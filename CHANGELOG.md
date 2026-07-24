@@ -9,6 +9,16 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.10: §4.4.1's component table has
+  listed `LED_REL` and its `R_LED` (1kΩ, calculated off the 5V rail)
+  since early revisions, but neither one ever appeared in the
+  schematic diagram or the pin-to-pin table — nowhere in the
+  document said where to actually connect it. Added: LED_REL sits
+  in parallel with the relay coil at the transistor's collector,
+  anode through R_LED to +5V, cathode to the collector node — lights
+  when the transistor actually conducts (relay energized), not just
+  when the GPIO commands it, which is also why R_LED was always
+  calculated off 5V rather than 3.3V.
 - PCB design guide revision 3.9: §4.4's KiCad symbol name was wrong
   - `Relay:SANYOU_SRD_Series_Form_C` doesn't exist, the symbol is
   `SANYOU_SRD_Form_C` (the matching footprint does keep "Series" in
