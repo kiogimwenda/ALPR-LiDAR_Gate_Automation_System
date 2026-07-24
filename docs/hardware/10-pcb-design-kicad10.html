@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.8<br>
+<strong>Date:</strong> July 2026 — revision 3.9<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -127,6 +127,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.7 (July 2026).</strong> §4.3's RJ45 diagram was a black box ("→ To RJ45 magjack") with no real pin numbers — replaced with HanRun's actual internal schematic for the HR911105A: TD+/TD-/RD+/RD- pin mapping to the W5500's TXP/TXN/RXP/RXN, TCT/RCT (pins 4, 5) confirmed unconnected per HanRun's own reference (no external bias needed), and CHS GND (pin 8) wired straight to PCB ground per the datasheet's explicit instruction — previously undocumented entirely. Also corrected: the built-in Green/Yellow LEDs (pins 9–12) were wired backwards — W5500's LINKLED/SPDLED/DUPLED/ACTLED are fixed-function <strong>active-low</strong> outputs, not active-high, so anode goes to +3.3V and the W5500 pin sits on the cathode side, opposite of every firmware-driven LED elsewhere in this design. §4.7's LED_NET, driven by the same LINKLED signal, had the identical polarity error and is fixed the same way. R_LED count for the RJ45's built-in LEDs corrected from ×4 to ×2 — HR911105A physically has two LED elements (Green, Yellow), not four; SPDLED/DUPLED have no built-in LED on this part to drive. BOM's 330Ω resistor count updated from 8 to 9 to match.</div>
 
 <div class="note"><strong>Revision 3.8 (July 2026).</strong> §4.3's crystal network was described in a single sentence of prose ("XO(31)──R16(1M)──XI(30) in parallel with the crystal...") with no actual visual layout — caught when that description alone wasn't enough to wire the network correctly. Replaced with a real diagram: R16 (1MΩ) bridges XI and XO directly, not in series with either crystal leg; the crystal's two terminals connect one each to XI/XO; each terminal gets its own 18pF load cap (C19, C20) to GND; R17, populated as a 0Ω link per WIZnet's reference, sits in series on the XI-side leg before its cap — though since it's 0Ω, which side it's physically placed on doesn't change the circuit's behavior.</div>
+
+<div class="note"><strong>Revision 3.9 (July 2026).</strong> §4.4's KiCad symbol name was wrong: <code>Relay:SANYOU_SRD_Series_Form_C</code> doesn't exist — the symbol is <code>SANYOU_SRD_Form_C</code> (no "Series"), while the matching footprint <em>does</em> keep "Series" in its own name, an inconsistency easy to trip over. This exact symbol also has a documented KiCad bug history (<a href="https://github.com/KiCad/kicad-footprints/issues/1003">kicad-footprints#1003</a>: schematic and footprint disagreed on which pins were connected, fixed in kicad-symbols#1527) — worth knowing about even though current libraries have the fix. Added a verified pin table (1, 2 = coil, no polarity; 5 = COM; 4 = NO; 3 = NC) and real pin numbers throughout the schematic diagram and pin-to-pin table, which previously only referred to contacts generically as "COM/NO/NC" with no pin numbers at all.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -811,8 +813,8 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
 <table>
 <tr><th>Parameter</th><th>Selection</th></tr>
 <tr><td>Relay</td><td>Songle SRD-05VDC-SL-C (SPDT, 5V coil, 10A/250VAC contacts)</td></tr>
-<tr><td>KiCad Symbol</td><td><code>Relay:SANYOU_SRD_Series_Form_C</code></td></tr>
-<tr><td>Footprint</td><td><code>Relay_THT:Relay_SPDT_SANYOU_SRD_Series_Form_C</code></td></tr>
+<tr><td>KiCad Symbol</td><td><code>Relay:SANYOU_SRD_Form_C</code> — <strong>not</strong> <code>SANYOU_SRD_Series_Form_C</code>; that name doesn't exist (the symbol has no "Series" in it, only the matching footprint does). This exact symbol has a documented history of pin/footprint mismatches (<a href="https://github.com/KiCad/kicad-footprints/issues/1003">KiCad/kicad-footprints#1003</a>, fixed in kicad-symbols#1527) — see the pin table below rather than trusting the drawing alone.</td></tr>
+<tr><td>Footprint</td><td><code>Relay_THT:Relay_SPDT_SANYOU_SRD_Series_Form_C</code> (footprint file does keep "Series" in its name, even though the symbol doesn't)</td></tr>
 <tr><td>Quantity</td><td>4 (REL1: OPEN contactor — IO4, REL2: CLOSE contactor — IO5, REL3/REL4: spare — IO1/IO2)</td></tr>
 <tr><td>LCSC P/N</td><td>C35449</td></tr>
 </table>
@@ -827,6 +829,14 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
 <table>
 <tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
 <tr><td>J_RELAY</td><td>Relay outputs (COM/NO/NC × 4)</td><td>12-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-12_3.81mm</code></td></tr>
+</table>
+
+<table>
+<tr><th>Symbol pin</th><th>Function</th><th>Notes</th></tr>
+<tr><td>1, 2</td><td>Coil</td><td>No polarity — either way round energizes it</td></tr>
+<tr><td>5</td><td>COM (common/pole)</td><td>Sits next to the coil in the drawing; this is the pivot the arm swings from</td></tr>
+<tr><td>4</td><td>NO (normally open)</td><td>Closes to COM when the coil is energized — this is the one used for the gate-motor trigger circuit</td></tr>
+<tr><td>3</td><td>NC (normally closed)</td><td>Open when the coil is energized; route to J_RELAY for field flexibility, not used by default</td></tr>
 </table>
 
 <h4>Why Through-Hole Relays</h4>
@@ -854,13 +864,13 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
               D_flyback (1N4148W)           │
               cathode ┤     anode           │
                       │       │             │
-               +5V ───┘       └─────┤Relay Coil├───+5V
-                                    │  (SRD)   │
-                                    └──────────┘
+               +5V ───┘       └───pin1/2 (Relay Coil, SRD) ───+5V
                                             │ Emitter
                                            GND
 
-  Relay Contacts: ─── COM ─── NO ─── NC ─── → J_RELAY screw terminal</code></pre>
+  Relay contacts: pin5(COM) ── pin4(NO) ── pin3(NC) ── → J_RELAY
+  (NO is the one carrying the gate-motor trigger circuit; NC routed
+  to the terminal block for field flexibility, unused by default)</code></pre>
 </div>
 <div class="note"><strong>Note:</strong> The relay coil is powered from the +5V rail, NOT 3.3V. The NPN transistor level-shifts the 3.3V GPIO signal to switch the 5V relay. The flyback diode MUST be present — without it, the back-EMF from the relay coil will destroy the transistor.</div>
 
@@ -869,10 +879,12 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
 <tr><th>From</th><th>To</th><th>Net</th></tr>
 <tr><td>ESP32 IOx (4, 5, 1, or 2)</td><td>R_base</td><td>RELAY_n control</td></tr>
 <tr><td>R_base</td><td>Q_n base</td><td>Base drive</td></tr>
-<tr><td>Q_n collector</td><td>Relay coil (–), D_flyback cathode</td><td>Coil low side</td></tr>
-<tr><td>Relay coil (+)</td><td>+5V, D_flyback anode</td><td>+5V</td></tr>
+<tr><td>Q_n collector</td><td>Relay pin 1 or 2 (coil, either — no polarity), D_flyback cathode</td><td>Coil low side</td></tr>
+<tr><td>Relay pin 2 or 1 (coil, the other one)</td><td>+5V, D_flyback anode</td><td>+5V</td></tr>
 <tr><td>Q_n emitter</td><td>GND</td><td>GND</td></tr>
-<tr><td>Relay COM/NO/NC</td><td>J_RELAY corresponding pins</td><td>Field wiring</td></tr>
+<tr><td>Relay pin 5 (COM)</td><td>J_RELAY COM_n</td><td>Field wiring</td></tr>
+<tr><td>Relay pin 4 (NO)</td><td>J_RELAY NO_n</td><td>Field wiring — gate-motor trigger</td></tr>
+<tr><td>Relay pin 3 (NC)</td><td>J_RELAY NC_n</td><td>Field wiring — spare, fail-closed option</td></tr>
 </table>
 
 <hr>
@@ -1655,7 +1667,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.8 — July 2026 (§4.3's crystal network was a one-line prose description with no visual layout; replaced with an actual diagram after it caused real confusion wiring the W5500 sheet — R16 bridges XI/XO directly, the crystal's two terminals each get their own load cap, R17's 0Ω link makes its exact side electrically immaterial; supersedes rev 3.7)
+Document revision 3.9 — July 2026 (§4.4's relay symbol name corrected — SANYOU_SRD_Series_Form_C doesn't exist, the symbol is SANYOU_SRD_Form_C while only the footprint keeps "Series"; real pin numbers added for coil/COM/NO/NC, verified against the current symbol definition after a documented KiCad bug history on this exact part; supersedes rev 3.8)
 </p>
 
 </body>

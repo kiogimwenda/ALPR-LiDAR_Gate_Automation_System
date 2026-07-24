@@ -9,6 +9,16 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.9: §4.4's KiCad symbol name was wrong
+  - `Relay:SANYOU_SRD_Series_Form_C` doesn't exist, the symbol is
+  `SANYOU_SRD_Form_C` (the matching footprint does keep "Series" in
+  its own name, which is what made this easy to get wrong). This
+  exact symbol also has a documented KiCad bug history
+  (kicad-footprints#1003: schematic/footprint pin mismatch, fixed in
+  kicad-symbols#1527). Added a verified pin table (1, 2 = coil, no
+  polarity; 5 = COM; 4 = NO; 3 = NC) and real pin numbers throughout
+  the schematic and pin-to-pin table, which previously only referred
+  to contacts generically as "COM/NO/NC" with no pin numbers.
 - PCB design guide revision 3.8: §4.3's crystal network was a single
   sentence of prose with no visual layout, which turned out not to
   be enough to wire the network correctly. Replaced with an actual
