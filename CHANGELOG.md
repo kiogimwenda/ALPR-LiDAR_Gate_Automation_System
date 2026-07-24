@@ -9,6 +9,20 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.11: caught while sourcing the J_RELAY
+  connector — the guide's "3.81mm signal connector" spec (J_RELAY,
+  J_SENSE) pointed at Phoenix's MKDS-1,5 series, which only exists
+  at 5.08mm/5.00mm pitch; there's no 3.81mm MKDS-1,5 part, so
+  neither footprint ever matched anything real. The actual 3.81mm
+  parts are Phoenix's separate MC series, in a different KiCad
+  footprint library (`Connector_Phoenix_MC`, not
+  `TerminalBlock_Phoenix`). Corrected both, added the missing
+  `Connector:Screw_Terminal_01xNN` symbol name to all four screw
+  terminals (previously only J_PWR mentioned one), and corrected
+  J_PWR/J_RS485's 5.08mm footprint names to match the library's
+  real naming. BOM's LCSC numbers for J4/J5 were tied to the old
+  nonexistent description and are left unpinned pending
+  re-verification against the corrected parts.
 - PCB design guide revision 3.10: §4.4.1's component table has
   listed `LED_REL` and its `R_LED` (1kΩ, calculated off the 5V rail)
   since early revisions, but neither one ever appeared in the

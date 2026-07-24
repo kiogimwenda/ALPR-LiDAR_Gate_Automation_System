@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.10<br>
+<strong>Date:</strong> July 2026 — revision 3.11<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -131,6 +131,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.9 (July 2026).</strong> §4.4's KiCad symbol name was wrong: <code>Relay:SANYOU_SRD_Series_Form_C</code> doesn't exist — the symbol is <code>SANYOU_SRD_Form_C</code> (no "Series"), while the matching footprint <em>does</em> keep "Series" in its own name, an inconsistency easy to trip over. This exact symbol also has a documented KiCad bug history (<a href="https://github.com/KiCad/kicad-footprints/issues/1003">kicad-footprints#1003</a>: schematic and footprint disagreed on which pins were connected, fixed in kicad-symbols#1527) — worth knowing about even though current libraries have the fix. Added a verified pin table (1, 2 = coil, no polarity; 5 = COM; 4 = NO; 3 = NC) and real pin numbers throughout the schematic diagram and pin-to-pin table, which previously only referred to contacts generically as "COM/NO/NC" with no pin numbers at all.</div>
 
 <div class="note"><strong>Revision 3.10 (July 2026).</strong> §4.4.1's component table has listed <code>LED_REL</code> and its <code>R_LED</code> (1kΩ, calculated off the 5V rail) since early revisions of this guide, but neither ever appeared in the schematic diagram or the pin-to-pin table — there was nowhere in the document that said where to actually connect it. Added: LED_REL sits in parallel with the relay coil, at Q_n's collector — anode through R_LED to +5V, cathode to the collector node (same node as the coil and D_flyback's cathode). This means it lights when the transistor actually conducts and the relay is energized, not just when the GPIO commands it — and explains why R_LED was always calculated off 5V rather than 3.3V.</div>
+
+<div class="note"><strong>Revision 3.11 (July 2026).</strong> Caught while sourcing the J_RELAY connector: the guide's whole "3.81mm signal connector" spec (J_RELAY, J_SENSE) pointed at Phoenix's MKDS-1,5 series, which turns out to only exist at 5.08mm and 5.00mm pitch — there is no 3.81mm MKDS-1,5 part, so <code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-12_3.81mm</code> and its 6-position sibling never matched anything real. The actual 3.81mm parts are Phoenix's separate <strong>MC</strong> series, which lives in a different KiCad footprint library (<code>Connector_Phoenix_MC</code>, not <code>TerminalBlock_Phoenix</code>). Corrected J_RELAY and J_SENSE to the real MC-series footprints, added the missing <code>Connector:Screw_Terminal_01xNN</code> symbol name to all four screw-terminal rows (J_PWR, J_RELAY, J_SENSE, J_RS485 — previously only J_PWR's schematic-entry step mentioned a symbol at all), and corrected J_PWR/J_RS485's 5.08mm MKDS-1,5 footprint names to match the library's actual naming (they were abbreviated in a way that didn't match any real file either). The BOM's LCSC part numbers for J4/J5 were tied to the old, nonexistent description and are left unpinned pending re-verification against the corrected parts.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -314,7 +316,7 @@ kicad-cli version
 <p><strong>12V input protection</strong></p>
 <table>
 <tr><th>Component</th><th>Selection</th><th>Footprint</th></tr>
-<tr><td>J_PWR</td><td>12V DC input — 2-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-2_5.08mm</code></td></tr>
+<tr><td>J_PWR</td><td>12V DC input — 2-pos screw terminal, 5.08mm pitch. Symbol <code>Connector:Screw_Terminal_01x02</code></td><td><code>TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal</code></td></tr>
 <tr><td>F1 — Polyfuse</td><td>MF-MSMF200 (2A hold, 4A trip)</td><td><code>Fuse:Fuse_1206_3216Metric</code></td></tr>
 <tr><td>D7 — Reverse-polarity diode</td><td>SS34 (3A, 40V Schottky) — series, downstream of F1, cathode toward the load</td><td><code>Diode_SMD:D_SMA</code></td></tr>
 <tr><td>D_TVS1 — Input TVS</td><td>SMBJ15A (15V standoff, 600W)</td><td><code>Diode_SMD:D_SMB</code></td></tr>
@@ -830,7 +832,7 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
 </table>
 <table>
 <tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
-<tr><td>J_RELAY</td><td>Relay outputs (COM/NO/NC × 4)</td><td>12-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-12_3.81mm</code></td></tr>
+<tr><td>J_RELAY</td><td>Relay outputs (COM/NO/NC × 4)</td><td>12-pos screw terminal, 3.81mm pitch. Symbol <code>Connector:Screw_Terminal_01x12</code>. <strong>Not</strong> a Phoenix MKDS-1,5 part — that series doesn't come in 3.81mm at all (only 5.08mm/5.00mm); the 3.81mm parts are Phoenix's separate MC series, in a different KiCad footprint library.</td><td><code>Connector_Phoenix_MC:PhoenixContact_MC_1,5_12-G-3.81_1x12_P3.81mm_Horizontal</code></td></tr>
 </table>
 
 <table>
@@ -907,7 +909,7 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
 </table>
 <table>
 <tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
-<tr><td>J_SENSE</td><td>Sensor inputs (limit×2 + beam)</td><td>6-pos screw terminal, 3.81mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-6_3.81mm</code></td></tr>
+<tr><td>J_SENSE</td><td>Sensor inputs (limit×2 + beam)</td><td>6-pos screw terminal, 3.81mm pitch. Symbol <code>Connector:Screw_Terminal_01x06</code>. Same series correction as J_RELAY — Phoenix MC, not MKDS-1,5.</td><td><code>Connector_Phoenix_MC:PhoenixContact_MC_1,5_6-G-3.81_1x06_P3.81mm_Horizontal</code></td></tr>
 </table>
 
 <h4>Why This Approach</h4>
@@ -967,7 +969,7 @@ J_SENSE ── R_series ──────────┤
 </table>
 <table>
 <tr><th>Connector</th><th>Purpose</th><th>Type</th><th>Footprint</th></tr>
-<tr><td>J_RS485</td><td>RS-485 A/B/GND</td><td>3-pos screw terminal, 5.08mm pitch</td><td><code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-3_5.08mm</code></td></tr>
+<tr><td>J_RS485</td><td>RS-485 A/B/GND</td><td>3-pos screw terminal, 5.08mm pitch. Symbol <code>Connector:Screw_Terminal_01x03</code></td><td><code>TerminalBlock_Phoenix:TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal</code></td></tr>
 </table>
 
 <div class="warning"><strong>Pin change from rev 1.0:</strong> RS-485 moved off IO16/17/18 — the firmware's Phase 4.4.4 status-LED driver owns those pins (§1.4). The transceiver stays on the board per ADR-008 ("included in PCB design but disabled in firmware until protocol is implemented"); any future ESP32-S3 UART peripheral routes to these pins via the GPIO matrix, so the choice costs nothing in firmware.</div>
@@ -1561,8 +1563,8 @@ IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/faul
 <tr><td>8</td><td>J1</td><td>RJ45 Magjack</td><td>HR911105A</td><td>Through-hole</td><td>C12074</td><td>1</td></tr>
 <tr><td>9</td><td>J2</td><td>USB-C Receptacle</td><td>USB4105-GF-A</td><td>SMD mid-mount</td><td>C2688138</td><td>1</td></tr>
 <tr><td>10</td><td>J3</td><td>12V Power Input</td><td>2-pos 5.08mm screw</td><td>Through-hole</td><td>C8269</td><td>1</td></tr>
-<tr><td>11</td><td>J4</td><td>Relay Output</td><td>12-pos 3.81mm screw</td><td>Through-hole</td><td>C395882</td><td>1</td></tr>
-<tr><td>12</td><td>J5</td><td>Sensor Input</td><td>6-pos 3.81mm screw</td><td>Through-hole</td><td>C395878</td><td>1</td></tr>
+<tr><td>11</td><td>J4</td><td>Relay Output</td><td>Phoenix MC 1,5/12-G-3.81, 12-pos 3.81mm screw</td><td>Through-hole</td><td>verify‖</td><td>1</td></tr>
+<tr><td>12</td><td>J5</td><td>Sensor Input</td><td>Phoenix MC 1,5/6-G-3.81, 6-pos 3.81mm screw</td><td>Through-hole</td><td>verify‖</td><td>1</td></tr>
 <tr><td>13</td><td>J6</td><td>RS-485 Bus</td><td>3-pos 5.08mm screw</td><td>Through-hole</td><td>C8352</td><td>1</td></tr>
 <tr><td>14</td><td>K1–K4</td><td>Relay SPDT</td><td>SRD-05VDC-SL-C</td><td>Through-hole</td><td>C35449</td><td>4</td></tr>
 <tr><td>15</td><td>Q1–Q4</td><td>NPN Transistor</td><td>SS8050 (SOT-23)</td><td>SOT-23</td><td>C164886</td><td>4</td></tr>
@@ -1613,6 +1615,7 @@ IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/faul
 <p style="font-size: 9pt; color: #555;">† 30.9 kΩ 1% 0603 is a standard E96 value carried by every major distributor (LCSC, Digikey, Mouser, JLCPCB) — search "30.9K 0603 1%" at order time rather than trust a single pinned C-number here, since stock/preferred-part numbers rotate more often than this document does.</p>
 <p style="font-size: 9pt; color: #555;">‡ 10nF 0603 X7R is an extremely common value carried by every major distributor — search "10nF 0603 X7R" at order time rather than trust a single pinned C-number here, same reasoning as the R_top footnote above.</p>
 <p style="font-size: 9pt; color: #555;">§ Generic 2.54mm pin headers — search "1x4 2.54mm pin header vertical" / "1x5 2.54mm pin header vertical" at order time; every distributor stocks dozens of interchangeable options at this pitch.</p>
+<p style="font-size: 9pt; color: #555;">‖ The C-numbers previously listed here (C395882, C395878) were paired with this table's earlier "3.81mm MKDS-1,5" description, which turned out not to be a real Phoenix part (MKDS-1,5 doesn't come in 3.81mm) — so those numbers aren't trustworthy without re-checking, and are left unpinned here rather than carried forward unverified. Search "Phoenix MC 1,5/12-G-3.81" / "Phoenix MC 1,5/6-G-3.81" (or an LCSC-stocked compatible pin-compatible part) at order time.</p>
 
 <!-- APPENDIX C -->
 <h2 style="page-break-before: always;">Appendix C: PCB Layer Stackup Detail</h2>
@@ -1672,7 +1675,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.10 — July 2026 (§4.4's LED_REL relay-state indicator was listed in the component table but never actually shown connected anywhere — added to the schematic diagram and pin-to-pin table, wired in parallel with the coil at the transistor's collector so it reflects actual coil energization, not just the GPIO command; supersedes rev 3.9)
+Document revision 3.11 — July 2026 (J_RELAY and J_SENSE were specified against a Phoenix MKDS-1,5 part at 3.81mm pitch that doesn't exist — that series only comes in 5.08mm/5.00mm; corrected to Phoenix's separate MC series, the real 3.81mm parts, with verified symbol and footprint names for all four screw terminals in this design; supersedes rev 3.10)
 </p>
 
 </body>
