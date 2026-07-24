@@ -9,6 +9,20 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.7: §4.3's RJ45 diagram was a black box
+  with no real pin numbers, caught while wiring the actual W5500
+  sheet. Replaced with HanRun's actual HR911105A internal schematic:
+  TD+/TD-/RD+/RD- mapped to the W5500's TXP/TXN/RXP/RXN, TCT/RCT
+  confirmed unconnected (no external bias per HanRun's own
+  reference), CHS GND wired to PCB ground per the datasheet (was
+  entirely undocumented before). Also fixed: the built-in Green/
+  Yellow LEDs were wired backwards — W5500's LINKLED/SPDLED/DUPLED/
+  ACTLED are active-low, not active-high, so anode goes to +3.3V and
+  the W5500 pin sits on the cathode side. Section 4.7's LED_NET has
+  the same fix, since it's driven by the same LINKLED signal.
+  R_LED count for the RJ45's LEDs corrected from x4 to x2 (the part
+  only has two LED elements); BOM's 330Ω resistor count updated
+  8 -> 9 to match.
 - PCB design guide revision 3.6: §4.3's RJ45 row named the part as
   HR911105A (Hanrun) but pointed the footprint at the Amphenol
   ARJM11C7 footprint instead — different manufacturer, different pad

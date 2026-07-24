@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.6<br>
+<strong>Date:</strong> July 2026 — revision 3.7<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -123,6 +123,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.5 (July 2026).</strong> Rev 3.4's fix split the USB-C diagram into two separate blocks — the connector's own pins in one, U6's pinout in a second block below it — and that split turned out to be exactly ambiguous enough that the next schematic built from it wired U6 downstream of the 22Ω resistors (on the ESP32 side) instead of upstream (right at the connector, before the resistors), which defeats much of the point of the clamp. Replaced with one linear diagram that states the order explicitly — connector → U6 → resistor → ESP32 — with nothing to misread.</div>
 
 <div class="note"><strong>Revision 3.6 (July 2026).</strong> §4.3's RJ45 row named the part as HR911105A (Hanrun) but pointed the footprint at <code>Connector_RJ:RJ45_Amphenol_ARJM11C7</code> — a different manufacturer's part, with a different pad layout. Corrected to <code>Connector_RJ:RJ45_Hanrun_HR911105A_Horizontal</code> for both symbol and footprint, which is also the only Hanrun-branded RJ45 magjack symbol current KiCad libraries actually ship (the plain <code>RJ45_Shielded_Magjack</code> name previously cited here doesn't exist either).</div>
+
+<div class="note"><strong>Revision 3.7 (July 2026).</strong> §4.3's RJ45 diagram was a black box ("→ To RJ45 magjack") with no real pin numbers — replaced with HanRun's actual internal schematic for the HR911105A: TD+/TD-/RD+/RD- pin mapping to the W5500's TXP/TXN/RXP/RXN, TCT/RCT (pins 4, 5) confirmed unconnected per HanRun's own reference (no external bias needed), and CHS GND (pin 8) wired straight to PCB ground per the datasheet's explicit instruction — previously undocumented entirely. Also corrected: the built-in Green/Yellow LEDs (pins 9–12) were wired backwards — W5500's LINKLED/SPDLED/DUPLED/ACTLED are fixed-function <strong>active-low</strong> outputs, not active-high, so anode goes to +3.3V and the W5500 pin sits on the cathode side, opposite of every firmware-driven LED elsewhere in this design. §4.7's LED_NET, driven by the same LINKLED signal, had the identical polarity error and is fixed the same way. R_LED count for the RJ45's built-in LEDs corrected from ×4 to ×2 — HR911105A physically has two LED elements (Green, Yellow), not four; SPDLED/DUPLED have no built-in LED on this part to drive. BOM's 330Ω resistor count updated from 8 to 9 to match.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -670,7 +672,7 @@ kicad-cli version
 <tr><td>C19, C20 — crystal load caps</td><td>18 pF, ceramic C0G — unpolarized</td><td><code>Capacitor_SMD:C_0603_1608Metric</code></td><td>Crystal load capacitors, per WIZnet's reference circuit</td></tr>
 <tr><td>R16 — crystal feedback</td><td>1 MΩ</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Oscillator feedback resistor, across XI/XO</td></tr>
 <tr><td>R17 — crystal series</td><td>0 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Series damping resistor, XO side — populate as a 0Ω link unless ringing is observed</td></tr>
-<tr><td>R_LED (×4)</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>LINKLED / SPDLED current limit (RJ45-integrated LEDs, driven directly by the W5500)</td></tr>
+<tr><td>R_LED (×2)</td><td>330 Ω</td><td><code>Resistor_SMD:R_0603_1608Metric</code></td><td>Pull-ups for the RJ45's two built-in LEDs (Green=pin9/10, Yellow=pin11/12) — see the polarity note below; HR911105A has exactly 2 LED elements, not 4</td></tr>
 <tr><td>Ferrite bead</td><td>600Ω@100MHz, 500mA</td><td><code>Inductor_SMD:L_0805_2012Metric</code></td><td>AVDD filter, between DVDD and AVDD</td></tr>
 </table>
 
@@ -680,7 +682,7 @@ kicad-cli version
 <ul>
 <li><strong>LQFP-48:</strong> Hand-solderable with a fine-tip iron or hot air. Exposed pads are accessible for inspection.</li>
 <li><strong>3215 crystal:</strong> Small enough to place close to the W5500 (critical for signal integrity) but large enough to hand-solder.</li>
-<li><strong>HR911105A:</strong> Built-in Bob Smith termination, center-tap capacitors, and link/activity LEDs — no discrete transformer needed.</li>
+<li><strong>HR911105A:</strong> Built-in Bob Smith termination network (4×75Ω + 1000pF, internal to the part) and link/activity LEDs — no discrete transformer needed, and the center taps (TCT/RCT) need no external bias per HanRun's own reference schematic.</li>
 </ul>
 </div>
 
@@ -699,17 +701,42 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
             GND ───┤ GND (29)         RSVD(38-42) ├───────(leave NC)
                     │                         │
     25MHz XTAL(30, XI)──┤ XI/CLKIN       TXP/TXN(2,1)├───┐
-    25MHz XTAL(31, XO)──┤ XO             RXP/RXN(6,5)├───┤── To RJ45 magjack
-                    │                         │   │   (HR911105A)
-                    │           LINKLED(25)  ├───┤── LED indicator
-                    │           SPDLED(24)   ├───┘
-                    │           DUPLED(26), ACTLED(27) — optional, R_LED each
+    25MHz XTAL(31, XO)──┤ XO             RXP/RXN(6,5)├───┤── To RJ45 J1
+                    │                         │   │   (see below)
+                    │           LINKLED(25)  ├───┼── To RJ45 J1 pin 10
+                    │            ACTLED(27)  ├───┴── To RJ45 J1 pin 11
+                    │      SPDLED(24), DUPLED(26) — no built-in LED on
+                    │      this part to drive; leave unconnected
                     └─────────────────────────┘
 
   Crystal network (WIZnet reference): XO(31)──R16(1M)──XI(30) in
   parallel with the crystal; C19(18pF) grounds the XO side, R17(0Ω)
   in series into C20(18pF) grounding the XI side.</code></pre>
 </div>
+
+<div class="schematic-block">
+<pre><code>J1 (HR911105A) — real pinout per HanRun's own datasheet
+
+  W5500 TXP(2) ── J1 pin 1 (TD+)     J1 pin 4 (TCT) ── NC (no external
+  W5500 TXN(1) ── J1 pin 2 (TD-)                        bias needed —
+  W5500 RXP(6) ── J1 pin 3 (RD+)     J1 pin 5 (RCT) ── NC  HanRun's own
+  W5500 RXN(5) ── J1 pin 6 (RD-)                          reference shows
+                                                           nothing on
+                                                           either pin)
+
+  J1 pin 8 (CHS GND) ── GND   (direct tie — the datasheet says exactly
+  J1 pin SH (shield)  ── GND    this: "Connect CHS GND to PCB Ground".
+                                 The Bob-Smith termination network and
+                                 1000pF/2kV cap are built into the part;
+                                 nothing external needed beyond this wire.)
+
+  Green LED:  J1 pin 9  (anode)   ──[R_LED 330Ω]── +3.3V
+              J1 pin 10 (cathode) ── W5500 LINKLED(25)
+
+  Yellow LED: J1 pin 12 (anode)   ──[R_LED 330Ω]── +3.3V
+              J1 pin 11 (cathode) ── W5500 ACTLED(27)</code></pre>
+</div>
+<div class="warning"><strong>These LEDs are active-low — anode goes to +3.3V, cathode goes to the W5500 pin, not the other way around.</strong> W5500's LINKLED/SPDLED/DUPLED/ACTLED are all fixed-function, active-low outputs ("Low: Link is established", per WIZnet's datasheet) — the PHY sinks current to turn the LED on, it doesn't source it. Wiring these the way a firmware-driven active-high LED normally goes (pin → resistor → LED → GND) leaves the LED permanently off when the link is actually up. This is a hardware-fixed polarity, not something firmware can reconfigure.</div>
 
 <h4>4.3.3 Direct Pin-to-Pin Connections</h4>
 <table>
@@ -728,9 +755,13 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
 <tr><td>43/44/45 (PMODE2/1/0)</td><td>10kΩ pull-up to 3.3V each</td><td>Auto-negotiation mode</td></tr>
 <tr><td>30 (XI/CLKIN)</td><td>Crystal pin 1, R16, C19</td><td>XI</td></tr>
 <tr><td>31 (XO)</td><td>Crystal pin 2, R16, R17</td><td>XO</td></tr>
-<tr><td>1/2 (TXN/TXP)</td><td>RJ45 magjack TX pair</td><td>Ethernet TX</td></tr>
-<tr><td>5/6 (RXN/RXP)</td><td>RJ45 magjack RX pair</td><td>Ethernet RX</td></tr>
-<tr><td>25 (LINKLED)</td><td>R_LED → LED_NET</td><td>Link indicator</td></tr>
+<tr><td>1 (TXN)</td><td>J1 pin 2 (TD-)</td><td>Ethernet TX-</td></tr>
+<tr><td>2 (TXP)</td><td>J1 pin 1 (TD+)</td><td>Ethernet TX+</td></tr>
+<tr><td>5 (RXN)</td><td>J1 pin 6 (RD-)</td><td>Ethernet RX-</td></tr>
+<tr><td>6 (RXP)</td><td>J1 pin 3 (RD+)</td><td>Ethernet RX+</td></tr>
+<tr><td>25 (LINKLED)</td><td>J1 pin 10 (Green LED cathode) — active-low, anode side goes to +3.3V via R_LED</td><td>Link indicator</td></tr>
+<tr><td>27 (ACTLED)</td><td>J1 pin 11 (Yellow LED cathode) — active-low, anode side goes to +3.3V via R_LED</td><td>Activity indicator</td></tr>
+<tr><td>24 (SPDLED), 26 (DUPLED)</td><td>— not connected to J1; no built-in LED on this part for them</td><td>—</td></tr>
 <tr><td>4, 8, 11, 15, 17, 21 (AVDD)</td><td>Ferrite bead from DVDD</td><td>AVDD (filtered)</td></tr>
 <tr><td>28 (VDD)</td><td>+3.3V rail</td><td>DVDD</td></tr>
 <tr><td>3, 9, 14, 16, 19, 48 (AGND)</td><td>GND plane</td><td>AGND</td></tr>
@@ -943,7 +974,7 @@ ESP32 IO38 (DE) ──┬──────────────────�
 <table>
 <tr><th>LED</th><th>Color</th><th>Driven by</th><th>Meaning</th><th>Footprint</th></tr>
 <tr><td>LED_PWR</td><td>Green</td><td>+5V rail, always on</td><td>Board powered (no firmware involvement)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
-<tr><td>LED_NET</td><td>Yellow</td><td>W5500 LINKLED pin</td><td>Ethernet link active (driven by the W5500)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
+<tr><td>LED_NET</td><td>Yellow</td><td>W5500 LINKLED pin (cathode side — active-low, see §4.3's polarity note)</td><td>Ethernet link active (driven by the W5500)</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
 <tr><td>LED_RED</td><td>Red</td><td>ESP32 <strong>IO16</strong></td><td rowspan="3">The firmware's three-LED status set — patterns (auth flash, deny, fault blink, OTA pulse) are defined by the <code>StatusLed</code> driver in <code>firmware/components/gate_drivers/</code>. The PCB provides plain active-high LEDs; all behavior is firmware.</td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
 <tr><td>LED_GREEN</td><td>Green</td><td>ESP32 <strong>IO17</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
 <tr><td>LED_YELLOW</td><td>Yellow</td><td>ESP32 <strong>IO18</strong></td><td><code>LED_SMD:LED_0805_2012Metric</code></td></tr>
@@ -970,8 +1001,11 @@ IO16 ──[R 330Ω]──[LED_RED    Red    0805]── GND  ┐ firmware Statu
 IO17 ──[R 330Ω]──[LED_GREEN  Green  0805]── GND  │ driver (patterns:
 IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/fault/OTA)
 
-W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></pre>
++3.3V ──[R 330Ω]──[LED_NET Yellow 0805, anode→cathode]── W5500 LINKLED pin
+                                                            (active-low —
+                                                             see §4.3)</code></pre>
 </div>
+<div class="note">LED_NET's polarity runs opposite to LED_RED/GREEN/YELLOW above: those three are firmware-driven (active-high, ESP32 GPIO → resistor → LED → GND), but LED_NET is driven by the W5500's hardware LINKLED pin, which is a fixed-function active-low output — it sinks current rather than sourcing it. LED_NET's anode goes to +3.3V through the resistor; the W5500 pin is on the cathode side.</div>
 
 <h4>4.7.3 Direct Pin-to-Pin Connections</h4>
 <table>
@@ -980,8 +1014,9 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td>ESP32 IO16</td><td>R_LED (330Ω) → LED_RED anode</td><td>LED_RED</td></tr>
 <tr><td>ESP32 IO17</td><td>R_LED (330Ω) → LED_GREEN anode</td><td>LED_GREEN</td></tr>
 <tr><td>ESP32 IO18</td><td>R_LED (330Ω) → LED_YELLOW anode</td><td>LED_YELLOW</td></tr>
-<tr><td>W5500 pin 25 (LINKLED)</td><td>R_LED (330Ω) → LED_NET anode</td><td>LED_NET</td></tr>
-<tr><td>All LED cathodes</td><td>GND</td><td>GND</td></tr>
+<tr><td>+3.3V</td><td>R_LED (330Ω) → LED_NET anode</td><td>LED_NET</td></tr>
+<tr><td>LED_NET cathode</td><td>W5500 pin 25 (LINKLED)</td><td>Link indicator (active-low)</td></tr>
+<tr><td>LED_PWR, LED_RED, LED_GREEN, LED_YELLOW cathodes</td><td>GND</td><td>GND</td></tr>
 </table>
 
 
@@ -1509,7 +1544,7 @@ W5500 LINKLED pin ──[R 330Ω]──[LED_NET Yellow 0805]── GND</code></p
 <tr><td colspan="7"><strong>Passive Components</strong></td></tr>
 <tr><td>32</td><td>R (various)</td><td>1kΩ 0603</td><td>1kΩ 1% 1/10W</td><td>0603</td><td>C11702</td><td>12</td></tr>
 <tr><td>33</td><td>R (various)</td><td>10kΩ 0603</td><td>10kΩ 1% 1/10W</td><td>0603</td><td>C25804</td><td>10</td></tr>
-<tr><td>34</td><td>R (various)</td><td>330Ω 0603</td><td>330Ω 1% 1/10W</td><td>0603</td><td>C23138</td><td>8</td></tr>
+<tr><td>34</td><td>R (various)</td><td>330Ω 0603</td><td>330Ω 1% 1/10W</td><td>0603</td><td>C23138</td><td>9</td></tr>
 <tr><td>35</td><td>R (various)</td><td>680Ω 0603</td><td>680Ω 1% 1/10W</td><td>0603</td><td>C23179</td><td>1</td></tr>
 <tr><td>36</td><td>R (various)</td><td>22Ω 0603</td><td>22Ω 1% 1/10W</td><td>0603</td><td>C23345</td><td>2</td></tr>
 <tr><td>37</td><td>R (various)</td><td>5.1kΩ 0603</td><td>5.1kΩ 1% 1/10W</td><td>0603</td><td>C23186</td><td>2</td></tr>
@@ -1595,7 +1630,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.6 — July 2026 (§4.3's RJ45 symbol/footprint pairing corrected — Amphenol ARJM11C7 footprint was paired with the Hanrun HR911105A part; both now point at RJ45_Hanrun_HR911105A_Horizontal, matching what current KiCad libraries actually offer for that part; supersedes rev 3.5)
+Document revision 3.7 — July 2026 (§4.3's RJ45 diagram replaced with HanRun's actual internal pinout — TX/RX pin mapping, TCT/RCT left correctly unconnected, CHS GND wired per the datasheet, and the built-in LEDs' active-low polarity corrected — plus the matching LED_NET fix in §4.7 and an R_LED count correction from ×4 to ×2; supersedes rev 3.6)
 </p>
 
 </body>
