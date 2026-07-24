@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.5<br>
+<strong>Date:</strong> July 2026 — revision 3.6<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -121,6 +121,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.4 (July 2026).</strong> §4.2.4's USB-C diagram showed single "D+"/"D-" lines, which doesn't match how the <code>_16P</code> symbol actually exposes them: D+ is two separate visible pins (A6, B6) and D- is two separate visible pins (A7, B7), one per plug orientation, neither pair hidden or auto-merged — unlike VBUS and GND on the same symbol, which do have hidden duplicate pins that auto-connect by name. The diagram now shows both physical pins per signal and calls out the distinction explicitly, since the two pin classes behave differently for a reason that isn't visible on the schematic canvas either way.</div>
 
 <div class="note"><strong>Revision 3.5 (July 2026).</strong> Rev 3.4's fix split the USB-C diagram into two separate blocks — the connector's own pins in one, U6's pinout in a second block below it — and that split turned out to be exactly ambiguous enough that the next schematic built from it wired U6 downstream of the 22Ω resistors (on the ESP32 side) instead of upstream (right at the connector, before the resistors), which defeats much of the point of the clamp. Replaced with one linear diagram that states the order explicitly — connector → U6 → resistor → ESP32 — with nothing to misread.</div>
+
+<div class="note"><strong>Revision 3.6 (July 2026).</strong> §4.3's RJ45 row named the part as HR911105A (Hanrun) but pointed the footprint at <code>Connector_RJ:RJ45_Amphenol_ARJM11C7</code> — a different manufacturer's part, with a different pad layout. Corrected to <code>Connector_RJ:RJ45_Hanrun_HR911105A_Horizontal</code> for both symbol and footprint, which is also the only Hanrun-branded RJ45 magjack symbol current KiCad libraries actually ship (the plain <code>RJ45_Shielded_Magjack</code> name previously cited here doesn't exist either).</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -657,7 +659,7 @@ kicad-cli version
 <table>
 <tr><th>Parameter</th><th>Selection</th></tr>
 <tr><td>Crystal</td><td>25 MHz, 20 pF load, ±20 ppm — <code>Device:Crystal</code>, <code>Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm</code>, LCSC C32346</td></tr>
-<tr><td>RJ45</td><td>HR911105A single-port magjack — <code>Connector:RJ45_Shielded_Magjack</code>, <code>Connector_RJ:RJ45_Amphenol_ARJM11C7</code>, LCSC C12074</td></tr>
+<tr><td>RJ45</td><td>HR911105A single-port magjack — Symbol <code>Connector_RJ:RJ45_Hanrun_HR911105A_Horizontal</code>, Footprint <code>Connector_RJ:RJ45_Hanrun_HR911105A_Horizontal</code>, LCSC C12074. <strong>Not</strong> the Amphenol ARJM11C7 footprint — different manufacturers' magjacks don't share pad layouts even when functionally similar; symbol and footprint both need to match the actual HR911105A part.</td></tr>
 </table>
 <table>
 <tr><th>Component</th><th>Value</th><th>Footprint</th><th>Purpose</th></tr>
@@ -1593,7 +1595,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.5 — July 2026 (§4.2.4's USB-C diagram rewritten as a single unambiguous signal-flow layout — connector to ESD clamp to series resistor to ESP32, in that order — after the split-diagram version led to the ESD IC being wired downstream of the resistors on the first built sheet; supersedes rev 3.4)
+Document revision 3.6 — July 2026 (§4.3's RJ45 symbol/footprint pairing corrected — Amphenol ARJM11C7 footprint was paired with the Hanrun HR911105A part; both now point at RJ45_Hanrun_HR911105A_Horizontal, matching what current KiCad libraries actually offer for that part; supersedes rev 3.5)
 </p>
 
 </body>

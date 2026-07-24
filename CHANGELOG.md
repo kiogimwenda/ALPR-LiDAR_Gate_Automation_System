@@ -9,6 +9,13 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.6: §4.3's RJ45 row named the part as
+  HR911105A (Hanrun) but pointed the footprint at the Amphenol
+  ARJM11C7 footprint instead — different manufacturer, different pad
+  layout. Corrected to `RJ45_Hanrun_HR911105A_Horizontal` for both
+  symbol and footprint (also the only Hanrun-branded RJ45 symbol
+  current KiCad libraries actually ship; the `RJ45_Shielded_Magjack`
+  name previously cited doesn't exist).
 - PCB design guide revision 3.5: rev 3.4's USB-C diagram split the
   connector's own pins and the U6 ESD IC's pinout into two separate
   blocks, and that split turned out ambiguous enough that the next
