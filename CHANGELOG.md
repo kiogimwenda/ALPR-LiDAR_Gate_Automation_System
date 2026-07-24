@@ -9,6 +9,14 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.8: §4.3's crystal network was a single
+  sentence of prose with no visual layout, which turned out not to
+  be enough to wire the network correctly. Replaced with an actual
+  diagram: R16 (1MΩ) bridges XI and XO directly, not in series with
+  either crystal leg; the crystal's two terminals go one each to
+  XI/XO, each with its own 18pF load cap to GND; R17 (populated as a
+  0Ω link per WIZnet's reference) sits in series on the XI-side leg,
+  though at 0Ω its exact side is electrically immaterial.
 - PCB design guide revision 3.7: §4.3's RJ45 diagram was a black box
   with no real pin numbers, caught while wiring the actual W5500
   sheet. Replaced with HanRun's actual HR911105A internal schematic:

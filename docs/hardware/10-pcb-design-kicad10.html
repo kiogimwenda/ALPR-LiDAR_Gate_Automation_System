@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.7<br>
+<strong>Date:</strong> July 2026 — revision 3.8<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -125,6 +125,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.6 (July 2026).</strong> §4.3's RJ45 row named the part as HR911105A (Hanrun) but pointed the footprint at <code>Connector_RJ:RJ45_Amphenol_ARJM11C7</code> — a different manufacturer's part, with a different pad layout. Corrected to <code>Connector_RJ:RJ45_Hanrun_HR911105A_Horizontal</code> for both symbol and footprint, which is also the only Hanrun-branded RJ45 magjack symbol current KiCad libraries actually ship (the plain <code>RJ45_Shielded_Magjack</code> name previously cited here doesn't exist either).</div>
 
 <div class="note"><strong>Revision 3.7 (July 2026).</strong> §4.3's RJ45 diagram was a black box ("→ To RJ45 magjack") with no real pin numbers — replaced with HanRun's actual internal schematic for the HR911105A: TD+/TD-/RD+/RD- pin mapping to the W5500's TXP/TXN/RXP/RXN, TCT/RCT (pins 4, 5) confirmed unconnected per HanRun's own reference (no external bias needed), and CHS GND (pin 8) wired straight to PCB ground per the datasheet's explicit instruction — previously undocumented entirely. Also corrected: the built-in Green/Yellow LEDs (pins 9–12) were wired backwards — W5500's LINKLED/SPDLED/DUPLED/ACTLED are fixed-function <strong>active-low</strong> outputs, not active-high, so anode goes to +3.3V and the W5500 pin sits on the cathode side, opposite of every firmware-driven LED elsewhere in this design. §4.7's LED_NET, driven by the same LINKLED signal, had the identical polarity error and is fixed the same way. R_LED count for the RJ45's built-in LEDs corrected from ×4 to ×2 — HR911105A physically has two LED elements (Green, Yellow), not four; SPDLED/DUPLED have no built-in LED on this part to drive. BOM's 330Ω resistor count updated from 8 to 9 to match.</div>
+
+<div class="note"><strong>Revision 3.8 (July 2026).</strong> §4.3's crystal network was described in a single sentence of prose ("XO(31)──R16(1M)──XI(30) in parallel with the crystal...") with no actual visual layout — caught when that description alone wasn't enough to wire the network correctly. Replaced with a real diagram: R16 (1MΩ) bridges XI and XO directly, not in series with either crystal leg; the crystal's two terminals connect one each to XI/XO; each terminal gets its own 18pF load cap (C19, C20) to GND; R17, populated as a 0Ω link per WIZnet's reference, sits in series on the XI-side leg before its cap — though since it's 0Ω, which side it's physically placed on doesn't change the circuit's behavior.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -709,9 +711,32 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
                     │      this part to drive; leave unconnected
                     └─────────────────────────┘
 
-  Crystal network (WIZnet reference): XO(31)──R16(1M)──XI(30) in
-  parallel with the crystal; C19(18pF) grounds the XO side, R17(0Ω)
-  in series into C20(18pF) grounding the XI side.</code></pre>
+  Crystal network detail (WIZnet reference, Figure 3):
+
+                XI(30)              XO(31)
+                  │                    │
+                  ├────────R16─────────┤   R16 = 1MΩ, straight across
+                  │       (1MΩ)        │   XI/XO — this is what biases
+                  │                    │   the internal amp so the
+                  │                    │   oscillator actually starts
+               ┌──┴──┐              ┌──┴──┐
+               │           Y2 (25MHz)      │
+               │  pin1 └────────┘ pin2     │
+               └──┬──┘              └──┬──┘
+                  │                  R17 (0Ω link — which side this
+                  │                   sits on doesn't matter
+                  │                   electrically, it's a plain wire)
+                  │                    │
+                C19(18pF)           C20(18pF)
+                  │                    │
+                 GND                  GND
+
+  R16 bridges XI and XO directly — it is NOT in series with the
+  crystal on either leg. The crystal's two terminals go one to each
+  of XI/XO; each terminal gets its own 18pF load cap to GND, with
+  R17 (populated as a 0Ω link) in series on the XI-side leg before
+  its cap, per WIZnet's own reference. Since R17 is 0Ω, swapping
+  which side it's on changes nothing on the assembled board.</code></pre>
 </div>
 
 <div class="schematic-block">
@@ -1630,7 +1655,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.7 — July 2026 (§4.3's RJ45 diagram replaced with HanRun's actual internal pinout — TX/RX pin mapping, TCT/RCT left correctly unconnected, CHS GND wired per the datasheet, and the built-in LEDs' active-low polarity corrected — plus the matching LED_NET fix in §4.7 and an R_LED count correction from ×4 to ×2; supersedes rev 3.6)
+Document revision 3.8 — July 2026 (§4.3's crystal network was a one-line prose description with no visual layout; replaced with an actual diagram after it caused real confusion wiring the W5500 sheet — R16 bridges XI/XO directly, the crystal's two terminals each get their own load cap, R17's 0Ω link makes its exact side electrically immaterial; supersedes rev 3.7)
 </p>
 
 </body>
