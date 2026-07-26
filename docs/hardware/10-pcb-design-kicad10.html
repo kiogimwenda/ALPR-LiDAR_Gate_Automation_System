@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.11<br>
+<strong>Date:</strong> July 2026 — revision 3.12<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -133,6 +133,8 @@ ol.steps > li { margin-bottom: 14px; }
 <div class="note"><strong>Revision 3.10 (July 2026).</strong> §4.4.1's component table has listed <code>LED_REL</code> and its <code>R_LED</code> (1kΩ, calculated off the 5V rail) since early revisions of this guide, but neither ever appeared in the schematic diagram or the pin-to-pin table — there was nowhere in the document that said where to actually connect it. Added: LED_REL sits in parallel with the relay coil, at Q_n's collector — anode through R_LED to +5V, cathode to the collector node (same node as the coil and D_flyback's cathode). This means it lights when the transistor actually conducts and the relay is energized, not just when the GPIO commands it — and explains why R_LED was always calculated off 5V rather than 3.3V.</div>
 
 <div class="note"><strong>Revision 3.11 (July 2026).</strong> Caught while sourcing the J_RELAY connector: the guide's whole "3.81mm signal connector" spec (J_RELAY, J_SENSE) pointed at Phoenix's MKDS-1,5 series, which turns out to only exist at 5.08mm and 5.00mm pitch — there is no 3.81mm MKDS-1,5 part, so <code>TerminalBlock_Phoenix:TerminalBlock_MKDS_1,5-12_3.81mm</code> and its 6-position sibling never matched anything real. The actual 3.81mm parts are Phoenix's separate <strong>MC</strong> series, which lives in a different KiCad footprint library (<code>Connector_Phoenix_MC</code>, not <code>TerminalBlock_Phoenix</code>). Corrected J_RELAY and J_SENSE to the real MC-series footprints, added the missing <code>Connector:Screw_Terminal_01xNN</code> symbol name to all four screw-terminal rows (J_PWR, J_RELAY, J_SENSE, J_RS485 — previously only J_PWR's schematic-entry step mentioned a symbol at all), and corrected J_PWR/J_RS485's 5.08mm MKDS-1,5 footprint names to match the library's actual naming (they were abbreviated in a way that didn't match any real file either). The BOM's LCSC part numbers for J4/J5 were tied to the old, nonexistent description and are left unpinned pending re-verification against the corrected parts.</div>
+
+<div class="warning"><strong>Revision 3.12 (July 2026).</strong> Caught reviewing the first built relay-driver schematic sheet: §4.4.3's pin-to-pin table had D_flyback's polarity backwards — cathode listed at the collector node, anode at +5V, the reverse of correct. The standard rule (verified against multiple sources) is cathode toward the supply rail, anode toward the switched/collector node — with the diode reverse-biased and inert during normal operation, forward-biased only when the transistor turns off and the coil's collapsing field needs a path back to +5V. Wired backwards, or placed in series with one of the coil's own pins instead of bridging the collector node and +5V directly (an equally easy mistake the previous diagram's ambiguity invited), the diode ends up reverse-biased at exactly the moment it's needed — the relay still opens and closes normally, so this doesn't show up on the bench, only as gradual or sudden transistor damage from unsuppressed inductive kickback. §4.4.2's diagram is redrawn as three explicit parallel branches (D_flyback, the coil, R_LED+LED_REL) all bridging the same two nodes, rather than a layout that could be read as anything in series.</div>
 
 <h3>1.1 What This Board Does</h3>
 <ul>
@@ -862,31 +864,39 @@ ESP32 IO8  (RST)───┤ RSTn (37, +10k PU)   RSVD(23) ├──────
                                        │ SS8050  │
                                        │  (NPN)  │
                                        └────┬────┘
-                                            │ Collector
-                      ┌─────────────────────┼───────────────┐
-                      │                     │                │
-              D_flyback (1N4148W)           │        LED_REL (Green)
-              cathode ┤     anode           │        cathode ┤  anode
-                      │       │             │                │    │
-               +5V ───┘       └───pin1/2 (Relay Coil, SRD) ───+5V │
-                                            │ Emitter          [R_LED 1kΩ]
-                                           GND                    │
-                                                                 +5V
+                                            │ Emitter ── GND
+                                            │
+              COLLECTOR NODE (Q_n collector) ─────────────────────────
+                    │              │                    │
+              [D_flyback]    [Relay pin 1 or 2       [R_LED 1kΩ]
+               anode here     — coil, either]         │
+                    │              │               [LED_REL]
+              cathode here    (other coil pin           cathode here
+                    │          also drops to             │
+                    └──────────  +5V below)  ────────────┘
+                                    │
+                             +5V RAIL ───────────────────────────────
+
+  Three separate branches, all bridging the SAME two nodes (COLLECTOR
+  and +5V) in parallel — D_flyback, the coil, and R_LED+LED_REL. None
+  of them are in series with each other or with a single coil pin;
+  each branch independently spans collector-to-+5V.
 
   Relay contacts: pin5(COM) ── pin4(NO) ── pin3(NC) ── → J_RELAY
   (NO is the one carrying the gate-motor trigger circuit; NC routed
   to the terminal block for field flexibility, unused by default)</code></pre>
 </div>
 <div class="note"><strong>Note:</strong> The relay coil is powered from the +5V rail, NOT 3.3V. The NPN transistor level-shifts the 3.3V GPIO signal to switch the 5V relay. The flyback diode MUST be present — without it, the back-EMF from the relay coil will destroy the transistor.</div>
-<div class="note"><strong>LED_REL sits in parallel with the coil, at the same collector node — not off the GPIO.</strong> Anode → R_LED (1kΩ) → +5V; cathode → Q_n's collector (the same node the coil and D_flyback's cathode land on). When Q_n is off, the collector sits near +5V (pulled up through the coil, which drops negligible voltage at zero current), so there's ~0V across the LED and it stays dark. When Q_n conducts, the collector drops to ~0.2V (Vce_sat), putting the full ~4.8V across R_LED+LED_REL and lighting it — exactly when the relay is actually energized, not just commanded. This is also why R_LED is calculated off the 5V rail rather than 3.3V: it's part of the same 5V-side cluster as the coil and flyback diode, not tied directly to the 3.3V GPIO signal.</div>
+<div class="warning"><strong>D_flyback's cathode goes to +5V, anode to the collector node — and it must bridge the two directly, not sit in series with either coil pin.</strong> During normal operation the diode is reverse-biased (blocking) and does nothing; when Q_n turns off, the coil's collapsing field pushes the collector node high, forward-biasing the diode and giving that energy a path back to +5V instead of through Q_n. If the diode is placed in series with one of the coil's own terminals (e.g. between +5V and pin 2, with pin 1 wired straight to the collector) instead of bridging directly across the collector-node-to-+5V span, it ends up reverse-biased at exactly the moment it's needed and provides no protection at all — the relay will still open and close normally, making this easy to miss on the bench, right up until repeated switching degrades or destroys the transistor.</div>
+<div class="note"><strong>LED_REL sits in parallel with the coil, at the same collector node — not off the GPIO.</strong> Anode → R_LED (1kΩ) → +5V; cathode → Q_n's collector (the same node the coil and D_flyback's anode land on). When Q_n is off, the collector sits near +5V (pulled up through the coil, which drops negligible voltage at zero current), so there's ~0V across the LED and it stays dark. When Q_n conducts, the collector drops to ~0.2V (Vce_sat), putting the full ~4.8V across R_LED+LED_REL and lighting it — exactly when the relay is actually energized, not just commanded. This is also why R_LED is calculated off the 5V rail rather than 3.3V: it's part of the same 5V-side cluster as the coil and flyback diode, not tied directly to the 3.3V GPIO signal.</div>
 
 <h4>4.4.3 Direct Pin-to-Pin Connections (per channel)</h4>
 <table>
 <tr><th>From</th><th>To</th><th>Net</th></tr>
 <tr><td>ESP32 IOx (4, 5, 1, or 2)</td><td>R_base</td><td>RELAY_n control</td></tr>
 <tr><td>R_base</td><td>Q_n base</td><td>Base drive</td></tr>
-<tr><td>Q_n collector</td><td>Relay pin 1 or 2 (coil, either — no polarity), D_flyback cathode, LED_REL cathode</td><td>Coil low side</td></tr>
-<tr><td>Relay pin 2 or 1 (coil, the other one)</td><td>+5V, D_flyback anode</td><td>+5V</td></tr>
+<tr><td>Q_n collector</td><td>Relay pin 1 or 2 (coil, either — no polarity), D_flyback anode, LED_REL cathode</td><td>Coil low side</td></tr>
+<tr><td>Relay pin 2 or 1 (coil, the other one)</td><td>+5V, D_flyback cathode</td><td>+5V</td></tr>
 <tr><td>LED_REL anode</td><td>R_LED (1kΩ) → +5V</td><td>+5V</td></tr>
 <tr><td>Q_n emitter</td><td>GND</td><td>GND</td></tr>
 <tr><td>Relay pin 5 (COM)</td><td>J_RELAY COM_n</td><td>Field wiring</td></tr>
@@ -1675,7 +1685,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.11 — July 2026 (J_RELAY and J_SENSE were specified against a Phoenix MKDS-1,5 part at 3.81mm pitch that doesn't exist — that series only comes in 5.08mm/5.00mm; corrected to Phoenix's separate MC series, the real 3.81mm parts, with verified symbol and footprint names for all four screw terminals in this design; supersedes rev 3.10)
+Document revision 3.12 — July 2026 (§4.4's D_flyback polarity was backwards in the pin-to-pin table — cathode/anode swapped between the collector node and +5V, which reverse-biases the diode at exactly the moment it's needed and gives no flyback protection at all while the relay still appears to work fine on the bench; corrected, and the diagram redrawn as three explicit parallel branches after the previous version's ambiguity led to the diode being placed in series with one coil pin instead of bridging both nodes directly; supersedes rev 3.11)
 </p>
 
 </body>

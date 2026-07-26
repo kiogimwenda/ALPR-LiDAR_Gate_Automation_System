@@ -9,6 +9,19 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- PCB design guide revision 3.12: caught reviewing the first built
+  relay-driver schematic sheet — §4.4.3's pin-to-pin table had the
+  flyback diode's polarity backwards (cathode at the collector node,
+  anode at +5V; correct is the reverse). Wired backwards, or placed
+  in series with one of the coil's own pins instead of bridging the
+  collector node and +5V directly, the diode ends up reverse-biased
+  at exactly the moment it's needed and provides no protection at
+  all - the relay still opens and closes normally on the bench, so
+  this doesn't show up until repeated switching damages the
+  transistor. Corrected the polarity and redrew §4.4.2's diagram as
+  three explicit parallel branches (D_flyback, the coil, R_LED+
+  LED_REL, all bridging the same two nodes) after the previous
+  version's ambiguity is what led to the series-placement mistake.
 - PCB design guide revision 3.11: caught while sourcing the J_RELAY
   connector — the guide's "3.81mm signal connector" spec (J_RELAY,
   J_SENSE) pointed at Phoenix's MKDS-1,5 series, which only exists
