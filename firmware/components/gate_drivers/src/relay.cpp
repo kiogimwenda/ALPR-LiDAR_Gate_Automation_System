@@ -12,6 +12,11 @@ constexpr const char* kTag = "relay";
 }
 
 Relay::Relay(const Config& cfg) : cfg_(cfg) {
+    // Latch the OFF level before the pin becomes an output: an
+    // active-low module would otherwise see the reset-default LOW and
+    // energise the coil for the instant before set() runs.
+    write_gpio(false);
+
     gpio_config_t io = {};
     io.pin_bit_mask = 1ULL << static_cast<int>(cfg_.gpio);
     io.mode = GPIO_MODE_OUTPUT;

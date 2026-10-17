@@ -86,6 +86,7 @@ public:
     struct Config {
         state_machine::Config sm{};
         Pins pins{};
+        bool relays_active_high = true;  // false for opto-isolated relay modules
         bool reverse_on_beam = true;
         std::uint32_t heartbeat_period_ms = 5'000;
     };

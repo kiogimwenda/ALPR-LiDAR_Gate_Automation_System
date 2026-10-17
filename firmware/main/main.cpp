@@ -55,6 +55,13 @@ void log_boot_banner() {
              (chip.features & CHIP_FEATURE_EMB_FLASH) ? "embedded-flash " : "");
 }
 
+// Menuconfig → Gate Firmware Configuration → Motor relay input polarity.
+#if CONFIG_GATE_RELAY_ACTIVE_LOW
+constexpr bool kRelaysActiveHigh = false;
+#else
+constexpr bool kRelaysActiveHigh = true;
+#endif
+
 }  // namespace
 
 extern "C" void app_main(void) {
@@ -76,7 +83,8 @@ extern "C" void app_main(void) {
                 .motor_timeout_ms = 30'000,
                 .auto_close_ms = 0,  // auto-close policy arrives with remote config (4.5.4)
             },
-        .pins = {},               // DevKitC-1 reference wiring (see gate_controller.hpp)
+        .pins = {},  // DevKitC-1 reference wiring (see gate_controller.hpp)
+        .relays_active_high = kRelaysActiveHigh,
         .reverse_on_beam = true,  // UL 325-style entrapment protection
         .heartbeat_period_ms = 5'000,
     }};

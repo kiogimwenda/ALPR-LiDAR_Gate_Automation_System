@@ -34,8 +34,8 @@ constexpr std::uint32_t kBootSettleMs = 50;
 
 GateController::GateController(const Config& cfg)
     : cfg_(cfg),
-      relay_open_({.gpio = cfg.pins.relay_open}),
-      relay_close_({.gpio = cfg.pins.relay_close}),
+      relay_open_({.gpio = cfg.pins.relay_open, .active_high = cfg.relays_active_high}),
+      relay_close_({.gpio = cfg.pins.relay_close, .active_high = cfg.relays_active_high}),
       limit_open_({.gpio = cfg.pins.limit_open}),
       limit_closed_({.gpio = cfg.pins.limit_closed}),
       beam_({.gpio = cfg.pins.safety_beam}),

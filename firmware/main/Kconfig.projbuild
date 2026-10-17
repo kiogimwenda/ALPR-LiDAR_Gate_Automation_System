@@ -37,6 +37,23 @@ menu "Gate Firmware Configuration"
             (see main/certs/README.md). Off = plaintext h2c and
             http OTA, matching the server's dev posture.
 
+    choice GATE_RELAY_POLARITY
+        prompt "Motor relay input polarity"
+        default GATE_RELAY_ACTIVE_HIGH
+        help
+            Logic level that energises the open/close relays. The
+            field-controller PCB drives its relays through NPN
+            transistors (active high). Most hobby relay modules used
+            on the breadboard prototype are opto-isolated and pull
+            in when their IN pin goes LOW. Pick the wrong one and
+            the gate drives the moment it boots.
+
+        config GATE_RELAY_ACTIVE_HIGH
+            bool "Active high (field-controller PCB)"
+        config GATE_RELAY_ACTIVE_LOW
+            bool "Active low (opto-isolated breadboard relay module)"
+    endchoice
+
     config GATE_SNTP_SERVER
         string "SNTP server"
         default "pool.ntp.org"
