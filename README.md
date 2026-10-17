@@ -72,7 +72,7 @@ release on GitHub.
 
 | Phase | Title | Status | Highlights |
 |---|---|---|---|
-| **0** | Environment bootstrap | ✅ Complete | WSL2 Debian + CUDA 13.1 + cuDNN 9.19 + TensorRT 10.15 + OpenCV 4.14 (CUDA source-build) verified by `smoke_test.cu`. |
+| **0** | Environment bootstrap | ✅ Complete | WSL2 Debian + CUDA 13.1 + cuDNN 9.19 + TensorRT 10.15 (since upgraded to 10.16) + OpenCV 4.14 verified by `smoke_test.cu`. |
 | **1** | Clarifications & decisions | ✅ Complete | All 12 design questions answered; defaults accepted; gate type override applied. |
 | **2** | Architecture | ✅ Complete | 7 Mermaid flowcharts, 11 ADRs (ADR-000…ADR-010), full directory skeleton, CI workflows. |
 | **3** | Hardware research & build guides | ✅ Complete | 9 component guides + master build book + complete BOM + 48-page KiCad 9.0 PCB design guide (PDF). |
@@ -173,28 +173,30 @@ isn't just present but actually executes on the target architectures.
 | Artifact | Purpose |
 |---|---|
 | `scripts/bootstrap/01-toolchain.sh` | Installs the C/C++ toolchain — GCC 14, Clang 19, CMake ≥3.28, Ninja, ccache, mold, pkg-config, git-lfs. Idempotent: re-runs are a no-op. |
-| `scripts/bootstrap/02-gpu-stack.sh` | Installs the NVIDIA stack — CUDA 13.1 toolkit, cuDNN 9.19, TensorRT 10.15 dev. Verifies `nvcc -arch=sm_120` and `sm_89` both compile and run. |
-| `scripts/bootstrap/03-ml-tools.sh` | Builds OpenCV 4.14 from source with the CUDA modules (`cudaarithm`, `cudaimgproc`, `cudafilters`, `cudacodec`) installed to `/usr/local/lib/`. Pip's OpenCV package is fine for export scripts but unusable for the inference path. |
+| `scripts/bootstrap/02-gpu-stack.sh` | Installs the NVIDIA stack — CUDA 13.1 toolkit, cuDNN 9.19, TensorRT 10.16 dev. Verifies `nvcc -arch=sm_120` and `sm_89` both compile and run. |
+| `scripts/bootstrap/03-ml-tools.sh` | Installs the Python model-export tooling — PaddlePaddle + PaddleOCR, checks ONNX Runtime, clones the YOLOv9 reference repo. It does **not** install OpenCV (see below). |
 | `scripts/bootstrap/04-vcpkg.sh` | Pins vcpkg to a specific commit and primes the binary cache at `~/.cache/vcpkg`. |
-| `scripts/bootstrap/smoke_test.cu` | The execution proof — a CUDA kernel built for both target archs and run on the dev box. Without this, "TensorRT 10.15 installed" is unverified marketing. |
+| `scripts/bootstrap/smoke_test.cu` | The execution proof — a CUDA kernel built for both target archs and run on the dev box. Without this, "TensorRT installed" is unverified marketing. |
 
 ### Technical detail
 
-#### Why source-build OpenCV instead of the pip wheel
+#### OpenCV: what the C++ code actually needs
 
-The pip `opencv-contrib-python` wheel ships with no CUDA modules at
-all — every `cv::cuda::*` symbol resolves to a stub that throws
-"OpenCV was built without CUDA support". The inference pipeline
-copies camera frames into GPU memory and runs detection / classification
-on-device, so CUDA OpenCV is non-negotiable. The bootstrap script
-clones OpenCV + opencv_contrib at the same tag, configures with
-`-D WITH_CUDA=ON -D OPENCV_DNN_CUDA=ON -D CUDA_ARCH_BIN="8.9;12.0"`,
-and installs the resulting `.so`s to `/usr/local/lib/`. The vcpkg
-manifest then finds them via system pkg-config.
+The C++ server uses OpenCV only on the host: `core` + `imgproc` for
+letterboxing, crops and colour conversion ahead of TensorRT
+(`server/inference`), and `videoio` for RTSP / V4L2 capture in
+`gate-vision`'s camera source. Inference itself runs in TensorRT; no
+code calls `cv::cuda::*`, so a CUDA-enabled OpenCV is **not** required.
+A stock OpenCV 4.x with those three modules is enough (e.g. Debian's
+`libopencv-dev`). No bootstrap script builds OpenCV.
 
-The pip Python build remains useful for the `tools/export-models/`
-scripts (those convert ONNX → TensorRT engines on the host CPU + Python's
-`tensorrt` module), so both coexist intentionally.
+The dev box happens to carry a hand-built OpenCV 4.14 with CUDA modules
+in `/usr/local/lib/` (see `docs/env-audit.md`), which CMake picks up,
+but nothing depends on its CUDA parts.
+
+The pip `opencv-python` wheel is used only by the `tools/export-models/`
+scripts (which convert ONNX → TensorRT engines with Python's `tensorrt`
+module), so the two coexist intentionally.
 
 #### Two CUDA architectures
 
