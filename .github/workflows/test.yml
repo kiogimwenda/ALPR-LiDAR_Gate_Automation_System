@@ -27,11 +27,12 @@ jobs:
           sudo apt-get install -y cmake ninja-build pkg-config autoconf automake \
             libtool bison flex python3 openssl gcc-14 g++-14
 
-      # Dependencies build without sanitizers (same cache as the gcc-14
-      # build job); only this repo's code is instrumented.
+      # asan builds every dependency instrumented (triplets/x64-linux-asan:
+      # abseil must share the sanitizer with its users), so it keeps its own
+      # cache; ubsan reuses the plain gcc-14 packages.
       - uses: ./.github/actions/setup-vcpkg
         with:
-          cache-key: gcc-14
+          cache-key: ${{ matrix.sanitizer == 'asan' && 'gcc-14-asan' || 'gcc-14' }}
 
       - name: Configure (${{ matrix.sanitizer }})
         run: |

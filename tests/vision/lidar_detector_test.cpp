@@ -234,7 +234,13 @@ TEST_CASE("update() meets the 20 ms latency budget", "[lidar][perf]") {
     std::sort(ms.begin(), ms.end());
     INFO("p99 " << ms[98] << " ms over windows of up to " << peak << " points");
     CHECK(peak >= 25'000);
+#if defined(__SANITIZE_ADDRESS__)
+    // ASan slows the hot loop several-fold; the budget is a release-
+    // and debug-build property, not one a sanitizer build can show.
+    SKIP("latency budget not meaningful under AddressSanitizer");
+#else
     CHECK(ms[98] <= 20.0);
+#endif
 }
 
 TEST_CASE("dimension envelopes classify reference vehicles", "[lidar][classify]") {

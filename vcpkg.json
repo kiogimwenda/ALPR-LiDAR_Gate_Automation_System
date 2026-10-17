@@ -3,7 +3,12 @@
   "version": "0.0.1",
   "description": "ALPR + LiDAR Automated Vehicle Gate Control System",
   "dependencies": [
-    "grpc",
+    {
+      "name": "grpc",
+      "features": [
+        "codegen"
+      ]
+    },
     "protobuf",
     "drogon",
     "catch2",
