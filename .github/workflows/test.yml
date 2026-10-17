@@ -35,7 +35,8 @@ jobs:
 
       - name: Configure (${{ matrix.sanitizer }})
         run: |
-          cmake --preset ${{ matrix.sanitizer }} 2>&1 | tee configure.log
+          # One link at a time: parallel sanitizer links ran the runner out of memory.
+          cmake --preset ${{ matrix.sanitizer }} -DGATE_LINK_JOBS=1 2>&1 | tee configure.log
           if grep -qE "Skipping [^ ]+: .*not found" configure.log; then
             echo "::error::a C++ tree was skipped at configure time"; exit 1
           fi

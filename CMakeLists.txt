@@ -14,6 +14,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # where clang-tidy and clangd fail to parse them.
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# Cap concurrent links (Ninja) without limiting compiles. Sanitizer
+# links of the gRPC binaries take GBs each; several at once exhausted a
+# hosted CI runner's memory and the runner was shut down mid-build.
+set(GATE_LINK_JOBS 0 CACHE STRING "Max concurrent link jobs (0 = no limit)")
+if(GATE_LINK_JOBS GREATER 0)
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS gate_link_pool=${GATE_LINK_JOBS})
+    set(CMAKE_JOB_POOL_LINK gate_link_pool)
+endif()
+
 option(ENABLE_GPU       "Build with CUDA/TensorRT GPU support"          ON)
 option(BUILD_PROTO      "Build the shared gRPC proto library"           ON)
 option(BUILD_TESTS      "Build unit and contract tests"                 ON)

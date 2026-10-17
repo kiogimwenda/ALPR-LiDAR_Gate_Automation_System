@@ -66,6 +66,9 @@ target_compile_features(gate_proto PUBLIC cxx_std_20)
 target_compile_options(gate_proto PRIVATE
     -Wno-unused-parameter
     -Wno-deprecated-declarations
+    # protoc (clang >= 19 builds) emits _Nonnull/_Nullable, which
+    # -Wpedantic reports as a Clang extension.
+    $<$<CXX_COMPILER_ID:Clang>:-Wno-nullability-extension>
 )
 
 # Re-export the descriptor for tools that consume it (gRPC reflection,

@@ -31,7 +31,6 @@ using gate::v1::Telemetry;
 
 namespace {
 
-constexpr auto kShortTimeout = std::chrono::milliseconds{50};
 constexpr auto kLongTimeout = std::chrono::milliseconds{500};
 
 AuthDecision make_decision(const std::string& gate_id, AuthVerdict v) {
