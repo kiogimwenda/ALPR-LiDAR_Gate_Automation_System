@@ -9,7 +9,17 @@ This sensor shoots invisible laser beams in a dome pattern (360° around, 90° u
 - **Manufacturer:** Unitree Robotics
 - **Model:** Unitree 4D LiDAR L1
 - **Variant:** L1 **PM** (Proximity Measurement, 20m range — NOT the L1 RM which is more expensive)
-- **Key specs:** 360° × 90° FOV, 21,600 points/sec, 0.05–30m range, IMU built-in, Ethernet + UART
+- **Key specs:** 360° × 90° FOV, 21,600 points/sec, 0.05–30m range, IMU built-in, USB-serial (UART, 2 Mbaud); Ethernet/UDP only through Unitree's serial-to-UDP adapter board
+
+> **Interface correction (2026-10):** earlier drafts of this guide treated the L1 as an
+> Ethernet device at 192.168.1.100 (UDP 6001). It is not: the L1's native link is
+> USB-serial, read with Unitree's `unilidar_sdk` (`initialize()` on `/dev/ttyUSB0`,
+> 2,000,000 baud). Ethernet needs the serial-to-UDP adapter (SDK `initializeUDP()`,
+> defaults: LiDAR 10.10.10.10:5001, host 10.10.10.100:5000). `gate-vision` supports
+> both: `--lidar unitree-serial:/dev/ttyUSB0` or
+> `--lidar unitree-udp:10.10.10.10:5001@10.10.10.100:5000`. See
+> [docs/lidar.md](../lidar.md) for the software path and commissioning. The
+> Ethernet sections below apply only with the adapter board.
 - **Size:** 75 × 75 × 65 mm, 230g
 - **Laser class:** Class 1 (eye-safe — safe to look at)
 

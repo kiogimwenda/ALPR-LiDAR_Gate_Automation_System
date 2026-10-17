@@ -16,6 +16,13 @@ add_library(gate_vision STATIC
     src/scenario_source.cpp
     src/frame_builder.cpp
     src/submit_client.cpp
+    src/fused_source.cpp
+    # LiDAR path (Phase 6.1) — CPU-only, no PCL/Eigen.
+    src/lidar/vehicle_detector.cpp
+    src/lidar/lidar_config.cpp
+    src/lidar/lidar_worker.cpp
+    src/lidar/pcd_source.cpp
+    src/lidar/synthetic_source.cpp
 )
 
 target_include_directories(gate_vision
@@ -23,15 +30,48 @@ target_include_directories(gate_vision
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
+find_package(Threads REQUIRED)
+
 target_link_libraries(gate_vision
     PUBLIC
         gate_proto
+        Threads::Threads
     PRIVATE
         nlohmann_json::nlohmann_json
         spdlog::spdlog
 )
 
 target_compile_features(gate_vision PUBLIC cxx_std_20)
+
+# --- Unitree L1 driver (optional) -------------------------------------------
+# Unitree's unilidar_sdk ships a prebuilt static library (BSD-3-Clause).
+# Point UNITREE_LIDAR_SDK_DIR at its unitree_lidar_sdk/ folder (the one
+# holding include/ and lib/<arch>/) to build gate-vision with
+# `--lidar unitree-serial:…` / `unitree-udp:…` support:
+#   git clone https://github.com/unitreerobotics/unilidar_sdk
+#   cmake … -DUNITREE_LIDAR_SDK_DIR=$PWD/unilidar_sdk/unitree_lidar_sdk
+set(UNITREE_LIDAR_SDK_DIR "" CACHE PATH "unilidar_sdk/unitree_lidar_sdk directory (optional)")
+if(UNITREE_LIDAR_SDK_DIR)
+    find_path(UNITREE_LIDAR_INCLUDE unitree_lidar_sdk.h
+        PATHS ${UNITREE_LIDAR_SDK_DIR}/include NO_DEFAULT_PATH REQUIRED)
+    find_library(UNITREE_LIDAR_LIB unitree_lidar_sdk
+        PATHS ${UNITREE_LIDAR_SDK_DIR}/lib/${CMAKE_SYSTEM_PROCESSOR} NO_DEFAULT_PATH REQUIRED)
+    add_library(gate_vision_unitree STATIC src/lidar/unitree_l1_source.cpp)
+    # SYSTEM: the vendor header is not -Wall/-Werror clean.
+    target_include_directories(gate_vision_unitree SYSTEM PRIVATE ${UNITREE_LIDAR_INCLUDE})
+    target_link_libraries(gate_vision_unitree
+        PUBLIC gate_vision
+        PRIVATE ${UNITREE_LIDAR_LIB} spdlog::spdlog)
+    target_compile_features(gate_vision_unitree PUBLIC cxx_std_20)
+    message(STATUS "gate-vision: Unitree L1 driver enabled (${UNITREE_LIDAR_LIB})")
+endif()
+
+# --- lidar-bench --------------------------------------------------------------
+# Measures the detector against the latency requirement (docs/lidar.md)
+# on ray-cast scenes: `lidar-bench [--points-per-second N] [--frames N]`.
+add_executable(lidar-bench tools/lidar_bench.cpp)
+target_link_libraries(lidar-bench PRIVATE gate_vision spdlog::spdlog)
+target_compile_features(lidar-bench PRIVATE cxx_std_20)
 
 # --- camera source (GPU builds only) ----------------------------------------
 # The first real sensor behind the seam: OpenCV VideoCapture → TensorRT
@@ -71,5 +111,9 @@ target_link_libraries(gate-vision
 if(TARGET gate_vision_camera)
     target_link_libraries(gate-vision PRIVATE gate_vision_camera)
     target_compile_definitions(gate-vision PRIVATE GATE_VISION_HAVE_CAMERA=1)
+endif()
+if(TARGET gate_vision_unitree)
+    target_link_libraries(gate-vision PRIVATE gate_vision_unitree)
+    target_compile_definitions(gate-vision PRIVATE GATE_VISION_HAVE_UNITREE=1)
 endif()
 target_compile_features(gate-vision PRIVATE cxx_std_20)

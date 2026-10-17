@@ -90,6 +90,9 @@ std::optional<ObservationSet> CameraSource::next() {
         if (++failures > cfg_.read_retries) {
             spdlog::error("camera_source: capture dead after {} failed reads — ending stream",
                           failures - 1);
+            // (No URI in the message: RTSP URIs carry credentials.)
+            failure_ =
+                "camera capture dead after " + std::to_string(failures - 1) + " failed reads";
             return std::nullopt;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds{100});

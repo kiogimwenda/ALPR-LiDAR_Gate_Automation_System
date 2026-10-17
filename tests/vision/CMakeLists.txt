@@ -4,6 +4,8 @@ add_executable(test_vision
     scenario_source_test.cpp
     frame_builder_test.cpp
     submit_client_test.cpp
+    lidar_detector_test.cpp
+    lidar_sweep_test.cpp
 )
 
 target_link_libraries(test_vision

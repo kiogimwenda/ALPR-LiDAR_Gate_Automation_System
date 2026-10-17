@@ -8,11 +8,10 @@
 // TensorRT, so it is compiled solely into `gate_vision_camera`
 // (ENABLE_GPU) and included by the daemon behind GATE_VISION_HAVE_CAMERA.
 //
-// Vehicles are deliberately absent from this source's output: LiDAR
-// point-cloud capture (Unitree L1 UDP) is bench-phase work, and the
-// eventual ADR-012 fusion unit replaces this driver wholesale. Plate-only
-// frames are valid input — the fusion ladder applies its plate-only
-// policy (class checks simply have nothing to match).
+// Vehicles are deliberately absent from this source's output: with
+// `--lidar`, FusedSource attaches the LiDAR's vehicles to each plate
+// frame (vision/fused_source.hpp); the eventual ADR-012 fusion unit
+// replaces this driver wholesale.
 //
 // Fail-closed like every source: an URI that won't open or an engine
 // that won't load throws at construction. A capture that goes dark
@@ -70,6 +69,7 @@ public:
     // Grabs, throttles, infers. nullopt = stream ended (max_frames
     // reached or the capture died past its retry budget).
     std::optional<ObservationSet> next() override;
+    [[nodiscard]] std::string failure() const override { return failure_; }
 
 private:
     CameraSource(Config cfg, std::unique_ptr<gate::inference::TrtLogger> logger,
@@ -83,6 +83,7 @@ private:
     std::unique_ptr<cv::VideoCapture> cap_;
     gate::inference::AlprPipeline pipeline_;
     std::uint64_t frames_emitted_ = 0;
+    std::string failure_;
     std::chrono::steady_clock::time_point next_due_{};
 };
 

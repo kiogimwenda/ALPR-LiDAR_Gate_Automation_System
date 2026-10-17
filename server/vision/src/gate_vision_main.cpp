@@ -16,7 +16,15 @@
 //                       --detector-engine / --recognizer-engine /
 //                       --ocr-dictionary
 //
-// Exactly one source must be given. Transport security is the standard
+// LiDAR (Phase 6.1), added on top of either source:
+//   --lidar <spec>      synthetic:<scene.json> | pcd:<dir> |
+//                       unitree-serial:<dev> | unitree-udp:<ip>:<port>@<ip>:<port>
+//                       (unitree-* when built with UNITREE_LIDAR_SDK_DIR)
+//   --lidar-config <json>  site mounting pose + zones (vision/lidar/lidar_config.hpp)
+//   --record-lidar <dir>   also save every raw batch as .pcd for replay
+// Each plate frame then carries the LiDAR's vehicles (vision/fused_source.hpp).
+//
+// Exactly one primary source must be given. Transport security is the standard
 // ladder (plaintext-but-loud → TLS → mTLS) via --tls-ca/--tls-cert/
 // --tls-key; any configured-but-unreadable PEM refuses to start.
 
@@ -30,8 +38,17 @@
 #include <string>
 
 #include "vision/frame_builder.hpp"
+#include "vision/fused_source.hpp"
+#include "vision/lidar/lidar_config.hpp"
+#include "vision/lidar/lidar_worker.hpp"
+#include "vision/lidar/pcd_source.hpp"
+#include "vision/lidar/synthetic_source.hpp"
 #include "vision/scenario_source.hpp"
 #include "vision/submit_client.hpp"
+
+#if defined(GATE_VISION_HAVE_UNITREE)
+#include "vision/lidar/unitree_l1_source.hpp"
+#endif
 
 #if defined(GATE_VISION_HAVE_CAMERA)
 #include "vision/camera_source.hpp"
@@ -45,6 +62,34 @@ volatile std::sig_atomic_t g_shutdown_requested = 0;
 
 void handle_signal(int /*sig*/) {
     g_shutdown_requested = 1;
+}
+
+// --lidar <spec> → driver. Throws on an unknown or unavailable scheme.
+std::unique_ptr<gate::vision::lidar::CloudSource> open_lidar(const std::string& spec,
+                                                             float pcd_rate_hz) {
+    namespace lidar = gate::vision::lidar;
+    if (spec.rfind("synthetic:", 0) == 0) {
+        auto scene = lidar::load_scene(spec.substr(10));
+        return std::make_unique<lidar::SyntheticSource>(std::move(scene));
+    }
+    if (spec.rfind("pcd:", 0) == 0) {
+        lidar::PcdReplaySource::Config c;
+        c.dir = spec.substr(4);
+        c.rate_hz = pcd_rate_hz;
+        return std::make_unique<lidar::PcdReplaySource>(std::move(c));
+    }
+    if (spec.rfind("unitree-", 0) == 0) {
+#if defined(GATE_VISION_HAVE_UNITREE)
+        return std::make_unique<lidar::UnitreeL1Source>(lidar::UnitreeL1Source::parse_spec(spec));
+#else
+        throw std::runtime_error(
+            "this gate-vision was built without the Unitree SDK — reconfigure with "
+            "-DUNITREE_LIDAR_SDK_DIR=<unilidar_sdk>/unitree_lidar_sdk");
+#endif
+    }
+    throw std::runtime_error("unknown --lidar spec '" + spec +
+                             "' (synthetic:<scene.json> | pcd:<dir> | unitree-serial:<dev> | "
+                             "unitree-udp:<ip>:<port>@<ip>:<port>)");
 }
 
 }  // namespace
@@ -97,6 +142,32 @@ int main(int argc, char** argv) {
         ->capture_default_str();
 #endif
 
+    std::string lidar_spec;
+    std::string lidar_config_path;
+    std::string record_lidar;
+    std::uint32_t lidar_max_skew_ms = 300;
+    std::uint32_t lidar_stale_ms = 1500;
+    float pcd_rate_hz = 10.0f;
+    app.add_option("--lidar", lidar_spec,
+                   "LiDAR source: synthetic:<scene.json> | pcd:<dir> | unitree-serial:<dev> | "
+                   "unitree-udp:<ip>:<port>@<ip>:<port>");
+    app.add_option("--lidar-config", lidar_config_path,
+                   "Site LiDAR config JSON (mounting pose, trigger/exclude zones).")
+        ->needs(app.get_option("--lidar"));
+    app.add_option("--record-lidar", record_lidar, "Also save each raw LiDAR batch as .pcd here.")
+        ->needs(app.get_option("--lidar"));
+    app.add_option("--lidar-max-skew-ms", lidar_max_skew_ms,
+                   "Max camera↔LiDAR timestamp gap for pairing.")
+        ->capture_default_str()
+        ->needs(app.get_option("--lidar"));
+    app.add_option("--lidar-stale-ms", lidar_stale_ms,
+                   "LiDAR silence that counts as a fault (daemon exits non-zero).")
+        ->capture_default_str()
+        ->needs(app.get_option("--lidar"));
+    app.add_option("--pcd-rate-hz", pcd_rate_hz, "Replay rate for --lidar pcd:<dir>.")
+        ->capture_default_str()
+        ->needs(app.get_option("--lidar"));
+
     CLI11_PARSE(app, argc, argv);
 
     spdlog::set_level(spdlog::level::from_str(log_level));
@@ -145,6 +216,31 @@ int main(int argc, char** argv) {
         }
 #endif
 
+        std::shared_ptr<gate::vision::lidar::LidarWorker> lidar_worker;
+        if (!lidar_spec.empty()) {
+            namespace lidar = gate::vision::lidar;
+            lidar::DetectorConfig dcfg = lidar_config_path.empty()
+                                             ? lidar::DetectorConfig{}
+                                             : lidar::load_detector_config(lidar_config_path);
+            if (lidar_config_path.empty()) {
+                spdlog::warn(
+                    "lidar: no --lidar-config — using the identity mount and default "
+                    "zones; commission the site before production use");
+            }
+            lidar::LidarWorker::Config wcfg;
+            wcfg.stale_after = std::chrono::milliseconds{lidar_stale_ms};
+            wcfg.record_dir = record_lidar;
+            lidar_worker = std::make_shared<lidar::LidarWorker>(
+                open_lidar(lidar_spec, pcd_rate_hz), lidar::VehicleDetector{std::move(dcfg)}, wcfg);
+            lidar_worker->start();
+            source = std::make_unique<gate::vision::FusedSource>(
+                std::move(source), lidar_worker,
+                gate::vision::FusedSource::Config{std::chrono::milliseconds{lidar_max_skew_ms}});
+            spdlog::info("lidar: {} (max skew {} ms, stale after {} ms){}",
+                         lidar_worker->describe(), lidar_max_skew_ms, lidar_stale_ms,
+                         record_lidar.empty() ? "" : ", recording to " + record_lidar);
+        }
+
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
 
@@ -166,14 +262,30 @@ int main(int argc, char** argv) {
             if (decision.verdict() == gate::v1::AUTH_VERDICT_AUTHORIZED) {
                 ++authorized;
             }
-            spdlog::info("decision: frame_id={} verdict={} plate='{}' conf={:.2f} {}",
-                         frame.frame_id(), gate::v1::AuthVerdict_Name(decision.verdict()),
-                         decision.matched_plate(), decision.combined_conf(),
-                         decision.reason_text());
+            spdlog::info(
+                "decision: frame_id={} verdict={} plate='{}' class={} vehicles={} "
+                "conf={:.2f} {}",
+                frame.frame_id(), gate::v1::AuthVerdict_Name(decision.verdict()),
+                decision.matched_plate(), gate::v1::VehicleClass_Name(decision.matched_class()),
+                frame.vehicles_size(), decision.combined_conf(), decision.reason_text());
         }
 
+        const std::string failure = g_shutdown_requested ? std::string{} : source->failure();
         spdlog::info("gate-vision stopping ({}): {} frames submitted, {} authorized",
-                     g_shutdown_requested ? "signal" : "end of stream", submitted, authorized);
+                     g_shutdown_requested ? "signal"
+                     : failure.empty()    ? "end of stream"
+                                          : "source failed",
+                     submitted, authorized);
+        if (lidar_worker) {
+            lidar_worker->stop();
+        }
+        if (!failure.empty()) {
+            // A dead camera or LiDAR is a fault, not a clean exit — the
+            // non-zero status is what makes systemd's Restart=on-failure
+            // re-open the device.
+            spdlog::error("gate-vision: source failed: {}", failure);
+            return 1;
+        }
         return 0;
     } catch (const std::exception& e) {
         // One exit path for every fail-closed throw: bad PEM, bad

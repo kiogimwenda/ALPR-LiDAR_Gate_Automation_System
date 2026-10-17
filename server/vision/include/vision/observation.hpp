@@ -66,8 +66,11 @@ struct PlateObservation {
 // One vehicle detection from the ranging side (proto VehicleDetection).
 struct VehicleObservation {
     VehicleClass vehicle_class = VehicleClass::kUnknown;
-    float confidence = 0.0f;        // Classifier confidence [0, 1]
-    OrientedBox3D box;              // Position + extent, meters
+    float confidence = 0.0f;  // Classifier confidence [0, 1]
+    OrientedBox3D box;        // Position + extent, meters
+    float velocity_x = 0.0f;  // Tracked velocity, m/s (same frame as box)
+    float velocity_y = 0.0f;
+    float velocity_z = 0.0f;
     std::uint32_t track_id = 0;     // Stable across frames, 0 = untracked
     std::uint32_t point_count = 0;  // LiDAR points in the cluster
 };

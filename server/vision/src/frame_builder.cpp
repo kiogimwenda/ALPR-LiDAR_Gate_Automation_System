@@ -76,6 +76,9 @@ gate::v1::DetectionFrame FrameBuilder::build(const ObservationSet& obs) {
         box->set_width(v.box.width);
         box->set_height(v.box.height);
         box->set_yaw_radians(v.box.yaw_radians);
+        out->mutable_velocity_mps()->set_x(v.velocity_x);
+        out->mutable_velocity_mps()->set_y(v.velocity_y);
+        out->mutable_velocity_mps()->set_z(v.velocity_z);
         out->set_track_id(v.track_id);
         out->set_point_count(v.point_count);
     }

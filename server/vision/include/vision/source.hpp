@@ -14,6 +14,7 @@
 #pragma once
 
 #include <optional>
+#include <string>
 
 #include "vision/observation.hpp"
 
@@ -27,6 +28,11 @@ public:
     // the stream has ended (script exhausted, camera closed) and next()
     // will never yield again.
     virtual std::optional<ObservationSet> next() = 0;
+
+    // Why the stream ended: empty for a clean end (scenario exhausted,
+    // --max-frames reached), else the fault (camera dead, LiDAR silent).
+    // gate-vision exits non-zero on a fault so systemd restarts it.
+    [[nodiscard]] virtual std::string failure() const { return {}; }
 };
 
 }  // namespace gate::vision

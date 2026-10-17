@@ -20,6 +20,8 @@ StartLimitBurst=5
 Type=simple
 User=gate
 Group=gate
+# The Unitree L1 is a USB-serial device (/dev/ttyUSB*, group dialout).
+SupplementaryGroups=dialout
 EnvironmentFile=/etc/gate/gate-vision.env
 # $SOURCE_ARGS carries the source selection (--camera … --detector-engine …
 # for production, --scenario … for a camera-less dry run); $TLS_EXTRA_ARGS
@@ -30,7 +32,9 @@ Restart=on-failure
 RestartSec=3
 
 # Hardening — mirrors gate-server: needs the GPU, the camera network,
-# and read access to engines/certs; writes nothing.
+# the LiDAR's serial port, and read access to engines/certs; writes
+# nothing (for a commissioning `--record-lidar` session, add a drop-in
+# with ReadWritePaths=/var/lib/gate/lidar-recordings).
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
