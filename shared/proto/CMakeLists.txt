@@ -12,6 +12,7 @@
 
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC    CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)  # tls_runtime.hpp
 
 set(_proto_files "${CMAKE_CURRENT_SOURCE_DIR}/gate_service.proto")
 set(_proto_out   "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -47,6 +48,7 @@ add_library(gate_proto STATIC
 target_include_directories(gate_proto
     PUBLIC
         $<BUILD_INTERFACE:${_proto_out}>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>  # tls_runtime.hpp
 )
 
 target_link_libraries(gate_proto
@@ -54,6 +56,7 @@ target_link_libraries(gate_proto
         protobuf::libprotobuf
         gRPC::grpc++
         gRPC::grpc++_reflection
+        OpenSSL::Crypto
 )
 
 target_compile_features(gate_proto PUBLIC cxx_std_20)

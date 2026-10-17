@@ -17,6 +17,7 @@
 #include "dash/event_broadcaster.hpp"
 #include "fusion/fusion_engine.hpp"
 #include "rpc/server.hpp"
+#include "tls_runtime.hpp"
 
 namespace {
 
@@ -31,7 +32,9 @@ void handle_signal(int /*sig*/) {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+namespace {
+
+int run(int argc, char** argv) {
     CLI::App app{"gate-automation server: gRPC + ALPR + LiDAR fusion daemon"};
 
     std::string listen_address = "0.0.0.0:50051";
@@ -154,4 +157,21 @@ int main(int argc, char** argv) {
     server.shutdown(std::chrono::seconds{shutdown_deadline_sec});
     spdlog::info("gate-server stopped.");
     return 0;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    gate::proto::init_tls_runtime();
+    // An unopenable --db-path or a bad certificate throws from a
+    // constructor: report it and exit 1 rather than abort() with a
+    // core dump, so systemd logs the reason and applies its restart.
+    try {
+        return run(argc, argv);
+    } catch (const std::exception& e) {
+        spdlog::critical("gate-server: {}", e.what());
+    } catch (...) {
+        spdlog::critical("gate-server: unknown exception");
+    }
+    return 1;
 }

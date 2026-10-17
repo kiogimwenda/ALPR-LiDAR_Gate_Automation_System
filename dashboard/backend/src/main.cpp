@@ -21,8 +21,10 @@
 #include "dash_api/event_stream.hpp"
 #include "dash_api/grpc_bridge.hpp"
 #include "dash_api/history_store.hpp"
+#include "tls_runtime.hpp"
 
 int main(int argc, char** argv) {
+    gate::proto::init_tls_runtime();
     CLI::App app{"gate-dashboard — dashboard backend (Drogon ↔ gRPC bridge)"};
 
     std::string listen_host = "0.0.0.0";

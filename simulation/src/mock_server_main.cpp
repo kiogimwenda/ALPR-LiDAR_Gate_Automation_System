@@ -39,6 +39,7 @@
 #include <vector>
 
 #include "gate_service.grpc.pb.h"
+#include "tls_runtime.hpp"
 
 namespace {
 
@@ -314,6 +315,7 @@ public:
     std::vector<std::string> plates() {
         const std::lock_guard<std::mutex> lock(mutex_);
         std::vector<std::string> out;
+        out.reserve(entries_.size());
         for (const auto& [plate, e] : entries_) {
             out.push_back(plate);
         }
@@ -374,6 +376,7 @@ void decision_loop(EventBus& bus, MockAdmin& admin, std::uint32_t period_s) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    gate::proto::init_tls_runtime();
     CLI::App app{"gate-mock-server — GPU-free gate-server stand-in for demos/dev"};
     std::string listen = "127.0.0.1:50051";
     std::uint32_t decisions_period = 15;

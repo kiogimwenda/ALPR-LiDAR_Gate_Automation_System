@@ -24,6 +24,7 @@
 
 #include "gate_sim/sim_client.hpp"
 #include "gate_sim/virtual_gate.hpp"
+#include "tls_runtime.hpp"
 
 namespace {
 
@@ -68,6 +69,7 @@ void interactive_loop(gate::sim::VirtualGate& gate) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    gate::proto::init_tls_runtime();
     CLI::App app{"gate-sim — virtual gate field controller (Phase 4.6)"};
 
     gate::sim::SimClient::Config client_cfg;

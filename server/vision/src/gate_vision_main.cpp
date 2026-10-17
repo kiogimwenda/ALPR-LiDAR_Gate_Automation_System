@@ -37,6 +37,7 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
+#include "tls_runtime.hpp"
 #include "vision/frame_builder.hpp"
 #include "vision/fused_source.hpp"
 #include "vision/lidar/lidar_config.hpp"
@@ -96,6 +97,7 @@ std::unique_ptr<gate::vision::lidar::CloudSource> open_lidar(const std::string& 
 }  // namespace
 
 int main(int argc, char** argv) {
+    gate::proto::init_tls_runtime();
     CLI::App app{"gate-vision: detection ingest daemon (scenario or camera source)"};
 
     gate::vision::SubmitClient::Config client_cfg;
