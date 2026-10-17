@@ -1,0 +1,372 @@
+(kicad_sch
+	(version 20260306)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "871eeea2-5565-58ab-9cb1-77cd517c9221")
+	(paper "A3")
+	(title_block
+		(title "Gate Field Controller")
+		(date "2026-10-09")
+		(rev "2.2")
+		(company "Gate Automation Project")
+	)
+	(lib_symbols)
+	(sheet
+		(at 25.4 38.1)
+		(size 76.2 38.1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "f000caf8-0b7e-5f98-b4a5-019100110cbc")
+		(property "Sheetname" "Power Supply"
+			(at 25.4 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power.kicad_sch"
+			(at 25.4 76.7846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "gate-field-controller"
+				(path "/871eeea2-5565-58ab-9cb1-77cd517c9221"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 127 38.1)
+		(size 76.2 38.1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "712a3eb0-a19a-5b81-a507-5c28eaeb6878")
+		(property "Sheetname" "MCU ESP32-S3, USB-C, Programming"
+			(at 127 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "mcu.kicad_sch"
+			(at 127 76.7846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "gate-field-controller"
+				(path "/871eeea2-5565-58ab-9cb1-77cd517c9221"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 228.6 38.1)
+		(size 76.2 38.1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "a68a3d49-5a9c-51b2-b19f-6ba842f483fb")
+		(property "Sheetname" "Ethernet W5500 + RJ45"
+			(at 228.6 37.3884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "ethernet.kicad_sch"
+			(at 228.6 76.7846 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "gate-field-controller"
+				(path "/871eeea2-5565-58ab-9cb1-77cd517c9221"
+					(page "4")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 25.4 106.68)
+		(size 76.2 38.1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "1d6d87cd-30e0-5575-8216-d8130174339e")
+		(property "Sheetname" "Relay Outputs (4 channels)"
+			(at 25.4 105.9684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "relays.kicad_sch"
+			(at 25.4 145.3646 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "gate-field-controller"
+				(path "/871eeea2-5565-58ab-9cb1-77cd517c9221"
+					(page "5")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 127 106.68)
+		(size 76.2 38.1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "4b6fce9c-2312-53cf-89b1-67b209e285a8")
+		(property "Sheetname" "Field Inputs + Beam Power"
+			(at 127 105.9684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "inputs.kicad_sch"
+			(at 127 145.3646 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "gate-field-controller"
+				(path "/871eeea2-5565-58ab-9cb1-77cd517c9221"
+					(page "6")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 228.6 106.68)
+		(size 76.2 38.1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "124e9ab3-4ad5-51d8-adab-68fe877e5870")
+		(property "Sheetname" "RS-485 + Status LEDs"
+			(at 228.6 105.9684 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "rs485_leds.kicad_sch"
+			(at 228.6 145.3646 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "gate-field-controller"
+				(path "/871eeea2-5565-58ab-9cb1-77cd517c9221"
+					(page "7")
+				)
+			)
+		)
+	)
+	(text "GATE FIELD CONTROLLER  rev 2.2  -  interface overview"
+		(exclude_from_sim no)
+		(at 25.4 170.18 0)
+		(effects
+			(font
+				(size 2 2)
+				(bold yes)
+			)
+			(justify left bottom)
+		)
+		(uuid "20510434-262e-5e4a-afa6-33322229e385")
+	)
+	(text "Power   : +12V (J1, protected) -> +5V buck -> +3V3 LDO.  +12V also feeds the beam-power output (J9)."
+		(exclude_from_sim no)
+		(at 25.4 182.88 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "e91f67e0-c841-57e0-b5d2-10e9be61fa50")
+	)
+	(text "MCU     : ESP32-S3-WROOM-1-N16R8. Native USB-C for flash/console; J4 UART0, J5 JTAG headers."
+		(exclude_from_sim no)
+		(at 25.4 189.23 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "82d27393-930c-5521-bcf5-92fdf3957948")
+	)
+	(text "Ethernet: W5500_CS/SCLK/MOSI/MISO/INT/RST  (IO10/12/11/13/9/8).  LINKLED also drives the NET LED."
+		(exclude_from_sim no)
+		(at 25.4 195.58 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "120b8eea-efc8-57ac-8a03-f8ad858b5631")
+	)
+	(text "Relays  : RELAY_1 IO4 (OPEN), RELAY_2 IO5 (CLOSE), RELAY_3 IO1, RELAY_4 IO2 (spare)  ->  K1..K4  ->  J7."
+		(exclude_from_sim no)
+		(at 25.4 201.93 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "ccd173d0-e714-54e5-b560-576ee0eb9d3c")
+	)
+	(text "Inputs  : LIM_OPEN IO6, LIM_CLOSED IO7, SAFETY_BEAM IO15  <-  protected inputs  <-  J8."
+		(exclude_from_sim no)
+		(at 25.4 208.28 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "a591984d-f494-5ecf-9390-d08251edb418")
+	)
+	(text "RS-485  : RS485_TX IO21, RS485_RX IO14, RS485_DE IO38  ->  SP3485  ->  J10 (reserved, ADR-008)."
+		(exclude_from_sim no)
+		(at 25.4 214.63 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "a2301ca0-2348-5cad-a4b1-3f6e5038b4db")
+	)
+	(text "Status  : LED_RED IO16, LED_GREEN IO17, LED_YELLOW IO18 (firmware StatusLed)."
+		(exclude_from_sim no)
+		(at 25.4 220.98 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "71984a5e-0ac0-5e88-9543-6d8ea08c7125")
+	)
+	(text "Pin map matches firmware/sdkconfig.defaults and gate_controller.hpp Pins - change both together."
+		(exclude_from_sim no)
+		(at 25.4 233.68 0)
+		(effects
+			(font
+				(size 1.5 1.5)
+			)
+			(justify left bottom)
+		)
+		(uuid "2461b877-8158-5308-a44e-cfd83085f49a")
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)

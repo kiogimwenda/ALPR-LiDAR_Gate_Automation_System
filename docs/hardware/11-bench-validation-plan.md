@@ -189,7 +189,7 @@ units, because the deployment surface is itself under test:
 
 ```bash
 sudo deployment/install-server.sh --build build/debug-cpu \
-    --www dashboard/frontend/build          # SPA optional; API works without it
+    # operators connect with the Gate Control app (app/) to :8080
 sudo systemctl enable --now gate-server gate-dashboard
 journalctl -u gate-server -f                # expect the loud "plaintext" dev warning
 ```
@@ -332,9 +332,9 @@ scripts/gen-ota-keys.sh ota-keys
 ```
 
 Paste `ota-keys/ota-pubkey.hex` into menuconfig → `CONFIG_GATE_OTA_PUBKEY`,
-rebuild, flash. This baseline **must** run with the pubkey set: an empty
-`GATE_OTA_PUBKEY` legally degrades to SHA-256-only with a loud warning
-(Kconfig help) — not an acceptable posture for validation.
+rebuild, flash. This baseline **must** run with the pubkey set: with an
+empty `GATE_OTA_PUBKEY` the firmware refuses every update (unsigned images
+are never flashed).
 
 **Procedure — happy path.** Bump `kVersion` in
 `firmware/components/gate_drivers/src/version.cpp` (e.g. → `0.2.0`), then per
@@ -359,6 +359,7 @@ curl -s -X POST http://192.168.1.50:8080/api/gates/gate-01/command \
 | 5.2 | Tampered image | Flip one byte of the *served* binary after signing (`printf '\xff' \| sudo dd of=/srv/gate/firmware/gate_firmware.bin bs=1 seek=1000 conv=notrunc`), re-issue BEGIN_OTA → **rejected** on digest mismatch: error ack, deny-flash LED, no reboot, running version unchanged |
 | 5.3 | Bad signature | Restore the binary, corrupt two hex chars of `ed25519_signature` in the manifest → **rejected**, same observable outcome. (Sign with a *different* key for the stronger variant — wrong-key, well-formed signature.) |
 | 5.4 | Same-version offer | Re-serve the manifest matching the running version → refused by `validate()` with a reasoned ack (rule host-proven in `test_ota_manifest`) |
+| 5.4b | Downgrade / relabel | Serve the `0.1.0` manifest to the `0.2.0` gate → refused ("downgrade refused"). Edit a valid manifest's `target_version` to `9.9.9` without re-signing → rejected on signature (the version is signed) |
 | 5.5 | Concurrency guard | Second BEGIN_OTA while one runs → `an OTA update is already running` error ack |
 | 5.6 | Power-cut resilience | Pull power mid-download once → device boots the old slot cleanly; a fresh BEGIN_OTA succeeds |
 
@@ -466,4 +467,4 @@ Found while grounding this plan; none block bench start, all need an owner.
 | R4 | ADR-008 pulse interface vs. firmware two-contactor profile (`PULSE_RELAY`/`LATCH_*` rejected) | `main.cpp` vs. ADR-008 | Decide at motor-integration kickoff (Stage 7 handoff note) |
 | R5 | No remote fault-clear: `clear_fault()` has no wire command; field workaround is `REBOOT` | `gate_controller.hpp` / command dispatcher | Acceptable for bench; consider a `CLEAR_FAULT` command kind before field deployment |
 | R6 | No current-draw or thermal baselines exist in the repo | — | Stages 1 and 6 record them; file them with the bench log |
-| R7 | Bench uses the shared `gate-client.pem`; fleet needs one leaf per gate (SAN = gate id) for revocation | [`firmware/main/certs/README.md`](../../firmware/main/certs/README.md) | Fine single-gate; adopt per-gate leafs at first multi-gate site |
+| R7 | Bench uses the shared `gate-client.pem`; fleet needs one leaf per gate for revocation | [`firmware/main/certs/README.md`](../../firmware/main/certs/README.md) | Tooling done: `scripts/issue-gate-cert.sh` (CN `gate-field-<id>`, server-enforced gate binding); use it from the first install |

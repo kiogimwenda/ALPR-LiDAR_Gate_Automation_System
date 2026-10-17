@@ -58,7 +58,7 @@ ol.steps > li { margin-bottom: 14px; }
 <strong>Board:</strong> Field Controller PCB v1.0<br>
 <strong>Target:</strong> Residential Sliding &amp; Dual-Leaf Swing Gates<br>
 <strong>KiCad Version:</strong> 10.0 (10.0.1 or later recommended)<br>
-<strong>Date:</strong> July 2026 — revision 3.12<br>
+<strong>Date:</strong> October 2026 — revision 3.13<br>
 <strong>Pin map:</strong> synchronized with firmware v1.0.0 (see §1.4)<br>
 <strong>Author:</strong> Gate Automation Project
 </p>
@@ -136,6 +136,8 @@ ol.steps > li { margin-bottom: 14px; }
 
 <div class="warning"><strong>Revision 3.12 (July 2026).</strong> Caught reviewing the first built relay-driver schematic sheet: §4.4.3's pin-to-pin table had D_flyback's polarity backwards — cathode listed at the collector node, anode at +5V, the reverse of correct. The standard rule (verified against multiple sources) is cathode toward the supply rail, anode toward the switched/collector node — with the diode reverse-biased and inert during normal operation, forward-biased only when the transistor turns off and the coil's collapsing field needs a path back to +5V. Wired backwards, or placed in series with one of the coil's own pins instead of bridging the collector node and +5V directly (an equally easy mistake the previous diagram's ambiguity invited), the diode ends up reverse-biased at exactly the moment it's needed — the relay still opens and closes normally, so this doesn't show up on the bench, only as gradual or sudden transistor damage from unsuppressed inductive kickback. §4.4.2's diagram is redrawn as three explicit parallel branches (D_flyback, the coil, R_LED+LED_REL) all bridging the same two nodes, rather than a layout that could be read as anything in series.</div>
 
+<div class="note"><strong>Revision 3.13 (October 2026).</strong> Board outline changed from 100 × 80 mm to <strong>100 × 90 mm</strong> after the full placement was done on the real board. With every footprint at its real courtyard size — four SRD relays at 16 mm each, the 12-way and 6-way pluggable headers side by side on one edge (≈ 74 mm together), the ESP32-S3 antenna keep-out (48 mm wide along the top edge) and the RJ45 — 80 mm of height left no routing room between the relay row and the power/MCU section; 90 mm is the smallest that fits single-sided assembly with no courtyard overlaps, and it stays inside the 100 × 100 mm price tier. The mounting holes moved to a 4 mm inset (92 × 82 mm pattern) and the corner radius to 3 mm. §1.2, §6.1, the §6.2 placement diagram (now the actual top-view layout) and §9 are updated to match, and the enclosure fit — standoff pattern, connector edges, component heights, antenna keep-out — is now written down in <code>hardware/enclosure/README.md</code> with a drilling template, so a board-size change has one place to land on the enclosure side.</div>
+
 <h3>1.1 What This Board Does</h3>
 <ul>
 <li>Runs the ESP32-S3-WROOM-1-N16R8 module as the main controller</li>
@@ -151,7 +153,7 @@ ol.steps > li { margin-bottom: 14px; }
 <h3>1.2 Board Specifications</h3>
 <table>
 <tr><th>Parameter</th><th>Value</th></tr>
-<tr><td>Board dimensions</td><td>100 mm × 80 mm (fits in 200×150×100 mm enclosure)</td></tr>
+<tr><td>Board dimensions</td><td>100 mm × 90 mm, 3 mm corner radius; 4× M3 holes on a 92 × 82 mm pattern (fits the 200×150×100 mm IP65 enclosure — fit spec in <code>hardware/enclosure/README.md</code>)</td></tr>
 <tr><td>Layer count</td><td>4 layers (Signal – GND – Power – Signal)</td></tr>
 <tr><td>Copper weight</td><td>1 oz (35 µm) outer, 1 oz inner</td></tr>
 <tr><td>Board thickness</td><td>1.6 mm (standard FR-4)</td></tr>
@@ -1136,18 +1138,18 @@ IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/faul
 
 <ol class="steps">
 <li>In PCB Editor, switch to the <strong>Edge.Cuts</strong> layer</li>
-<li>Draw a rectangle: <strong>100 mm × 80 mm</strong>. Use <strong>Place → Line</strong> or the rectangle tool.
+<li>Draw a rectangle: <strong>100 mm × 90 mm</strong>. Use <strong>Place → Line</strong> or the rectangle tool.
 <pre><code>Coordinates (origin at bottom-left):
   Bottom-left: (0, 0)
   Bottom-right: (100, 0)
-  Top-right: (100, 80)
-  Top-left: (0, 80)</code></pre>
+  Top-right: (100, 90)
+  Top-left: (0, 90)</code></pre>
 </li>
-<li>Round the corners with 2mm radius arcs (optional, improves aesthetics and reduces stress concentrations)</li>
+<li>Round the corners with 3mm radius arcs (improves aesthetics and reduces stress concentrations)</li>
 <li>Place 4× mounting holes:
 <ul>
 <li>Footprint: <code>MountingHole:MountingHole_3.2mm_M3_Pad_Via</code></li>
-<li>Positions: (5, 5), (95, 5), (5, 75), (95, 75) — 5mm inset from each corner</li>
+<li>Positions: (4, 4), (96, 4), (4, 86), (96, 86) — 4mm inset from each corner, a 92 × 82 mm pattern. The enclosure's standoffs are drilled to this pattern (<code>hardware/enclosure/</code>), so moving a hole means updating the enclosure drawing too.</li>
 <li>Connect pad to GND net (provides chassis ground connection via standoffs)</li>
 </ul>
 </li>
@@ -1157,50 +1159,36 @@ IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/faul
 
 <div class="note"><strong>Golden rule:</strong> Place components in the order that signals flow — power input at one edge, output connectors at the opposite/adjacent edges, MCU in the center.</div>
 
-<h4>Placement Zones (100×80mm board)</h4>
-<pre><code>┌─────────────────────────────────────────────────────────────┐
-│                         TOP EDGE                             │
-│   ┌─────────┐                              ┌──────────┐    │
-│   │  J_PWR  │  [Power Section]             │  J_RS485 │    │
-│   │ (12V in)│  TPS5430 + L1 + caps         │          │    │
-│   └─────────┘  AMS1117                     └──────────┘    │
-│                                                              │
-│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
-│                                                              │
-│                    ┌──────────────────┐                      │
-│   [LEDs]           │   ESP32-S3       │      [W5500 +       │
-│   PWR AUTH         │   WROOM-1        │       Crystal]      │
-│   NET FAULT        │   (center)       │                      │
-│                    │                  │      ┌──────────┐    │
-│                    └──────────────────┘      │  RJ45    │    │
-│                         ↑ antenna           │  Jack    │    │
-│                    (keep clear!)             └──────────┘    │
-│                                                              │
-│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│
-│                                                              │
-│   ┌──────────────────────────────────────────────────────┐  │
-│   │ REL1  │ REL2  │ REL3  │ REL4  │   [Relay Section]   │  │
-│   │       │       │       │       │   NPN drivers below  │  │
-│   └───┬───┴───┬───┴───┬───┴───┬───┘   each relay        │  │
-│       │       │       │       │                           │  │
-│   ┌───┴───────┴───────┴───────┴─── J_RELAY ─────────┐   │  │
-│   │  12-pos screw terminal (relay outputs)            │   │  │
-│   └──────────────────────────────────────────────────┘   │  │
-│                                                              │
-│   ┌────────────┐       ┌────────────┐                       │
-│   │  J_SENSE   │       │   USB-C    │                       │
-│   │ (6-pos)    │       │            │                       │
-│   └────────────┘       └────────────┘                       │
-│                         BOTTOM EDGE                          │
-└─────────────────────────────────────────────────────────────┘</code></pre>
+<h4>Placement Zones (100×90mm board, top view)</h4>
+<pre><code>  ←────────────────────────── 100 mm ──────────────────────────→
+┌──────────────────────────────────────────────────────────────────┐  ↑
+│(M3)   USB-C      ░░ antenna keep-out, x 28–76 ░░     J_DBG   (M3)│
+│       ESD/CC     ┌────────────────┐  J_PROG                      │
+│       VBUS  RST  │   ESP32-S3     │                ┌────────────┐│
+│         decoupl. │   WROOM-1      │  BOOT          │ RJ45 (J6) ═││
+│       USB R      └────────────────┘                └────────────┘│
+│┌─────┐  LDO 3V3            crystal  W5500 + AVDD                 │
+││J_PWR│  C_bulk  TPS5430  L1  C_out   LEDs  PMODE         ┌──────┐│
+││12V ═│  F1 D1 TVS  D_catch   TVS     RGYN  SP3485        │RS-485││
+│└─────┘  NPN driver + flyback + LED above each relay      └──────┘│  90 mm
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐   input                     │
+│  │ REL1 │ │ REL2 │ │ REL3 │ │ REL4 │   protection        ┌──────┐│
+│  │ coil │ │ coil │ │ coil │ │ coil │   ×3 R/C/BAV99      │ BEAM ││
+│  │ ──── │ │ ──── │ │ ──── │ │ ──── │                     │ 12V  ││
+│  └──────┘ └──────┘ └──────┘ └──────┘                     └──────┘│
+│(M3) ┌─ J_RELAY 12-pos 3.81 ───────┐ ┌ J_SENSE 6-pos ┐        (M3)│
+│     └─────────────────────────────┘ └───────────────┘            │
+└──────────────────────────────────────────────────────────────────┘  ↓
+  USB-C opens on the top edge; RJ45, RS-485 and beam-12V on the right;
+  12V IN on the left; J_RELAY and J_SENSE (pluggable) on the bottom.</code></pre>
 
 <h4>Placement Rules</h4>
 <ol>
-<li><strong>Power section (top-left):</strong> Keep the buck converter, inductor, and output caps in a tight loop. The current loop (VIN → TPS5430 SW → L1 → C_out → GND → back to VIN) must be as small as possible to minimize EMI.</li>
-<li><strong>ESP32-S3 (center):</strong> Antenna faces toward a board edge with no copper. Place decoupling caps on the <strong>bottom side</strong> directly beneath the module's power pins.</li>
+<li><strong>Power section (left, below the USB-C):</strong> Keep the buck converter, inductor, and output caps in a tight loop. The current loop (VIN → TPS5430 SW → L1 → C_out → GND → back to VIN) must be as small as possible to minimize EMI.</li>
+<li><strong>ESP32-S3 (top edge):</strong> Module edge flush with the board edge so the PCB antenna sits over its keep-out (no copper on any layer, no parts). Decoupling caps go on the top side in a tight cluster right beside module pin 2 (3V3) and pin 1 (GND), which keeps assembly single-sided.</li>
 <li><strong>W5500 + RJ45 (right side):</strong> Place the W5500 within 15mm of the RJ45 jack. Crystal within 5mm of W5500's XI/XO pins.</li>
 <li><strong>Relays (bottom area):</strong> Relays are the noisiest components — keep them physically far from the ESP32 and W5500. Route relay control signals with ground guard traces.</li>
-<li><strong>USB-C (bottom edge):</strong> Accessible from outside the enclosure. Mount flush with board edge or use a panel-mount cutout.</li>
+<li><strong>USB-C (top edge, left of the antenna keep-out):</strong> Flush with the board edge so a service cable reaches it with the enclosure lid off. It is a programming/debug port, not a field port — the IP65 box gets no cutout for it.</li>
 <li><strong>Screw terminals:</strong> All at board edges for easy wire access.</li>
 </ol>
 
@@ -1428,7 +1416,7 @@ IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/faul
 <tr><th>Parameter</th><th>Selection</th><th>Cost Impact</th></tr>
 <tr><td>Layers</td><td>4</td><td>~$10 extra vs 2-layer</td></tr>
 <tr><td>PCB Qty</td><td>5 (minimum)</td><td>~$25–35 for 5 boards</td></tr>
-<tr><td>Dimensions</td><td>100 × 80 mm</td><td>Within 100×100 budget tier</td></tr>
+<tr><td>Dimensions</td><td>100 × 90 mm</td><td>Within 100×100 budget tier</td></tr>
 <tr><td>PCB Thickness</td><td>1.6 mm</td><td>Standard (no extra)</td></tr>
 <tr><td>Surface Finish</td><td>HASL (lead-free)</td><td>Standard (no extra). Choose ENIG for +$5 if doing fine-pitch QFP.</td></tr>
 <tr><td>Copper Weight</td><td>1 oz (all layers)</td><td>Standard</td></tr>
@@ -1451,7 +1439,7 @@ IO18 ──[R 330Ω]──[LED_YELLOW Yellow 0805]── GND  ┘ auth/deny/faul
 <h3>9.3 Cost Estimate</h3>
 <table>
 <tr><th>Item</th><th>Cost (USD)</th></tr>
-<tr><td>5× bare PCBs (4-layer, 100×80mm)</td><td>$25–35</td></tr>
+<tr><td>5× bare PCBs (4-layer, 100×90mm)</td><td>$25–35</td></tr>
 <tr><td>SMT assembly (per board)</td><td>$15–20</td></tr>
 <tr><td>Components (per board, LCSC)</td><td>$12–18</td></tr>
 <tr><td>Shipping (DHL to Kenya)</td><td>$15–25</td></tr>
@@ -1685,7 +1673,7 @@ Total thickness: 0.035 + 0.2 + 0.035 + 1.0 + 0.035 + 0.2 + 0.035 = ~1.6 mm</code
 <p style="text-align: center; font-size: 9pt; color: #64748b; margin-top: 40px;">
 Gate Automation Field PCB Design Guide — KiCad 10.0<br>
 ALPR + LiDAR Automated Vehicle Gate Control System<br>
-Document revision 3.12 — July 2026 (§4.4's D_flyback polarity was backwards in the pin-to-pin table — cathode/anode swapped between the collector node and +5V, which reverse-biases the diode at exactly the moment it's needed and gives no flyback protection at all while the relay still appears to work fine on the bench; corrected, and the diagram redrawn as three explicit parallel branches after the previous version's ambiguity led to the diode being placed in series with one coil pin instead of bridging both nodes directly; supersedes rev 3.11)
+Document revision 3.13 — October 2026 (board outline 100 × 80 → 100 × 90 mm with mounting holes on a 92 × 82 mm pattern, set by the real placement; enclosure fit spec and drilling template added under hardware/enclosure/; supersedes rev 3.12)
 </p>
 
 </body>

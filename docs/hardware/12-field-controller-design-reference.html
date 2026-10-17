@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gate Field Controller — Board Design Reference, Rev 2.2</title>
+<style>
+@page {
+  font-family: "Inter", "DejaVu LGC Sans", sans-serif;
+  size: A4;
+  margin: 18mm 16mm 22mm 16mm;
+  @top-left { content: "Gate Field Controller — Board Specification"; font-size: 8pt; color: #64748b; }
+  @top-right { content: "Rev 2.2 · October 2026"; font-size: 8pt; color: #64748b; }
+  @bottom-left { content: "ALPR + LiDAR Automated Vehicle Gate Control System"; font-size: 8pt; color: #94a3b8; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #64748b; }
+}
+@page cover { @top-left { content: none; } @top-right { content: none; } @bottom-left { content: none; } }
+@page landscape {
+  font-family: "Inter", "DejaVu LGC Sans", sans-serif;
+  size: A4 landscape;
+  margin: 12mm 12mm 16mm 12mm;
+}
+body { font-family: "Inter", "DejaVu LGC Sans", "Droid Sans", sans-serif; font-size: 9.6pt; line-height: 1.45; color: #1a1a1a; }
+h1 { font-size: 20pt; color: #0f172a; margin: 0; }
+h2 { font-size: 14pt; color: #1e40af; border-bottom: 2px solid #2563eb; padding-bottom: 3px; margin: 22px 0 8px 0; page-break-after: avoid; }
+h3 { font-size: 11pt; color: #1e3a5f; margin: 14px 0 6px 0; page-break-after: avoid; }
+p { margin: 5px 0 8px 0; }
+table { border-collapse: collapse; width: 100%; margin: 6px 0 12px 0; font-size: 8.8pt; page-break-inside: avoid; }
+th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: left; vertical-align: top; }
+th { background: #1e3a8a; color: #fff; font-weight: 600; }
+tr:nth-child(even) td { background: #f8fafc; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td.c, th.c { text-align: center; }
+code { font-family: "JetBrains Mono", "Inconsolata", monospace; font-size: 8.4pt; background: #f1f5f9; padding: 0 3px; border-radius: 2px; }
+.note { background: #eff6ff; border-left: 4px solid #2563eb; padding: 7px 11px; margin: 10px 0; font-size: 9pt; page-break-inside: avoid; }
+.warn { background: #fef2f2; border-left: 4px solid #dc2626; padding: 7px 11px; margin: 10px 0; font-size: 9pt; page-break-inside: avoid; }
+.cover { page: cover; page-break-after: always; }
+.cover .band { background: #0f172a; color: #fff; padding: 26px 26px 22px 26px; border-radius: 6px; }
+.cover .band h1 { color: #fff; font-size: 26pt; }
+.cover .band .sub { color: #93c5fd; font-size: 13pt; margin-top: 6px; }
+.cover .meta { display: flex; gap: 0; margin-top: 14px; }
+.cover .meta div { flex: 1 1 0; border-right: 1px solid #334155; padding: 0 12px; font-size: 9pt; color: #cbd5e1; }
+.cover .meta div:last-child { border-right: none; }
+.cover .meta b { display: block; color: #fff; font-size: 11pt; }
+.cover img.hero { width: 100%; margin-top: 16px; border-radius: 6px; }
+.cols { columns: 2; column-gap: 18px; }
+.cols h3 { break-after: avoid; }
+.cols table, .cols ul { break-inside: avoid; }
+ul.feat { margin: 4px 0 8px 0; padding-left: 16px; }
+ul.feat li { margin: 2px 0; }
+figure { margin: 10px 0 14px 0; text-align: center; page-break-inside: avoid; }
+figure img, figure svg { max-width: 100%; }
+figcaption { font-size: 8.4pt; color: #475569; margin-top: 4px; }
+.sheet { page: landscape; page-break-before: always; text-align: center; }
+.sheet img { width: 100%; max-height: 150mm; object-fit: contain; border: 1px solid #cbd5e1; }
+.sheet h3 { text-align: left; margin-top: 0; }
+.pb { page-break-before: always; }
+.small { font-size: 8.2pt; color: #475569; }
+table.bom { page-break-inside: auto; }
+table.bom tr { page-break-inside: avoid; }
+.compact td, .compact th { padding: 2.6px 5px; }
+.compact h3 { margin-top: 9px; }
+.tag { display: inline-block; font-size: 7.6pt; font-weight: 600; padding: 0 5px; border-radius: 3px; background: #e0e7ff; color: #3730a3; }
+</style>
+</head>
+<body>
+
+<!-- ======================================================== COVER -->
+<div class="cover">
+  <div class="band">
+    <h1>Gate Field Controller</h1>
+    <div class="sub">Board Specification Sheet · Hardware Revision 2.2</div>
+    <div class="meta">
+      <div><b>ESP32-S3</b>Wi-Fi / BLE MCU, 16 MB flash, 8 MB PSRAM</div>
+      <div><b>10/100 Ethernet</b>W5500 hardwired TCP/IP, RJ45 magjack</div>
+      <div><b>4 × SPDT relays</b>Gate drive OPEN / CLOSE + 2 spare</div>
+      <div><b>12 V DC in</b>Protected, 5 V / 3.3 V on board</div>
+    </div>
+  </div>
+  <img class="hero" src="images/gfc-spec/board-iso.png" alt="3D render of the Gate Field Controller board">
+  <p class="small" style="margin-top:10px">
+    The Gate Field Controller is the gate-side node of the ALPR + LiDAR automated vehicle gate system.
+    It drives the gate motor controller through dry relay contacts, reads the gate's limit switches and
+    safety beam, reports to the server over wired Ethernet and offers RS-485 for field peripherals.
+    This document specifies the board as designed in KiCad 10
+    (<code>hardware/pcb/gate-field-controller/</code>). The schematic diagrams in §10 are exported
+    directly from that design.
+  </p>
+  <table style="margin-top:8px">
+    <tr><th>Document</th><th>Board</th><th>Design files</th><th>Status</th></tr>
+    <tr><td>Design reference, rev 2.2, 2026-10-09</td><td>4-layer, 100 × 90 mm, 132 components</td>
+        <td>KiCad 10.0 · ERC 0 / DRC 0 / parity 0</td><td>Design complete, pre-prototype</td></tr>
+  </table>
+</div>
+
+<!-- ======================================================== 1 OVERVIEW -->
+<h2>1. Overview</h2>
+<div class="cols">
+<div>
+<h3>Features</h3>
+<ul class="feat">
+  <li><b>MCU:</b> Espressif ESP32-S3-WROOM-1-N16R8: dual-core Xtensa LX7 up to 240 MHz, 16 MB flash, 8 MB octal PSRAM, 2.4 GHz Wi-Fi and Bluetooth LE, PCB antenna on a keep-out board edge</li>
+  <li><b>Ethernet:</b> WIZnet W5500 (hardwired TCP/IP, 8 sockets, 32 KB buffer) on SPI. Auto-negotiating 10/100BASE-TX through a HanRun HR911105A magjack with link/activity LEDs</li>
+  <li><b>Gate drive:</b> four 5 V SPDT relays (SRD-05VDC-SL-C) with NPN drivers, flyback diodes and per-channel "energised" LEDs, on one 12-way pluggable header (COM/NO/NC)</li>
+  <li><b>Field inputs:</b> three volt-free contact inputs (open limit, closed limit, safety beam). Each has a series resistor, pull-up, RC filter and BAV99 rail clamps</li>
+  <li><b>Beam supply:</b> fused 12 V output (500 mA PTC) for the safety-beam transmitter/receiver</li>
+  <li><b>RS-485:</b> half-duplex SP3485 transceiver with fail-safe bias, solder-jumper 120 Ω termination and SM712 surge protection</li>
+  <li><b>Power:</b> 12 V DC input with resettable fuse, reverse-polarity diode and 15 V TVS. 5 V / 3 A non-synchronous buck (TPS5430, SS34 catch diode) and 3.3 V / 1 A LDO</li>
+  <li><b>Service:</b> USB-C (native USB Serial/JTAG) with ESD protection, BOOT/RESET buttons, UART0 and JTAG headers, four test points</li>
+  <li><b>Indicators:</b> PWR, red/green/yellow status, Ethernet link, four relay-state LEDs</li>
+</ul>
+</div>
+<div>
+<h3>Applications</h3>
+<ul class="feat">
+  <li>Sliding and swing-gate motor controllers with dry-contact OPEN / CLOSE command inputs</li>
+  <li>Barrier-arm and bollard controllers accepting pulse or maintained contacts</li>
+  <li>Any 12 V field node needing wired Ethernet, relay outputs and contact inputs in an IP65 box</li>
+</ul>
+<h3>Ordering / build references</h3>
+<table>
+  <tr><th>Item</th><th>Reference</th></tr>
+  <tr><td>Design files</td><td><code>hardware/pcb/gate-field-controller/</code></td></tr>
+  <tr><td>Design guide</td><td><code>docs/hardware/10-pcb-design-kicad10.pdf</code></td></tr>
+  <tr><td>Enclosure fit</td><td><code>hardware/enclosure/README.md</code></td></tr>
+  <tr><td>Firmware pin map</td><td><code>firmware/components/gate_control/</code></td></tr>
+</table>
+</div>
+</div>
+
+<h3>Functional block diagram</h3>
+<figure>
+<svg viewBox="0 0 900 455" xmlns="http://www.w3.org/2000/svg" font-family="Inter, DejaVu LGC Sans, sans-serif" font-size="11">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker>
+    <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#b45309"/></marker>
+  </defs>
+  <style>
+    .con { fill: #dcfce7; stroke: #15803d; stroke-width: 1.4; }
+    .pwr { fill: #fef3c7; stroke: #b45309; stroke-width: 1.4; }
+    .blk { fill: #e0e7ff; stroke: #3730a3; stroke-width: 1.4; }
+    .mcu { fill: #1e3a8a; stroke: #1e3a8a; }
+    .t  { fill: #0f172a; font-weight: 600; font-size: 11.5px; }
+    .s  { fill: #334155; font-size: 9.6px; }
+    .w  { fill: #fff; }
+    .ln { stroke: #334155; stroke-width: 1.4; fill: none; }
+    .pl { stroke: #b45309; stroke-width: 1.8; fill: none; }
+    .lbl { fill: #475569; font-size: 9px; font-style: italic; }
+  </style>
+  <!-- power chain (top) -->
+  <rect class="con" x="10" y="20" width="96" height="46" rx="5"/><text class="t" x="58" y="40" text-anchor="middle">J1 12 V IN</text><text class="s" x="58" y="56" text-anchor="middle">screw terminal</text>
+  <rect class="pwr" x="135" y="14" width="150" height="58" rx="5"/><text class="t" x="210" y="32" text-anchor="middle">Input protection</text><text class="s" x="210" y="47" text-anchor="middle">F1 2 A PTC · D1 SS34 reverse</text><text class="s" x="210" y="61" text-anchor="middle">D2 SMAJ15A TVS · 100 µF bulk</text>
+  <rect class="pwr" x="320" y="14" width="150" height="58" rx="5"/><text class="t" x="395" y="32" text-anchor="middle">U1 TPS5430 buck</text><text class="s" x="395" y="47" text-anchor="middle">12 V → 5.0 V, 3 A, 500 kHz</text><text class="s" x="395" y="61" text-anchor="middle">D4 SMAJ6.0A clamp</text>
+  <rect class="pwr" x="505" y="14" width="150" height="58" rx="5"/><text class="t" x="580" y="32" text-anchor="middle">U2 AMS1117-3.3</text><text class="s" x="580" y="47" text-anchor="middle">5 V → 3.3 V, 1 A LDO</text><text class="s" x="580" y="61" text-anchor="middle">feeds In2 +3V3 plane</text>
+  <rect class="con" x="760" y="14" width="130" height="46" rx="5"/><text class="t" x="825" y="34" text-anchor="middle">J9 BEAM 12 V</text><text class="s" x="825" y="50" text-anchor="middle">F2 500 mA PTC</text>
+  <path class="pl" d="M106,43 H133" marker-end="url(#ap)"/>
+  <path class="pl" d="M285,43 H318" marker-end="url(#ap)"/><text class="lbl" x="301" y="37" text-anchor="middle">+12V</text>
+  <path class="pl" d="M470,43 H503" marker-end="url(#ap)"/><text class="lbl" x="487" y="37" text-anchor="middle">+5V</text>
+  <path class="pl" d="M210,72 V88 H700 V37 H758" marker-end="url(#ap)"/><text class="lbl" x="712" y="84">+12V</text>
+  <!-- USB -->
+  <rect class="con" x="10" y="118" width="96" height="46" rx="5"/><text class="t" x="58" y="138" text-anchor="middle">J3 USB-C</text><text class="s" x="58" y="154" text-anchor="middle">service / flashing</text>
+  <rect class="blk" x="135" y="112" width="150" height="58" rx="5"/><text class="t" x="210" y="130" text-anchor="middle">U4 USBLC6-2SC6</text><text class="s" x="210" y="145" text-anchor="middle">ESD clamp · 22 Ω series</text><text class="s" x="210" y="159" text-anchor="middle">CC 5.1 k (UFP) · D6 VBUS→5 V</text>
+  <path class="ln" d="M106,141 H133" marker-end="url(#a)"/>
+  <path class="pl" d="M285,128 H395 V74" marker-end="url(#ap)"/><text class="lbl" x="330" y="122">VBUS (via SS14)</text>
+  <!-- MCU -->
+  <rect class="mcu" x="320" y="150" width="235" height="150" rx="7"/>
+  <text class="t w" x="437" y="174" text-anchor="middle" style="fill:#fff;font-size:13px">U3 ESP32-S3-WROOM-1</text>
+  <text class="s" x="437" y="191" text-anchor="middle" style="fill:#bfdbfe">N16R8 · 240 MHz dual-core · 16 MB / 8 MB</text>
+  <text class="s" x="437" y="206" text-anchor="middle" style="fill:#bfdbfe">Wi-Fi 802.11 b/g/n · Bluetooth LE 5</text>
+  <text class="s" x="437" y="228" text-anchor="middle" style="fill:#e0e7ff">USB D± (IO19/20) · UART0 (IO43/44)</text>
+  <text class="s" x="437" y="243" text-anchor="middle" style="fill:#e0e7ff">JTAG (IO39–42) · BOOT (IO0) · EN</text>
+  <text class="s" x="437" y="266" text-anchor="middle" style="fill:#e0e7ff">SPI IO10–13 · INT IO9 · RST IO8</text>
+  <text class="s" x="437" y="281" text-anchor="middle" style="fill:#e0e7ff">RS-485 IO21 / IO14 / IO38</text>
+  <path class="ln" d="M285,150 H318" marker-end="url(#a)"/><text class="lbl" x="301" y="145" text-anchor="middle">D±</text>
+  <!-- headers + buttons -->
+  <rect class="con" x="10" y="200" width="96" height="58" rx="5"/><text class="t" x="58" y="218" text-anchor="middle">J4 UART0</text><text class="t" x="58" y="234" text-anchor="middle">J5 JTAG</text><text class="s" x="58" y="250" text-anchor="middle">SW1 RESET · SW2 BOOT</text>
+  <path class="ln" d="M106,229 H318" marker-end="url(#a)"/>
+  <!-- inputs -->
+  <rect class="con" x="10" y="330" width="96" height="58" rx="5"/><text class="t" x="58" y="350" text-anchor="middle">J8 SENSE IN</text><text class="s" x="58" y="366" text-anchor="middle">open / closed limit</text><text class="s" x="58" y="379" text-anchor="middle">safety beam</text>
+  <rect class="blk" x="135" y="324" width="150" height="70" rx="5"/><text class="t" x="210" y="342" text-anchor="middle">Input conditioning ×3</text><text class="s" x="210" y="357" text-anchor="middle">330 Ω series · 10 kΩ pull-up</text><text class="s" x="210" y="371" text-anchor="middle">100 nF filter · BAV99 clamps</text><text class="s" x="210" y="385" text-anchor="middle">→ IO6 / IO7 / IO15</text>
+  <path class="ln" d="M106,359 H133" marker-end="url(#a)"/>
+  <path class="ln" d="M285,359 H370 V302" marker-end="url(#a)"/>
+  <!-- LEDs -->
+  <rect class="blk" x="320" y="330" width="235" height="58" rx="5"/><text class="t" x="437" y="350" text-anchor="middle">Status LEDs</text><text class="s" x="437" y="366" text-anchor="middle">RED IO16 · GRN IO17 · YEL IO18</text><text class="s" x="437" y="380" text-anchor="middle">LINK (W5500) · PWR (+5V)</text>
+  <path class="ln" d="M437,300 V328" marker-end="url(#a)"/>
+  <!-- right side -->
+  <rect class="blk" x="600" y="118" width="140" height="58" rx="5"/><text class="t" x="670" y="136" text-anchor="middle">U5 W5500</text><text class="s" x="670" y="151" text-anchor="middle">10/100 MAC+PHY, TCP/IP</text><text class="s" x="670" y="165" text-anchor="middle">25 MHz crystal · AVDD filter</text>
+  <rect class="con" x="770" y="124" width="120" height="46" rx="5"/><text class="t" x="830" y="144" text-anchor="middle">J6 RJ45</text><text class="s" x="830" y="160" text-anchor="middle">HR911105A magjack</text>
+  <path class="ln" d="M555,180 H580 V147 H598" marker-end="url(#a)"/><text class="lbl" x="572" y="140">SPI</text>
+  <path class="ln" d="M740,147 H768" marker-end="url(#a)" marker-start="url(#a)"/>
+  <rect class="blk" x="600" y="200" width="140" height="58" rx="5"/><text class="t" x="670" y="218" text-anchor="middle">U6 SP3485</text><text class="s" x="670" y="233" text-anchor="middle">half-duplex, 560 Ω bias</text><text class="s" x="670" y="247" text-anchor="middle">JP1 120 Ω · SM712 TVS</text>
+  <rect class="con" x="770" y="206" width="120" height="46" rx="5"/><text class="t" x="830" y="226" text-anchor="middle">J10 RS-485</text><text class="s" x="830" y="242" text-anchor="middle">A / B / GND</text>
+  <path class="ln" d="M555,229 H598" marker-end="url(#a)"/>
+  <path class="ln" d="M740,229 H768" marker-end="url(#a)" marker-start="url(#a)"/>
+  <rect class="blk" x="600" y="290" width="140" height="70" rx="5"/><text class="t" x="670" y="308" text-anchor="middle">Relay drivers ×4</text><text class="s" x="670" y="323" text-anchor="middle">SS8050 NPN · 1N4148W flyback</text><text class="s" x="670" y="337" text-anchor="middle">K1–K4 SRD-05VDC-SL-C</text><text class="s" x="670" y="351" text-anchor="middle">IO4 / IO5 / IO1 / IO2</text>
+  <rect class="con" x="770" y="290" width="120" height="70" rx="5"/><text class="t" x="830" y="310" text-anchor="middle">J7 RELAY OUT</text><text class="s" x="830" y="326" text-anchor="middle">CH1 OPEN · CH2 CLOSE</text><text class="s" x="830" y="340" text-anchor="middle">CH3 · CH4 spare</text><text class="s" x="830" y="354" text-anchor="middle">COM / NO / NC</text>
+  <path class="ln" d="M555,280 H580 V325 H598" marker-end="url(#a)"/>
+  <path class="ln" d="M740,325 H768" marker-end="url(#a)"/>
+  <path class="pl" d="M470,62 H490 V100 H585 V276 H670 V288" marker-end="url(#ap)"/><text class="lbl" x="589" y="268">+5V coils</text>
+  <!-- legend -->
+  <rect class="con" x="10" y="420" width="16" height="11"/><text class="s" x="31" y="430">connector</text>
+  <rect class="pwr" x="105" y="420" width="16" height="11"/><text class="s" x="126" y="430">power</text>
+  <rect class="blk" x="180" y="420" width="16" height="11"/><text class="s" x="201" y="430">interface / signal</text>
+  <line class="pl" x1="310" y1="426" x2="340" y2="426"/><text class="s" x="346" y="430">power rail</text>
+  <line class="ln" x1="420" y1="426" x2="450" y2="426"/><text class="s" x="456" y="430">signal</text>
+</svg>
+<figcaption>Figure 1: Functional block diagram. Reference designators match the schematic and the silkscreen.</figcaption>
+</figure>
+
+<!-- ======================================================== 2 RATINGS -->
+<h2 class="pb">2. Absolute maximum ratings</h2>
+<p>Stresses beyond these limits may permanently damage the board. They are not operating conditions.</p>
+<table>
+  <tr><th>Parameter</th><th class="num">Min</th><th class="num">Max</th><th>Unit</th><th>Limited by</th></tr>
+  <tr><td>J1 input voltage, continuous</td><td class="num">−30</td><td class="num">15</td><td>V</td><td>D2 SMAJ15A stand-off (+). D1 SS34 reverse rating (−)</td></tr>
+  <tr><td>J1 input voltage, transient (≤ 1 ms surge)</td><td class="num">—</td><td class="num">24.4</td><td>V</td><td>D2 clamping voltage at rated I<sub>PP</sub></td></tr>
+  <tr><td>J1 input current</td><td class="num">—</td><td class="num">2</td><td>A</td><td>F1 hold current (trips at 4 A)</td></tr>
+  <tr><td>USB VBUS (J3)</td><td class="num">−0.3</td><td class="num">5.5</td><td>V</td><td>D6 / U4 / +5V rail components</td></tr>
+  <tr><td>J8 input voltage (via 330 Ω)</td><td class="num">−12</td><td class="num">15</td><td>V</td><td>BAV99 clamp current ≤ 40 mA through the 330 Ω series resistor</td></tr>
+  <tr><td>J9 beam supply output current</td><td class="num">—</td><td class="num">0.5</td><td>A</td><td>F2 hold current (trips ≈ 1 A)</td></tr>
+  <tr><td>J10 RS-485 bus voltage (A, B to GND)</td><td class="num">−7</td><td class="num">12</td><td>V</td><td>SP3485 common-mode range / D60 SM712</td></tr>
+  <tr><td>J7 relay contact voltage</td><td class="num">—</td><td class="num">30 V DC / 24 V AC</td><td>—</td><td>PCB clearance (0.6 mm) and creepage. SELV only, see §3.4</td></tr>
+  <tr><td>J7 relay contact current</td><td class="num">—</td><td class="num">3</td><td>A</td><td>1.5 mm / 1 oz contact traces (relay itself: 10 A)</td></tr>
+  <tr><td>Storage temperature (recommended)</td><td class="num">−20</td><td class="num">70</td><td>°C</td><td>Conservative range for the module, electrolytic C1 and PTC fuses</td></tr>
+</table>
+
+<h2>3. Recommended operating conditions and electrical characteristics</h2>
+<h3>3.1 Supply</h3>
+<table>
+  <tr><th>Parameter</th><th>Conditions</th><th class="num">Min</th><th class="num">Typ</th><th class="num">Max</th><th>Unit</th></tr>
+  <tr><td>Input voltage V<sub>IN</sub> (J1)</td><td>Normal operation</td><td class="num">9</td><td class="num">12</td><td class="num">15</td><td>V</td></tr>
+  <tr><td>Input current, idle</td><td>12 V, Ethernet linked, relays off, Wi-Fi off</td><td class="num">—</td><td class="num">0.12</td><td class="num">—</td><td>A</td></tr>
+  <tr><td>Input current, worst case</td><td>12 V, 4 relays on, Wi-Fi TX peak, J9 unloaded</td><td class="num">—</td><td class="num">—</td><td class="num">0.40</td><td>A</td></tr>
+  <tr><td>+5V rail (U1 output)</td><td>Set by R1/R2 = 30.9 k / 10 k</td><td class="num">4.85</td><td class="num">5.0</td><td class="num">5.15</td><td>V</td></tr>
+  <tr><td>+5V rail capacity</td><td>U1 TPS5430 continuous</td><td class="num">—</td><td class="num">—</td><td class="num">3</td><td>A</td></tr>
+  <tr><td>+3V3 rail (U2 output)</td><td>AMS1117-3.3</td><td class="num">3.23</td><td class="num">3.30</td><td class="num">3.37</td><td>V</td></tr>
+  <tr><td>+3V3 rail capacity</td><td>U2 continuous (thermal limit ≈ 0.85 W at 0.5 A)</td><td class="num">—</td><td class="num">—</td><td class="num">1</td><td>A</td></tr>
+  <tr><td>Reverse-polarity protection</td><td>D1 series Schottky</td><td colspan="3" class="c">Yes, ≈ 0.45 V drop at 0.4 A</td><td></td></tr>
+  <tr><td>Operating temperature</td><td>Design target</td><td class="num">−10</td><td class="num">—</td><td class="num">60</td><td>°C</td></tr>
+</table>
+<div class="note"><b>Notes.</b> Input currents are calculated estimates from component datasheet values, not measurements.
+The idle estimate assumes ESP32-S3 ≈ 100 mA, W5500 ≈ 132 mA and LEDs, converted at ≈ 85 % buck efficiency.
+The worst case adds 4 × 71 mA relay coils and the ESP32-S3 Wi-Fi TX peak. Add the J9 beam load (≤ 0.5 A) to the input current.
+The −10 °C to +60 °C operating range is held inside the +65 °C limit of the ESP32-S3-WROOM-1-<b>N16R8</b>, which is lower than other module variants because of its octal PSRAM.</div>
+
+<h3>3.2 Power from USB</h3>
+<p>USB VBUS feeds the +5V rail through D6 (SS14), so the logic runs from a laptop for flashing and bench tests without 12 V.
+D6 blocks back-feed from the on-board 5 V into the USB host. The four relay coils draw ≈ 290 mA together; with all relays energised the total can exceed a 500 mA USB 2.0 port. Use 12 V for relay tests.</p>
+
+<h3>3.3 Digital and field inputs (J8)</h3>
+<table>
+  <tr><th>Parameter</th><th>Conditions</th><th class="num">Value</th><th>Unit</th></tr>
+  <tr><td>Input type</td><td>Volt-free (dry) contact between SIG and GND</td><td class="num">—</td><td>—</td></tr>
+  <tr><td>Open-circuit voltage</td><td>Pull-up R53–R55 10 kΩ to +3V3</td><td class="num">3.3</td><td>V</td></tr>
+  <tr><td>Wetting current</td><td>Contact closed</td><td class="num">0.32</td><td>mA</td></tr>
+  <tr><td>Closed-contact logic level</td><td>Contact closed through 330 Ω series</td><td class="num">0.1</td><td>V</td></tr>
+  <tr><td>Maximum loop resistance for a valid LOW</td><td>V<sub>IL</sub> = 0.25 × V<sub>DD</sub></td><td class="num">≈ 3</td><td>kΩ</td></tr>
+  <tr><td>Filter time constant</td><td>Release (10 kΩ × 100 nF) / make (330 Ω ∥ 10 kΩ × 100 nF)</td><td class="num">1.0 / 0.03</td><td>ms</td></tr>
+  <tr><td>Logic sense</td><td>Firmware</td><td colspan="2">LOW = contact closed</td></tr>
+</table>
+
+<h3>3.4 Relay outputs (J7)</h3>
+<table>
+  <tr><th>Parameter</th><th class="num">Value</th><th>Notes</th></tr>
+  <tr><td>Contact form</td><td class="num">1 × SPDT per channel</td><td>COM, NO, NC brought out for every channel</td></tr>
+  <tr><td>Board contact rating</td><td class="num">≤ 30 V DC / ≤ 24 V AC, ≤ 3 A</td><td>SELV circuits only. The relay part is rated 10 A / 250 V AC, but PCB spacing and trace width set the board limit</td></tr>
+  <tr><td>Coil</td><td class="num">5 V, 70 Ω (≈ 71 mA)</td><td>Low-side SS8050 NPN, 1 kΩ base resistor, 1N4148W flyback</td></tr>
+  <tr><td>Operate / release time</td><td class="num">≤ 10 ms / ≤ 5 ms</td><td>Relay datasheet</td></tr>
+  <tr><td>Default state</td><td class="num">De-energised</td><td>Relays stay off until firmware drives the GPIO high. The drive GPIOs are inputs after reset; the driver bases have no pull-down</td></tr>
+  <tr><td>Indicator</td><td class="num">Green LED per channel</td><td>D15–D18, lit while the coil is energised</td></tr>
+</table>
+<div class="warn"><b>Mains warning.</b> The relay contacts are laid out for low-voltage dry-contact signalling to the gate motor controller (typically 12–24 V command inputs). Do <b>not</b> switch mains voltage through J7. The 0.6 mm contact-to-contact clearance and the pluggable header are not rated for it.</div>
+
+<h3>3.5 Communication interfaces</h3>
+<table>
+  <tr><th>Interface</th><th>Characteristics</th></tr>
+  <tr><td>Ethernet (J6)</td><td>10BASE-T / 100BASE-TX, auto-negotiation (W5500 PMODE[2:0] = 111 via R24–R26). Integrated magnetics, with link and activity LEDs in the jack. SPI to the MCU (mode 0/3, up to 80 MHz per W5500). 33 Ω series termination on SCLK/MOSI. Interrupt on IO9, reset on IO8 with 10 kΩ pull-up</td></tr>
+  <tr><td>RS-485 (J10)</td><td>SP3485, half-duplex, 3.3 V, up to 10 Mbit/s, 1 unit load (32 nodes). Driver/receiver enable tied together on IO38. Fail-safe bias 560 Ω A→+3V3 / B→GND. 120 Ω termination fitted by bridging JP1 (open as shipped). SM712 asymmetric TVS (−7 V / +12 V)</td></tr>
+  <tr><td>USB (J3)</td><td>USB 2.0 full-speed (12 Mbit/s) device to the ESP32-S3 native USB Serial/JTAG controller. Used for flashing, logging and debugging. USB-C receptacle, 5.1 kΩ CC pull-downs (sink), USBLC6-2SC6 ESD array, 22 Ω series resistors, shield to GND through 1 MΩ ∥ 4.7 nF</td></tr>
+  <tr><td>UART0 (J4)</td><td>3.3 V TTL, ESP32-S3 U0TXD (IO43) / U0RXD (IO44). ROM bootloader and console port</td></tr>
+  <tr><td>JTAG (J5)</td><td>3.3 V, IO39 MTCK / IO40 MTDO / IO41 MTDI / IO42 MTMS. Optional external probe; JTAG over USB (J3) needs no adapter</td></tr>
+  <tr><td>Wi-Fi / BLE</td><td>On-module PCB antenna at the board's top edge with a full-depth copper keep-out. Not used by the shipped firmware, which networks over Ethernet. Available for fallback or commissioning</td></tr>
+</table>
+
+<!-- ======================================================== 4 CONNECTORS -->
+<div class="compact">
+<h2 class="pb">4. Connectors and pin assignments</h2>
+<p>Pin 1 of every connector is marked on the silkscreen with a triangle and a square pad. All pin functions are printed beside the pins.
+Screw terminals and the pluggable headers open toward the nearest board edge.</p>
+<div class="cols">
+<div>
+<h3>J1: 12 V input <span class="tag">Phoenix MC 1,5 / 2-G-3.81 (pluggable)</span></h3>
+<table><tr><th class="c">Pin</th><th>Signal</th><th>Description</th></tr>
+<tr><td class="c">1</td><td>+12V</td><td>Supply input (+). Silkscreen <b>+</b></td></tr>
+<tr><td class="c">2</td><td>GND</td><td>Supply return. Silkscreen <b>−</b></td></tr></table>
+
+<h3>J9: Beam supply <span class="tag">MKDS 1,5 / 2-5.08</span></h3>
+<table><tr><th class="c">Pin</th><th>Signal</th><th>Description</th></tr>
+<tr><td class="c">1</td><td>BEAM +12V</td><td>V<sub>IN</sub> − ≈ 0.5 V, fused 500 mA (F2)</td></tr>
+<tr><td class="c">2</td><td>GND</td><td>Return</td></tr></table>
+
+<h3>J10: RS-485 <span class="tag">MKDS 1,5 / 3-5.08</span></h3>
+<table><tr><th class="c">Pin</th><th>Signal</th><th>Description</th></tr>
+<tr><td class="c">1</td><td>A</td><td>Non-inverting (D+)</td></tr>
+<tr><td class="c">2</td><td>B</td><td>Inverting (D−)</td></tr>
+<tr><td class="c">3</td><td>GND</td><td>Signal reference / shield</td></tr></table>
+
+<h3>J4: UART0 <span class="tag">1×4, 2.54 mm</span></h3>
+<table><tr><th class="c">Pin</th><th>Signal</th><th>ESP32-S3</th></tr>
+<tr><td class="c">1</td><td>GND</td><td>—</td></tr><tr><td class="c">2</td><td>+3V3</td><td>Output, do not back-feed</td></tr>
+<tr><td class="c">3</td><td>TX</td><td>U0TXD / IO43 (board output)</td></tr><tr><td class="c">4</td><td>RX</td><td>U0RXD / IO44 (board input)</td></tr></table>
+</div>
+<div>
+<h3>J7: Relay outputs <span class="tag">Phoenix MC 1,5 / 12-G-3.81</span></h3>
+<table><tr><th class="c">Pin</th><th>Signal</th><th>Channel / function</th></tr>
+<tr><td class="c">1</td><td>COM1</td><td rowspan="3"><b>CH1 OPEN</b>: K1, IO4 "drive open"</td></tr><tr><td class="c">2</td><td>NO1</td></tr><tr><td class="c">3</td><td>NC1</td></tr>
+<tr><td class="c">4</td><td>COM2</td><td rowspan="3"><b>CH2 CLOSE</b>: K2, IO5 "drive close"</td></tr><tr><td class="c">5</td><td>NO2</td></tr><tr><td class="c">6</td><td>NC2</td></tr>
+<tr><td class="c">7</td><td>COM3</td><td rowspan="3"><b>CH3 SPARE</b>: K3, IO1</td></tr><tr><td class="c">8</td><td>NO3</td></tr><tr><td class="c">9</td><td>NC3</td></tr>
+<tr><td class="c">10</td><td>COM4</td><td rowspan="3"><b>CH4 SPARE</b>: K4, IO2</td></tr><tr><td class="c">11</td><td>NO4</td></tr><tr><td class="c">12</td><td>NC4</td></tr></table>
+
+<h3>J8: Field inputs <span class="tag">Phoenix MC 1,5 / 6-G-3.81</span></h3>
+<table><tr><th class="c">Pin</th><th>Signal</th><th>Function</th></tr>
+<tr><td class="c">1</td><td>LIM_OPEN_IN</td><td><b>OPEN LIM</b>: gate fully open switch → IO6</td></tr><tr><td class="c">2</td><td>GND</td><td>Return</td></tr>
+<tr><td class="c">3</td><td>LIM_CLOSED_IN</td><td><b>CLOSE LIM</b>: gate fully closed switch → IO7</td></tr><tr><td class="c">4</td><td>GND</td><td>Return</td></tr>
+<tr><td class="c">5</td><td>BEAM_IN</td><td><b>BEAM</b>: safety-beam receiver contact → IO15</td></tr><tr><td class="c">6</td><td>GND</td><td>Return</td></tr></table>
+
+<h3>J5: JTAG <span class="tag">1×5, 2.54 mm</span></h3>
+<table><tr><th class="c">Pin</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th></tr>
+<tr><td class="c">Signal</td><td>GND</td><td>TCK IO39</td><td>TDO IO40</td><td>TDI IO41</td><td>TMS IO42</td></tr></table>
+
+<h3>J3 USB-C · J6 RJ45</h3>
+<p class="small">Standard pinouts. J3: GCT USB4105-GF-A, 16-pin USB 2.0 receptacle, both CC lines terminated with 5.1 kΩ. J6: HanRun HR911105A (TD± pins 1/2, RD± pins 3/6, chassis pin 8 and shield to GND).</p>
+</div>
+</div>
+
+</div>
+<!-- ======================================================== 5 GPIO -->
+<h2 class="pb">5. MCU pin allocation</h2>
+<p>Matches the firmware pin map (<code>firmware/components/gate_control/include/gate_control/gate_controller.hpp</code> and <code>firmware/sdkconfig.defaults</code>).</p>
+<table>
+  <tr><th>GPIO</th><th>Module pin</th><th>Net</th><th>Direction</th><th>Function</th></tr>
+  <tr><td>IO4</td><td class="num">4</td><td>RELAY_1</td><td>Out</td><td>K1, gate drive OPEN (active high)</td></tr>
+  <tr><td>IO5</td><td class="num">5</td><td>RELAY_2</td><td>Out</td><td>K2, gate drive CLOSE (active high)</td></tr>
+  <tr><td>IO1</td><td class="num">39</td><td>RELAY_3</td><td>Out</td><td>K3, spare</td></tr>
+  <tr><td>IO2</td><td class="num">38</td><td>RELAY_4</td><td>Out</td><td>K4, spare</td></tr>
+  <tr><td>IO6</td><td class="num">6</td><td>LIM_OPEN</td><td>In</td><td>Open-limit contact (low = closed contact)</td></tr>
+  <tr><td>IO7</td><td class="num">7</td><td>LIM_CLOSED</td><td>In</td><td>Closed-limit contact</td></tr>
+  <tr><td>IO15</td><td class="num">8</td><td>SAFETY_BEAM</td><td>In</td><td>Safety-beam receiver contact</td></tr>
+  <tr><td>IO16 / IO17 / IO18</td><td class="num">9 / 10 / 11</td><td>LED_RED / LED_GREEN / LED_YELLOW</td><td>Out</td><td>Status LEDs D61–D63 (active high)</td></tr>
+  <tr><td>IO10 / IO11 / IO12 / IO13</td><td class="num">18 / 19 / 20 / 21</td><td>W5500_CS / MOSI / SCLK / MISO</td><td>SPI</td><td>W5500 (SCLK, MOSI through 33 Ω)</td></tr>
+  <tr><td>IO9</td><td class="num">17</td><td>W5500_INT</td><td>In</td><td>W5500 interrupt (active low)</td></tr>
+  <tr><td>IO8</td><td class="num">12</td><td>W5500_RST</td><td>Out</td><td>W5500 reset (active low, 10 kΩ pull-up)</td></tr>
+  <tr><td>IO21 / IO14</td><td class="num">23 / 22</td><td>RS485_TX / RS485_RX</td><td>Out / In</td><td>SP3485 DI / RO</td></tr>
+  <tr><td>IO38</td><td class="num">31</td><td>RS485_DE</td><td>Out</td><td>SP3485 DE + /RE (high = transmit)</td></tr>
+  <tr><td>IO19 / IO20</td><td class="num">13 / 14</td><td>USB_DN / USB_DP</td><td>USB</td><td>Native USB Serial/JTAG (J3)</td></tr>
+  <tr><td>IO43 / IO44</td><td class="num">37 / 36</td><td>U0TXD / U0RXD</td><td>UART</td><td>J4 console</td></tr>
+  <tr><td>IO39–IO42</td><td class="num">32–35</td><td>MTCK / MTDO / MTDI / MTMS</td><td>JTAG</td><td>J5</td></tr>
+  <tr><td>IO0</td><td class="num">27</td><td>BOOT_IO0</td><td>In</td><td>SW2 BOOT (strap, 10 kΩ pull-up)</td></tr>
+  <tr><td>EN</td><td class="num">3</td><td>ESP_EN</td><td>In</td><td>SW1 RESET, 10 kΩ / 1 µF power-on delay</td></tr>
+  <tr><td>IO3, IO35–37, IO45–48</td><td class="num">—</td><td>—</td><td>—</td><td>Not connected (strapping / PSRAM pins left free)</td></tr>
+</table>
+
+<!-- ======================================================== 6 INDICATORS -->
+<h2>6. Indicators, controls and configuration</h2>
+<div class="cols">
+<div>
+<h3>LEDs</h3>
+<table>
+  <tr><th>Ref</th><th>Silk</th><th>Colour</th><th>Meaning</th></tr>
+  <tr><td>D5</td><td>PWR</td><td>Green</td><td>+5V rail present</td></tr>
+  <tr><td>D61</td><td>R</td><td>Red</td><td>Fault (1 Hz blink), access denied (3 flashes)</td></tr>
+  <tr><td>D62</td><td>G</td><td>Green</td><td>Boot OK (2 s), access granted (3 flashes), gate held open (solid)</td></tr>
+  <tr><td>D63</td><td>Y</td><td>Yellow</td><td>Gate moving (2.5 Hz), OTA in progress (1 Hz). With red alternating: stopped mid-travel</td></tr>
+  <tr><td>D64</td><td>L</td><td>Yellow</td><td>Ethernet link (driven by W5500 LINKLED)</td></tr>
+  <tr><td>D15–D18</td><td>(K1–K4)</td><td>Green</td><td>Relay coil energised</td></tr>
+  <tr><td>J6</td><td>—</td><td>In jack</td><td>Jack LEDs: link and activity (W5500 LINKLED / ACTLED)</td></tr>
+</table>
+</div>
+<div>
+<h3>Buttons, jumper, test points</h3>
+<table>
+  <tr><th>Ref</th><th>Silk</th><th>Function</th></tr>
+  <tr><td>SW1</td><td>RESET</td><td>Pulls EN low: hardware reset</td></tr>
+  <tr><td>SW2</td><td>BOOT</td><td>Holds IO0 low: hold BOOT, tap RESET to enter the ROM bootloader</td></tr>
+  <tr><td>JP1</td><td>JP1 TERM</td><td>Solder bridge: fits the 120 Ω RS-485 terminator. Bridge only on the two end nodes of the bus</td></tr>
+  <tr><td>TP1</td><td>12V</td><td>Protected input rail (+12V)</td></tr>
+  <tr><td>TP2</td><td>5V</td><td>+5V rail</td></tr>
+  <tr><td>TP3</td><td>3V3</td><td>+3V3 rail</td></tr>
+  <tr><td>TP4</td><td>GND</td><td>Ground reference</td></tr>
+</table>
+<p class="small">SW1, SW2 and J3 form the programming corner at the top-left of the board, reachable with the enclosure lid open.</p>
+</div>
+</div>
+
+<!-- ======================================================== 7 MECHANICAL -->
+<h2 class="pb">7. Mechanical</h2>
+<figure>
+<svg viewBox="0 0 560 470" xmlns="http://www.w3.org/2000/svg" font-family="Inter, DejaVu LGC Sans, sans-serif" font-size="9">
+  <style>
+    .b { fill: #f8fafc; stroke: #0f172a; stroke-width: 1.6; }
+    .h { fill: #fff; stroke: #0f172a; stroke-width: 1.2; }
+    .c { fill: #dcfce7; stroke: #15803d; stroke-width: 1; }
+    .k { fill: #fde68a; stroke: #b45309; stroke-width: 1; fill-opacity: .55; }
+    .ko { fill: url(#hatch); stroke: #dc2626; stroke-width: 1; stroke-dasharray: 3 2; }
+    .m { fill: #e0e7ff; stroke: #3730a3; stroke-width: 1; }
+    .d { stroke: #475569; stroke-width: .8; fill: none; }
+    .dt { fill: #0f172a; font-size: 10px; font-weight: 600; }
+    .lb { fill: #0f172a; font-size: 8.5px; }
+  </style>
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#fca5a5" stroke-width="2"/></pattern>
+    <marker id="ar" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="#475569"/></marker>
+  </defs>
+  <!-- board: 4 px/mm, origin (80,50) -->
+  <rect class="b" x="80" y="50" width="400" height="360" rx="12"/>
+  <!-- antenna keep-out -->
+  <rect class="ko" x="192" y="50" width="192" height="25.6"/><text class="lb" x="288" y="66" text-anchor="middle" fill="#b91c1c">antenna keep-out</text>
+  <!-- module -->
+  <rect class="m" x="252" y="51.6" width="72" height="102"/><text class="lb" x="288" y="110" text-anchor="middle">U3 ESP32-S3</text>
+  <!-- connectors -->
+  <rect class="c" x="130.8" y="45.6" width="42.8" height="36"/><text class="lb" x="152" y="96" text-anchor="middle">J3 USB-C</text>
+  <rect class="c" x="384.8" y="54.8" width="55.2" height="14.8"/><text class="lb" x="412" y="64" text-anchor="middle">J5 JTAG</text>
+  <rect class="c" x="334.8" y="78.8" width="14.4" height="45.2"/><text class="lb" x="342" y="134" text-anchor="middle">J4</text>
+  <rect class="c" x="390.8" y="82.4" width="89.2" height="76.4"/><text class="lb" x="436" y="124" text-anchor="middle">J6 RJ45 →</text>
+  <rect class="c" x="80" y="179.2" width="44.4" height="40.4"/><text class="lb" x="103" y="204" text-anchor="middle">← J1</text>
+  <rect class="c" x="434.8" y="225.6" width="43.6" height="65.2"/><text class="lb" x="456" y="262" text-anchor="middle">J10 →</text>
+  <rect class="c" x="434.8" y="325.6" width="43.6" height="45"/><text class="lb" x="456" y="352" text-anchor="middle">J9 →</text>
+  <rect class="c" x="113.2" y="366.8" width="193.2" height="43.2"/><text class="lb" x="210" y="392" text-anchor="middle">J7 RELAY OUT ↓</text>
+  <rect class="c" x="311.2" y="366.8" width="101.6" height="43.2"/><text class="lb" x="362" y="392" text-anchor="middle">J8 SENSE ↓</text>
+  <!-- relays -->
+  <rect class="k" x="84" y="273.6" width="64" height="80.8"/><rect class="k" x="154" y="273.6" width="64" height="80.8"/><rect class="k" x="224" y="273.6" width="64" height="80.8"/><rect class="k" x="294" y="273.6" width="64" height="80.8"/>
+  <text class="lb" x="221" y="318" text-anchor="middle">K1 – K4 (tallest: 15.6 mm)</text>
+  <!-- buttons -->
+  <rect class="m" x="97" y="122" width="24" height="24"/><text class="lb" x="109" y="157" text-anchor="middle">BOOT</text>
+  <rect class="m" x="139" y="122" width="24" height="24"/><text class="lb" x="151" y="157" text-anchor="middle">RESET</text>
+  <!-- holes -->
+  <circle class="h" cx="96" cy="66" r="6.4"/><circle class="h" cx="464" cy="66" r="6.4"/><circle class="h" cx="96" cy="394" r="6.4"/><circle class="h" cx="464" cy="394" r="6.4"/>
+  <!-- dimensions -->
+  <line class="d" x1="80" y1="436" x2="480" y2="436" marker-start="url(#ar)" marker-end="url(#ar)"/><line class="d" x1="80" y1="414" x2="80" y2="442"/><line class="d" x1="480" y1="414" x2="480" y2="442"/><text class="dt" x="280" y="452" text-anchor="middle">100.0</text>
+  <line class="d" x1="96" y1="424" x2="464" y2="424" marker-start="url(#ar)" marker-end="url(#ar)"/><text class="dt" x="280" y="420" text-anchor="middle">92.0 (hole pattern)</text>
+  <line class="d" x1="40" y1="50" x2="40" y2="410" marker-start="url(#ar)" marker-end="url(#ar)"/><line class="d" x1="34" y1="50" x2="76" y2="50"/><line class="d" x1="34" y1="410" x2="76" y2="410"/><text class="dt" x="30" y="234" text-anchor="middle" transform="rotate(-90 30 234)">90.0</text>
+  <line class="d" x1="60" y1="66" x2="60" y2="394" marker-start="url(#ar)" marker-end="url(#ar)"/><text class="dt" x="54" y="300" text-anchor="middle" transform="rotate(-90 54 300)">82.0</text>
+  <text class="lb" x="96" y="44" text-anchor="middle">4 × Ø3.2 (M3)</text>
+  <text class="lb" x="490" y="60">TOP VIEW</text><text class="lb" x="490" y="72">mm, ±0.2</text><text class="lb" x="490" y="84">R3 corners</text>
+</svg>
+<figcaption>Figure 2: Outline, mounting holes and connector placement (top view, to scale). Arrows show the cable entry direction.</figcaption>
+</figure>
+<table>
+  <tr><th>Parameter</th><th>Value</th></tr>
+  <tr><td>Board outline</td><td>100.0 × 90.0 mm, 3 mm corner radius, 1.6 mm FR-4</td></tr>
+  <tr><td>Mounting</td><td>4 × M3 plated holes (Ø3.2 mm, pad tied to GND) at (4, 4), (96, 4), (4, 86), (96, 86) from the top-left corner. 92 × 82 mm pattern</td></tr>
+  <tr><td>Standoffs</td><td>M3, ≥ 6 mm (through-hole leads protrude up to 3.5 mm below the board)</td></tr>
+  <tr><td>Component height (top)</td><td>15.6 mm max (relays). Screw terminals 13.8 mm, C1 10.5 mm, pluggable headers 7.5 mm before the plug is fitted</td></tr>
+  <tr><td>Bottom side</td><td>No components. Through-hole leads and silkscreen title only</td></tr>
+  <tr><td>Enclosure</td><td>Fits the IP65 ABS box, 200 × 150 × 100 mm. Drilling template: <code>hardware/enclosure/board-mounting-template.dxf</code></td></tr>
+  <tr><td>Antenna keep-out</td><td>Top edge, x = 28–76 mm: no metal above, below or in front of the antenna (no metal back-plate under it)</td></tr>
+</table>
+
+<!-- ======================================================== 8 PCB -->
+<h2>8. PCB construction and fabrication</h2>
+<div class="cols">
+<div>
+<table>
+  <tr><th>Layer</th><th>Use</th></tr>
+  <tr><td>L1 F.Cu</td><td>Components, signals, GND fill, buck switch-node pour</td></tr>
+  <tr><td>L2 In1.Cu</td><td>Solid GND plane (unbroken)</td></tr>
+  <tr><td>L3 In2.Cu</td><td>Solid +3V3 plane</td></tr>
+  <tr><td>L4 B.Cu</td><td>Signals, relay contacts, GND fill</td></tr>
+</table>
+<table>
+  <tr><th>Fabrication parameter</th><th>Value</th></tr>
+  <tr><td>Copper weight</td><td>1 oz (35 µm) all layers</td></tr>
+  <tr><td>Min track / space</td><td>0.20 / 0.20 mm</td></tr>
+  <tr><td>Vias</td><td>0.6 / 0.3 mm (signal, stitching). The ESP32 footprint uses 0.2 mm thermal vias</td></tr>
+  <tr><td>Surface finish</td><td>HASL lead-free or ENIG (ENIG preferred for the 0.5 mm-pitch W5500)</td></tr>
+  <tr><td>Solder mask / silk</td><td>Green / white</td></tr>
+</table>
+</div>
+<div>
+<table>
+  <tr><th>Net class</th><th class="num">Track</th><th class="num">Clearance</th><th>Nets</th></tr>
+  <tr><td>Default</td><td class="num">0.20</td><td class="num">0.20</td><td>Signals</td></tr>
+  <tr><td>Power</td><td class="num">0.50</td><td class="num">0.20</td><td>+12V, +5V, +3V3, GND, input path</td></tr>
+  <tr><td>RelayContact</td><td class="num">1.50</td><td class="num">0.60</td><td>COM/NO/NC 1–4</td></tr>
+  <tr><td>Coil</td><td class="num">0.40</td><td class="num">0.20</td><td>Relay collector nodes</td></tr>
+  <tr><td>USB</td><td class="num">0.25</td><td class="num">0.20</td><td>USB D±, VBUS</td></tr>
+  <tr><td>Ethernet</td><td class="num">0.20</td><td class="num">0.20</td><td>TX±, RX±</td></tr>
+</table>
+<p class="small">Layout highlights: the crystal network is on L1 with no vias (XO 3.4 mm). The W5500's west-side pins escape inward to vias under the IC so the crystal stays short. The buck converter's switch node is a solid pour. Every GND/+3V3 pad has its own plane via. Both outer layers carry GND fills with 5 mm via stitching. Design checks: ERC 0, DRC 0 (including warnings), schematic parity 0.</p>
+</div>
+</div>
+
+<!-- ======================================================== 9 BOARD VIEWS -->
+<h2 class="pb">9. Board views</h2>
+<figure>
+  <img src="images/gfc-spec/board-top.png" alt="Top view render" style="width:88%">
+  <figcaption>Figure 3: Top view (3D render). L1 and J6 have no 3D model in the KiCad library and appear as footprints.</figcaption>
+</figure>
+<figure>
+  <img src="images/gfc-spec/board-legend.svg" alt="Silkscreen and assembly legend" style="width:88%">
+  <figcaption>Figure 4: Silkscreen and assembly drawing (F.Silkscreen, F.Fab, courtyards). Every connector pin's function is printed on the board.</figcaption>
+</figure>
+<figure>
+  <img src="images/gfc-spec/board-bottom.png" alt="Bottom view render" style="width:70%">
+  <figcaption>Figure 5: Bottom view (3D render). No bottom-side components.</figcaption>
+</figure>
+
+<!-- ======================================================== 10 SCHEMATICS -->
+<div class="sheet"><h3>10. Schematic diagrams: sheet 1/7, top level</h3><img src="images/gfc-spec/sch-0-root-crop.svg" alt="Top-level schematic"><p class="small">Hierarchical overview with the interface summary. The six sub-sheets follow.</p></div>
+<div class="sheet"><h3>Sheet 2/7: Power supply</h3><img src="images/gfc-spec/sch-1-power-crop.svg" alt="Power supply schematic"><p class="small">J1 → F1 → D1 → +12V (D2 TVS, C1/C2) → U1 TPS5430 buck → +5V (L1, C4/C5, D4) → U2 AMS1117 → +3V3. PWR LED, test points, mounting holes.</p></div>
+<div class="sheet"><h3>Sheet 3/7: MCU, USB-C and programming</h3><img src="images/gfc-spec/sch-2-mcu-crop.svg" alt="MCU schematic"><p class="small">U3 ESP32-S3-WROOM-1 with decoupling, EN reset network (SW1), BOOT strap (SW2), USB-C with U4 ESD protection and series resistors, UART0 and JTAG headers.</p></div>
+<div class="sheet"><h3>Sheet 4/7: Ethernet (W5500 + RJ45)</h3><img src="images/gfc-spec/sch-3-ethernet-crop.svg" alt="Ethernet schematic"><p class="small">U5 W5500, 25 MHz crystal network (Y1, C27/C28, R21, R22), AVDD ferrite filter, EXRES1 bias, PMODE straps, J6 HR911105A with LED drive.</p></div>
+<div class="sheet"><h3>Sheet 5/7: Relay outputs</h3><img src="images/gfc-spec/sch-4-relays-crop.svg" alt="Relay schematic"><p class="small">Four identical channels: GPIO → 1 kΩ → SS8050 → relay coil (1N4148W flyback, energised LED) → COM/NO/NC on J7.</p></div>
+<div class="sheet"><h3>Sheet 6/7: Field inputs and beam power</h3><img src="images/gfc-spec/sch-5-inputs-crop.svg" alt="Inputs schematic"><p class="small">J8 inputs, each through 330 Ω series, 10 kΩ pull-up, 100 nF and a BAV99 clamp to the GPIO. J9 beam supply through F2.</p></div>
+<div class="sheet"><h3>Sheet 7/7: RS-485 and status LEDs</h3><img src="images/gfc-spec/sch-6-rs485-crop.svg" alt="RS-485 schematic"><p class="small">U6 SP3485 with fail-safe bias, JP1 termination, D60 SM712 and J10. Status LEDs D61–D63, NET LED D64.</p></div>
+
+<!-- ======================================================== 11 BOM -->
+<h2 class="pb">11. Bill of materials</h2>
+<p>Exported from the schematic (grouped by value and footprint). 132 placements, of which 4 are mounting holes and 4 test pads.</p>
+<table class="bom" style="font-size:8pt"><tr><th class="num">#</th><th>References</th><th class="num">Qty</th><th>Value</th><th>Footprint</th></tr>
+<tr><td class="num">1</td><td>C1</td><td class="num">1</td><td>100uF 25V</td><td>CP_Elec_8x10.5</td></tr>
+<tr><td class="num">2</td><td>C2</td><td class="num">1</td><td>22uF 25V X5R</td><td>C_1206_3216Metric</td></tr>
+<tr><td class="num">3</td><td>C3,C10-C13,C21-C23,C30,C50-C52,C60</td><td class="num">13</td><td>100nF</td><td>C_0603_1608Metric</td></tr>
+<tr><td class="num">4</td><td>C4,C5</td><td class="num">2</td><td>47uF 10V X5R</td><td>C_1206_3216Metric</td></tr>
+<tr><td class="num">5</td><td>C6,C14,C15</td><td class="num">3</td><td>10uF 10V X5R</td><td>C_0805_2012Metric</td></tr>
+<tr><td class="num">6</td><td>C7</td><td class="num">1</td><td>22uF 10V X5R</td><td>C_0805_2012Metric</td></tr>
+<tr><td class="num">7</td><td>C16</td><td class="num">1</td><td>1uF</td><td>C_0603_1608Metric</td></tr>
+<tr><td class="num">8</td><td>C17</td><td class="num">1</td><td>4.7nF C0G</td><td>C_0603_1608Metric</td></tr>
+<tr><td class="num">9</td><td>C20,C24</td><td class="num">2</td><td>10uF 16V X5R</td><td>C_0805_2012Metric</td></tr>
+<tr><td class="num">10</td><td>C25</td><td class="num">1</td><td>4.7uF</td><td>C_0805_2012Metric</td></tr>
+<tr><td class="num">11</td><td>C26</td><td class="num">1</td><td>10nF</td><td>C_0603_1608Metric</td></tr>
+<tr><td class="num">12</td><td>C27,C28</td><td class="num">2</td><td>18pF C0G</td><td>C_0603_1608Metric</td></tr>
+<tr><td class="num">13</td><td>D1,D3</td><td class="num">2</td><td>SS34</td><td>D_SMA</td></tr>
+<tr><td class="num">14</td><td>D2</td><td class="num">1</td><td>SMAJ15A</td><td>D_SMA</td></tr>
+<tr><td class="num">15</td><td>D4</td><td class="num">1</td><td>SMAJ6.0A</td><td>D_SMA</td></tr>
+<tr><td class="num">16</td><td>D5</td><td class="num">1</td><td>Green PWR</td><td>LED_0805_2012Metric</td></tr>
+<tr><td class="num">17</td><td>D6</td><td class="num">1</td><td>SS14</td><td>D_SMA</td></tr>
+<tr><td class="num">18</td><td>D11-D14</td><td class="num">4</td><td>1N4148W</td><td>D_SOD-123</td></tr>
+<tr><td class="num">19</td><td>D15-D18</td><td class="num">4</td><td>Green</td><td>LED_0603_1608Metric</td></tr>
+<tr><td class="num">20</td><td>D50-D52</td><td class="num">3</td><td>BAV99</td><td>SOT-23</td></tr>
+<tr><td class="num">21</td><td>D60</td><td class="num">1</td><td>SM712</td><td>SOT-23</td></tr>
+<tr><td class="num">22</td><td>D61</td><td class="num">1</td><td>Red</td><td>LED_0805_2012Metric</td></tr>
+<tr><td class="num">23</td><td>D62</td><td class="num">1</td><td>Green</td><td>LED_0805_2012Metric</td></tr>
+<tr><td class="num">24</td><td>D63</td><td class="num">1</td><td>Yellow</td><td>LED_0805_2012Metric</td></tr>
+<tr><td class="num">25</td><td>D64</td><td class="num">1</td><td>Yellow NET</td><td>LED_0805_2012Metric</td></tr>
+<tr><td class="num">26</td><td>F1</td><td class="num">1</td><td>2A hold / 4A trip</td><td>Fuse_1206_3216Metric</td></tr>
+<tr><td class="num">27</td><td>F2</td><td class="num">1</td><td>500mA hold</td><td>Fuse_1206_3216Metric</td></tr>
+<tr><td class="num">28</td><td>FB1</td><td class="num">1</td><td>600R@100MHz</td><td>L_0805_2012Metric</td></tr>
+<tr><td class="num">29</td><td>H1-H4</td><td class="num">4</td><td>M3</td><td>MountingHole_3.2mm_M3_Pad_Via</td></tr>
+<tr><td class="num">30</td><td>J1</td><td class="num">1</td><td>12V IN</td><td>PhoenixContact_MC_1,5_2-G-3.81_1x02_P3.81mm_Horizontal</td></tr>
+<tr><td class="num">31</td><td>J3</td><td class="num">1</td><td>USB4105-GF-A</td><td>USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal</td></tr>
+<tr><td class="num">32</td><td>J4</td><td class="num">1</td><td>UART0</td><td>PinHeader_1x04_P2.54mm_Vertical</td></tr>
+<tr><td class="num">33</td><td>J5</td><td class="num">1</td><td>JTAG</td><td>PinHeader_1x05_P2.54mm_Vertical</td></tr>
+<tr><td class="num">34</td><td>J6</td><td class="num">1</td><td>HR911105A</td><td>RJ45_Hanrun_HR911105A_Horizontal</td></tr>
+<tr><td class="num">35</td><td>J7</td><td class="num">1</td><td>RELAY OUT</td><td>PhoenixContact_MC_1,5_12-G-3.81_1x12_P3.81mm_Horizontal</td></tr>
+<tr><td class="num">36</td><td>J8</td><td class="num">1</td><td>SENSE IN</td><td>PhoenixContact_MC_1,5_6-G-3.81_1x06_P3.81mm_Horizontal</td></tr>
+<tr><td class="num">37</td><td>J9</td><td class="num">1</td><td>BEAM 12V</td><td>TerminalBlock_Phoenix_MKDS-1,5-2-5.08_1x02_P5.08mm_Horizontal</td></tr>
+<tr><td class="num">38</td><td>J10</td><td class="num">1</td><td>RS-485</td><td>TerminalBlock_Phoenix_MKDS-1,5-3-5.08_1x03_P5.08mm_Horizontal</td></tr>
+<tr><td class="num">39</td><td>JP1</td><td class="num">1</td><td>TERM</td><td>SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm</td></tr>
+<tr><td class="num">40</td><td>K1-K4</td><td class="num">4</td><td>SRD-05VDC-SL-C</td><td>Relay_SPDT_SANYOU_SRD_Series_Form_C</td></tr>
+<tr><td class="num">41</td><td>L1</td><td class="num">1</td><td>33uH 3A SRN8040</td><td>L_Bourns_SRN8040TA</td></tr>
+<tr><td class="num">42</td><td>Q1-Q4</td><td class="num">4</td><td>SS8050</td><td>SOT-23</td></tr>
+<tr><td class="num">43</td><td>R1</td><td class="num">1</td><td>30.9k 1%</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">44</td><td>R2</td><td class="num">1</td><td>10k 1%</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">45</td><td>R3</td><td class="num">1</td><td>680</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">46</td><td>R10,R11,R23-R26,R53-R55</td><td class="num">9</td><td>10k</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">47</td><td>R12,R13</td><td class="num">2</td><td>5.1k</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">48</td><td>R14,R15</td><td class="num">2</td><td>22</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">49</td><td>R16,R21</td><td class="num">2</td><td>1M</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">50</td><td>R20</td><td class="num">1</td><td>12.4k 1%</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">51</td><td>R22</td><td class="num">1</td><td>0</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">52</td><td>R27,R28</td><td class="num">2</td><td>33</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">53</td><td>R29,R30,R50-R52,R63-R65</td><td class="num">8</td><td>330</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">54</td><td>R40-R47,R66</td><td class="num">9</td><td>1k</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">55</td><td>R60</td><td class="num">1</td><td>120</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">56</td><td>R61,R62</td><td class="num">2</td><td>560</td><td>R_0603_1608Metric</td></tr>
+<tr><td class="num">57</td><td>SW1</td><td class="num">1</td><td>RESET</td><td>SW_SPST_TL3342</td></tr>
+<tr><td class="num">58</td><td>SW2</td><td class="num">1</td><td>BOOT</td><td>SW_SPST_TL3342</td></tr>
+<tr><td class="num">59</td><td>TP1-TP4</td><td class="num">4</td><td>TP</td><td>TestPoint_Pad_D1.5mm</td></tr>
+<tr><td class="num">60</td><td>U1</td><td class="num">1</td><td>TPS5430DDA</td><td>TI_SO-PowerPAD-8_ThermalVias</td></tr>
+<tr><td class="num">61</td><td>U2</td><td class="num">1</td><td>AMS1117-3.3</td><td>SOT-223-3_TabPin2</td></tr>
+<tr><td class="num">62</td><td>U3</td><td class="num">1</td><td>ESP32-S3-WROOM-1-N16R8</td><td>ESP32-S3-WROOM-1</td></tr>
+<tr><td class="num">63</td><td>U4</td><td class="num">1</td><td>USBLC6-2SC6</td><td>SOT-23-6</td></tr>
+<tr><td class="num">64</td><td>U5</td><td class="num">1</td><td>W5500</td><td>LQFP-48_7x7mm_P0.5mm</td></tr>
+<tr><td class="num">65</td><td>U6</td><td class="num">1</td><td>SP3485EN</td><td>SOIC-8_3.9x4.9mm_P1.27mm</td></tr>
+<tr><td class="num">66</td><td>Y1</td><td class="num">1</td><td>25MHz 20pF</td><td>Crystal_SMD_3225-4Pin_3.2x2.5mm</td></tr>
+</table>
+
+<!-- ======================================================== 12 REVISIONS -->
+<h2>12. Revision history</h2>
+<table>
+  <tr><th>Rev</th><th>Date</th><th>Changes</th></tr>
+  <tr><td>2.0</td><td>2026-10-08</td><td>New schematic and placement from scratch (7 sheets, 132 parts), 140 × 100 mm. Compacted to 100 × 90 mm with an M3 92 × 82 mm hole pattern.</td></tr>
+  <tr><td>2.1</td><td>2026-10-09</td><td>Fully routed. Hand-routed crystal network, W5500 escape and AVDD, buck switch-node pour, outer-layer GND fills and stitching. J1/J9/J10 turned so wire entries face out of the board edge. RESET/BOOT grouped at the USB-C port. Complete silkscreen pin legend.</td></tr>
+  <tr><td>2.2</td><td>2026-10-09</td><td>J1 power input changed from a 5.08 mm screw terminal to a pluggable Phoenix MC 1,5/2-G-3.81 header (mating plug MC 1,5/2-ST-3,81), matching J7/J8; rerouted.</td></tr>
+</table>
+<div class="note">This specification describes the design. Values marked as estimates are calculated, and the board has not yet been characterised on a built prototype. Confirm input current, thermal performance and Ethernet compliance on the first assembled boards.</div>
+
+</body>
+</html>
