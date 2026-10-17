@@ -1,31 +1,60 @@
+# clang-tidy — enforced in CI (lint.yml) with warnings as errors.
+#
+# The set is deliberately the high-signal one (real bugs, needless
+# copies, unchecked results) rather than every style family: a check
+# that fires hundreds of times on idiomatic code gets ignored, then
+# disabled, and the job stops meaning anything.
 Checks: >
   -*,
   bugprone-*,
-  cert-*,
-  cppcoreguidelines-*,
+  -bugprone-easily-swappable-parameters,
   clang-analyzer-*,
-  misc-*,
-  modernize-*,
   performance-*,
-  readability-*,
-  -modernize-use-trailing-return-type,
-  -readability-magic-numbers,
-  -cppcoreguidelines-avoid-magic-numbers,
-  -readability-identifier-length,
-  -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic
+  cert-err34-c,
+  cert-dcl58-cpp,
+  misc-redundant-expression,
+  misc-unused-using-decls,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-identifier-naming
 
-WarningsAsErrors: ''
-HeaderFilterRegex: '.*\.(hpp|h)$'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(server|simulation|dashboard/backend|shared)/.*\.hpp$'
 FormatStyle: file
+
+# Naming as the code is written: types CamelCase,
+# functions and variables snake_case, private members with a trailing
+# underscore, constants and enumerators kCamelCase.
 CheckOptions:
-  - key: readability-identifier-naming.ClassCase
-    value: CamelCase
-  - key: readability-identifier-naming.FunctionCase
-    value: camelBack
-  - key: readability-identifier-naming.VariableCase
-    value: snake_case
-  - key: readability-identifier-naming.ConstantCase
-    value: UPPER_CASE
   - key: readability-identifier-naming.NamespaceCase
     value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantPrefix
+    value: k
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k

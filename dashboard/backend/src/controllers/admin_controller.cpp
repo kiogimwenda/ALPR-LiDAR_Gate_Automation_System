@@ -129,7 +129,7 @@ public:
         }
     }
     void configure_gate(const drogon::HttpRequestPtr& req, Callback&& cb,
-                        std::string gate_id) const {
+                        const std::string& gate_id) const {
         const auto h = store_or_error(cb);
         if (h == nullptr) {
             return;

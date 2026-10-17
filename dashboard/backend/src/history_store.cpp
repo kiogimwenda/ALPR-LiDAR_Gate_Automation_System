@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
@@ -480,9 +481,11 @@ std::int64_t HistoryStore::Impl::session_timeout_ms() {
     auto s = prepare(db, "SELECT value FROM settings WHERE key = 'session_timeout_minutes'");
     std::int64_t minutes = 720;
     if (sqlite3_step(s.get()) == SQLITE_ROW) {
-        try {
-            minutes = std::stoll(col_text(s.get(), 0));
-        } catch (...) {
+        // A malformed value keeps the default rather than failing login.
+        const std::string text = col_text(s.get(), 0);
+        std::int64_t v = 0;
+        if (std::from_chars(text.data(), text.data() + text.size(), v).ec == std::errc{}) {
+            minutes = v;
         }
     }
     return std::max<std::int64_t>(minutes, 1) * 60'000;

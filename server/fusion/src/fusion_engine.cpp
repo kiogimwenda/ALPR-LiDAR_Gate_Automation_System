@@ -16,7 +16,6 @@ using gate::v1::AuthVerdict;
 using gate::v1::DenyReason;
 using gate::v1::PlateDetection;
 using gate::v1::VehicleClass;
-using gate::v1::VehicleDetection;
 
 namespace {
 

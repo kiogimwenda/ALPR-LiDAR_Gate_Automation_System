@@ -9,6 +9,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# No C++20 modules here. Scanning only slows the build, and GCC's scan
+# flags (-fmodules-ts, -fdeps-format) land in compile_commands.json,
+# where clang-tidy and clangd fail to parse them.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 option(ENABLE_GPU       "Build with CUDA/TensorRT GPU support"          ON)
 option(BUILD_PROTO      "Build the shared gRPC proto library"           ON)

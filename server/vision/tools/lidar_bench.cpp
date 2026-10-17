@@ -29,9 +29,9 @@ int main(int argc, char** argv) {
         if (!std::strcmp(argv[i], "--points-per-second")) {
             pps = std::strtof(argv[i + 1], nullptr);
         } else if (!std::strcmp(argv[i], "--frames")) {
-            frames = std::atoi(argv[i + 1]);
+            frames = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
         } else if (!std::strcmp(argv[i], "--window-ms")) {
-            window_ms = std::atoi(argv[i + 1]);
+            window_ms = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
         } else if (!std::strcmp(argv[i], "--budget-ms")) {
             budget_ms = std::strtod(argv[i + 1], nullptr);
         } else {
@@ -60,12 +60,17 @@ int main(int argc, char** argv) {
     std::size_t max_window = 0;
     for (int f = 0; f < frames; ++f) {
         const auto pc = src.next();
+        if (!pc) {
+            break;
+        }
         det.update(*pc);
         ms.push_back(det.stats().update_ms);
         max_window = std::max(max_window, det.stats().window_points);
     }
     std::sort(ms.begin(), ms.end());
-    const auto pct = [&](double p) { return ms[static_cast<std::size_t>(p * (ms.size() - 1))]; };
+    const auto pct = [&](double p) {
+        return ms[static_cast<std::size_t>(p * static_cast<double>(ms.size() - 1))];
+    };
     std::printf("points/s %.0f, window %d ms (max %zu points), %d frames\n", pps, window_ms,
                 max_window, frames);
     std::printf("update(): min %.2f  p50 %.2f  p99 %.2f  max %.2f ms  (budget p99 <= %.1f ms)\n",

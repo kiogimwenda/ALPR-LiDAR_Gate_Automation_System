@@ -110,8 +110,8 @@ public:
 // route registration; a filter is referenced by name alone, so without
 // these lines nothing is emitted and route setup fails at runtime with
 // "middleware … not found".
-[[maybe_unused]] static const std::string& kForceAuth = AuthFilter::classTypeName();
-[[maybe_unused]] static const std::string& kForceOperator = OperatorFilter::classTypeName();
-[[maybe_unused]] static const std::string& kForceAdmin = AdminFilter::classTypeName();
+[[maybe_unused]] static const std::string& force_auth_filter = AuthFilter::classTypeName();
+[[maybe_unused]] static const std::string& force_operator_filter = OperatorFilter::classTypeName();
+[[maybe_unused]] static const std::string& force_admin_filter = AdminFilter::classTypeName();
 
 }  // namespace gate::dash_api

@@ -127,9 +127,7 @@ Status FieldControllerServiceImpl::Control(
             case ControlEnvelope::kFault:
                 bus_.publish_fault(default_site_id_, env.fault());
                 break;
-            case ControlEnvelope::kCommand:
-                // Server-only payload; firmware shouldn't send this. Ignore.
-                break;
+            case ControlEnvelope::kCommand:  // server-only payload; firmware shouldn't send it
             case ControlEnvelope::PAYLOAD_NOT_SET:
                 break;
         }

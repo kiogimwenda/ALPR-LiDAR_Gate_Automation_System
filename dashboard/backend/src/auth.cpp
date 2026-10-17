@@ -2,6 +2,7 @@
 
 #include "dash_api/auth.hpp"
 
+#include <charconv>
 #include <chrono>
 #include <cstdio>
 #include <jwt-cpp/traits/nlohmann-json/traits.h>
@@ -44,7 +45,9 @@ bool from_hex(const std::string& hex, std::vector<unsigned char>& out) {
     out.resize(hex.size() / 2);
     for (std::size_t i = 0; i < out.size(); ++i) {
         unsigned int byte = 0;
-        if (std::sscanf(hex.c_str() + i * 2, "%2x", &byte) != 1) {
+        const char* first = hex.data() + i * 2;
+        const auto [end, ec] = std::from_chars(first, first + 2, byte, 16);
+        if (ec != std::errc{} || end != first + 2) {
             return false;
         }
         out[i] = static_cast<unsigned char>(byte);

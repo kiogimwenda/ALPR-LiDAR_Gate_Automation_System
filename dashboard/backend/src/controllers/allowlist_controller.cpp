@@ -91,7 +91,7 @@ public:
 
     void remove(const drogon::HttpRequestPtr& /*req*/,
                 std::function<void(const drogon::HttpResponsePtr&)>&& callback,
-                std::string plate) const {
+                const std::string& plate) const {
         const auto b = bridge_or_error(callback);
         if (b == nullptr) {
             return;

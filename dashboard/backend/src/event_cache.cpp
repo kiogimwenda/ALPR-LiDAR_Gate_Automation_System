@@ -37,9 +37,8 @@ void EventCache::ingest(const gate::v1::DashboardEvent& ev) {
     // cursor the server restarted and counts from 1 again: follow it
     // down, or every later reconnect would ask for "after 5000" and miss
     // the new server's replay. Within a stream the cursor only rises.
-    if (stream_fresh_ && ev.event_id() != 0 && ev.event_id() <= last_event_id_) {
-        last_event_id_ = ev.event_id();
-    } else if (ev.event_id() > last_event_id_) {
+    const bool restarted = stream_fresh_ && ev.event_id() != 0 && ev.event_id() <= last_event_id_;
+    if (restarted || ev.event_id() > last_event_id_) {
         last_event_id_ = ev.event_id();
     }
     stream_fresh_ = false;

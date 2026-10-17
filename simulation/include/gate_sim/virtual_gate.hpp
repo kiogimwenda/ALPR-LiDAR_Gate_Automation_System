@@ -48,7 +48,7 @@ public:
         std::string error;
     };
 
-    enum class Command { Open, Close };
+    enum class Command : std::uint8_t { kOpen, kClose };
 
     explicit VirtualGate(const Config& cfg);
 

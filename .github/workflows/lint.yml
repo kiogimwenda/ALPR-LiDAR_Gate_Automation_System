@@ -31,37 +31,45 @@ jobs:
 
   clang-tidy:
     runs-on: ubuntu-24.04
+    env:
+      CC: gcc-14
+      CXX: g++-14
     steps:
       - uses: actions/checkout@v4
 
       - name: Install tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y clang-tidy cmake ninja-build pkg-config \
-            libsqlite3-dev
+          sudo apt-get install -y clang-tidy-18 cmake ninja-build pkg-config autoconf \
+            automake libtool bison flex python3 gcc-14 g++-14
 
-      - name: Configure (for compile_commands.json)
+      # Same packages as the Build job (and its cache): without them the
+      # configure skips every C++ tree, compile_commands.json is empty
+      # and the job used to pass having checked nothing.
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: gcc-14
+
+      - name: Configure + generate the proto headers
         run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DENABLE_GPU=OFF 2>/dev/null || echo "CMake configure not yet available — skipping tidy."
+          cmake --preset debug-cpu 2>&1 | tee configure.log
+          if grep -q "Skipping " configure.log; then
+            echo "::error::a C++ tree was skipped at configure time"; exit 1
+          fi
+          cmake --build build/debug-cpu --target gate_proto
 
       - name: Run clang-tidy
+        # Checks and naming rules: .clang-tidy (warnings are errors).
+        # firmware/ targets ESP-IDF (xtensa), not this host database;
+        # clang-format and the firmware workflow cover it.
         run: |
-          # firmware/ targets ESP-IDF (xtensa), not the host compile_commands
-          # database we just generated. Running host clang-tidy against firmware
-          # would produce bogus errors from x86 vs xtensa assumptions and bloat
-          # the output. clang-format already covers firmware for stylistic
-          # checks; firmware-specific static analysis is run inside the ESP-IDF
-          # build via the firmware CI workflow (Phase 4.4.5).
-          if [ -f build/compile_commands.json ]; then
-            find server/ shared/ dashboard/backend/ \
-              -name '*.cpp' -o -name '*.hpp' 2>/dev/null | head -500 | \
-            xargs -r clang-tidy -p build --warnings-as-errors='*' || exit 1
-          else
-            echo "No compile_commands.json — skipping clang-tidy until CMake is configured."
-          fi
+          n=$(jq '[.[] | select(.file | test("/(server|simulation|dashboard/backend|shared)/"))] | length' \
+                build/debug-cpu/compile_commands.json)
+          echo "translation units: ${n}"
+          [ "${n:-0}" -ge 30 ] || { echo "::error::compile database is missing the C++ trees"; exit 1; }
+          run-clang-tidy-18 -p build/debug-cpu -j "$(nproc)" -quiet \
+            -clang-tidy-binary clang-tidy-18 \
+            "$PWD/(server|simulation|dashboard/backend|shared)/"
 
   cppcheck:
     runs-on: ubuntu-24.04

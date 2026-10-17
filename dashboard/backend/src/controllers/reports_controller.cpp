@@ -17,6 +17,7 @@
 //   GET /api/decisions/export     the same filters as text/csv (≤ 100k rows)
 //   GET /api/plates/{plate}       one plate's visits, verdicts and sessions
 
+#include <charconv>
 #include <chrono>
 #include <drogon/HttpController.h>
 
@@ -71,9 +72,10 @@ DecisionQuery query_of(const drogon::HttpRequestPtr& req) {
     q.vehicle_class = req->getParameter("class");
     q.direction = req->getParameter("direction");
     if (const auto& mc = req->getParameter("minConfidence"); !mc.empty()) {
-        try {
-            q.min_confidence = std::stof(mc);
-        } catch (...) {
+        // Unparseable → no floor, as if the parameter were absent.
+        float v = 0.0f;
+        if (std::from_chars(mc.data(), mc.data() + mc.size(), v).ec == std::errc{}) {
+            q.min_confidence = v;
         }
     }
     q.limit = static_cast<std::uint32_t>(
@@ -193,7 +195,7 @@ public:
             cb(resp);
         }
     }
-    void plate(const drogon::HttpRequestPtr& req, Callback&& cb, std::string plate) const {
+    void plate(const drogon::HttpRequestPtr& req, Callback&& cb, const std::string& plate) const {
         if (const auto h = history_or_error(cb)) {
             cb(drogon::HttpResponse::newHttpJsonResponse(
                 h->plate_history(plate, static_cast<std::uint32_t>(int_param(req, "limit", 100)))));

@@ -148,10 +148,10 @@ bool SimClient::run_session(const std::atomic<bool>& shutdown) {
             write_ack_received(writer, cmd, to_wire(gate_.state()));
             switch (cmd.kind()) {
                 case gate::v1::COMMAND_KIND_OPEN_GATE:
-                    gate_.issue(cmd.command_id(), VirtualGate::Command::Open);
+                    gate_.issue(cmd.command_id(), VirtualGate::Command::kOpen);
                     break;
                 case gate::v1::COMMAND_KIND_CLOSE_GATE:
-                    gate_.issue(cmd.command_id(), VirtualGate::Command::Close);
+                    gate_.issue(cmd.command_id(), VirtualGate::Command::kClose);
                     break;
                 case gate::v1::COMMAND_KIND_LED_PATTERN:
                     std::printf("[sim] (led pattern %d rendered)\n",

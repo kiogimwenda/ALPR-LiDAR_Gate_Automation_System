@@ -3,6 +3,7 @@
 #include "gate_sim/virtual_gate.hpp"
 
 #include <cstdio>
+#include <string_view>
 
 namespace gate::sim {
 
@@ -24,10 +25,10 @@ void VirtualGate::boot_closed() {
 
 void VirtualGate::issue(const std::string& command_id, Command c) {
     const std::lock_guard<std::mutex> lock(mutex_);
-    const auto terminal = (c == Command::Open) ? sm::State::Open : sm::State::Closed;
+    const auto terminal = (c == Command::kOpen) ? sm::State::Open : sm::State::Closed;
     record(tracker_.arm(command_id.c_str(), terminal,
                         static_cast<std::uint32_t>(now_ms_) + cfg_.command_deadline_ms));
-    step_locked(c == Command::Open ? sm::Event::CommandOpen : sm::Event::CommandClose);
+    step_locked(c == Command::kOpen ? sm::Event::CommandOpen : sm::Event::CommandClose);
 }
 
 void VirtualGate::local_open() {
@@ -143,9 +144,10 @@ std::vector<VirtualGate::Ack> VirtualGate::drain_acks() {
 std::string VirtualGate::status_line() const {
     const std::lock_guard<std::mutex> lock(mutex_);
     char buf[160];
-    std::snprintf(buf, sizeof(buf), "state=%s position=%.0f%% beam=%s motor=%s tracker=%s",
-                  sm::to_string(machine_.state()).data(), (position_ms_ / cfg_.travel_ms) * 100.0,
-                  beam_blocked_ ? "BLOCKED" : "clear",
+    const std::string_view state = sm::to_string(machine_.state());
+    std::snprintf(buf, sizeof(buf), "state=%.*s position=%.0f%% beam=%s motor=%s tracker=%s",
+                  static_cast<int>(state.size()), state.data(),
+                  (position_ms_ / cfg_.travel_ms) * 100.0, beam_blocked_ ? "BLOCKED" : "clear",
                   motor_open_ ? "open" : (motor_close_ ? "close" : "off"),
                   tracker_.armed() ? "pending" : "idle");
     return buf;
