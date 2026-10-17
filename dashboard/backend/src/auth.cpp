@@ -87,17 +87,24 @@ bool AuthService::check_credentials(const std::string& user, const std::string& 
     return verify_password(password, cfg_.password_hash);
 }
 
-std::string AuthService::issue_token(const std::string& user) const {
+std::string AuthService::issue_token(const std::string& user, const std::string& role) const {
     const auto now = std::chrono::system_clock::now();
     return jwt::create<JwtTraits>()
         .set_issuer(kIssuer)
         .set_subject(user)
+        .set_payload_claim("role", jwt::basic_claim<JwtTraits>(role))
         .set_issued_at(now)
         .set_expires_at(now + std::chrono::minutes(cfg_.token_ttl_min))
         .sign(jwt::algorithm::hs256{cfg_.jwt_secret});
 }
 
 bool AuthService::verify_token(const std::string& token, std::string& subject) const {
+    std::string role;
+    return verify_token(token, subject, role);
+}
+
+bool AuthService::verify_token(const std::string& token, std::string& subject,
+                               std::string& role) const {
     try {
         const auto decoded = jwt::decode<JwtTraits>(token);
         jwt::verify<JwtTraits>()
@@ -105,6 +112,8 @@ bool AuthService::verify_token(const std::string& token, std::string& subject) c
             .with_issuer(kIssuer)
             .verify(decoded);
         subject = decoded.get_subject();
+        role = decoded.has_payload_claim("role") ? decoded.get_payload_claim("role").as_string()
+                                                 : std::string{"admin"};
         return true;
     } catch (const std::exception&) {
         // Bad signature, expired, malformed, wrong issuer — all the

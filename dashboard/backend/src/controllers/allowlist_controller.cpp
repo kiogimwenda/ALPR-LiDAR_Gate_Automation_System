@@ -19,15 +19,16 @@ namespace gate::dash_api {
 
 class AllowlistController : public drogon::HttpController<AllowlistController> {
 public:
-    // All three verbs sit behind the AuthFilter (4.10.2) — the list
-    // isn't just config, it's resident PII (names, units, plates).
+    // All three verbs need the operator role — the list isn't just
+    // config, it's resident PII (names, units, plates), and guards
+    // register visitors.
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(AllowlistController::list, "/api/allowlist", drogon::Get,
-                  "gate::dash_api::AuthFilter");
+                  "gate::dash_api::OperatorFilter");
     ADD_METHOD_TO(AllowlistController::upsert, "/api/allowlist", drogon::Post,
-                  "gate::dash_api::AuthFilter");
+                  "gate::dash_api::OperatorFilter");
     ADD_METHOD_TO(AllowlistController::remove, "/api/allowlist/{plate}", drogon::Delete,
-                  "gate::dash_api::AuthFilter");
+                  "gate::dash_api::OperatorFilter");
     METHOD_LIST_END
 
     void list(const drogon::HttpRequestPtr& req,

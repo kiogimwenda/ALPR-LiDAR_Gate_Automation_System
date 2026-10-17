@@ -44,3 +44,17 @@ target_link_libraries(test_dashboard_auth
 catch_discover_tests(test_dashboard_auth
     PROPERTIES TIMEOUT 30
 )
+
+# History + reporting store (SQLite) behind the operator app.
+add_executable(test_dashboard_history
+    history_store_test.cpp
+)
+
+target_link_libraries(test_dashboard_history
+    PRIVATE
+        gate_dash_history
+        gate_dash_json
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_dashboard_history)

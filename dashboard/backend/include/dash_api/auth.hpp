@@ -44,11 +44,21 @@ public:
     [[nodiscard]] bool check_credentials(const std::string& user,
                                          const std::string& password) const;
 
-    // Mints an HS256 JWT for `user`. Call only after check_credentials.
-    [[nodiscard]] std::string issue_token(const std::string& user) const;
+    // Mints an HS256 JWT for `user` carrying a "role" claim
+    // (viewer / operator / admin — see history_store.hpp). Call only
+    // after the credentials were checked.
+    [[nodiscard]] std::string issue_token(const std::string& user,
+                                          const std::string& role = "admin") const;
 
     // Signature + expiry + issuer check; fills `subject` on success.
     [[nodiscard]] bool verify_token(const std::string& token, std::string& subject) const;
+    // Same, also returning the role claim. Tokens minted before roles
+    // existed carry none and were admin-only, so they read as "admin".
+    [[nodiscard]] bool verify_token(const std::string& token, std::string& subject,
+                                    std::string& role) const;
+
+    [[nodiscard]] const std::string& admin_user() const { return cfg_.admin_user; }
+    [[nodiscard]] const std::string& admin_password_hash() const { return cfg_.password_hash; }
 
     // PBKDF2 helpers, exposed for tooling and tests. verify_password
     // returns false on any malformed `stored` string — never open.

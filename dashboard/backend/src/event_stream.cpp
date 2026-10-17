@@ -55,6 +55,7 @@ void EventStream::run() {
         sub.set_include_faults(true);
         sub.set_include_ota(true);
         sub.set_since_event_id(cache_.last_event_id());
+        cache_.begin_stream();
 
         grpc::ClientContext ctx;
         {

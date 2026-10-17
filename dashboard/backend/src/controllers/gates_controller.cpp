@@ -14,6 +14,7 @@
 #include "dash_api/grpc_bridge.hpp"
 #include "dash_api/json_mapping.hpp"
 #include "grpc_http.hpp"
+#include "request_identity.hpp"
 
 namespace gate::dash_api {
 
@@ -21,7 +22,7 @@ class GatesController : public drogon::HttpController<GatesController> {
 public:
     METHOD_LIST_BEGIN
     ADD_METHOD_TO(GatesController::command, "/api/gates/{gate_id}/command", drogon::Post,
-                  "gate::dash_api::AuthFilter");
+                  "gate::dash_api::OperatorFilter");
     METHOD_LIST_END
 
     void command(const drogon::HttpRequestPtr& req,
@@ -46,6 +47,7 @@ public:
         gate::v1::GateCommand cmd;
         cmd.set_gate_id(gate_id);
         cmd.set_kind(kind);
+        cmd.set_actor(request_user(req));  // audit: who pressed the button
         if (kind == gate::v1::COMMAND_KIND_LED_PATTERN) {
             cmd.set_led_pattern(static_cast<gate::v1::LedPattern>((*body)["ledPattern"].asInt()));
         }

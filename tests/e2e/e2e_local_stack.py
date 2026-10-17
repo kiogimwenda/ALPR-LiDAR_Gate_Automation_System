@@ -73,9 +73,11 @@ def launch(name, argv):
     return p
 
 
-def api(path, method="GET", body=None, timeout=5, with_token=True):
+def api(path, method="GET", body=None, timeout=5, with_token=True, as_token=None):
     headers = {"Content-Type": "application/json"}
-    if token and with_token:
+    if as_token:
+        headers["Authorization"] = f"Bearer {as_token}"
+    elif token and with_token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(
         BASE + path,
@@ -128,10 +130,14 @@ def main():
                     help="enable JWT admin auth on the dashboard (Phase 4.10.2)")
     ap.add_argument("--vision", metavar="BIN",
                     help="path to gate-vision; run the scripted-detection pass (Phase 5.3)")
+    ap.add_argument("--lidar", action="store_true",
+                    help="with --vision: plates + a ray-cast LiDAR scene (Phase 6.1)")
     args = ap.parse_args()
+    if args.lidar and not args.vision:
+        ap.error("--lidar needs --vision")
 
     with tempfile.TemporaryDirectory() as tmp:
-        server_tls, client_tls = [], []
+        server_tls, client_tls, vision_tls = [], [], []
         if args.tls:
             print("== generating an ephemeral site PKI ==")
             gen = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "gen-tls-certs.sh"
@@ -143,6 +149,11 @@ def main():
             client_tls = ["--tls-ca", f"{tmp}/tls/ca.pem",
                           "--tls-cert", f"{tmp}/tls/gate-client.pem",
                           "--tls-key", f"{tmp}/tls/gate-client.key"]
+            # gate-vision has its own identity: under mTLS only CN
+            # gate-vision may call SubmitDetection.
+            vision_tls = ["--tls-ca", f"{tmp}/tls/ca.pem",
+                          "--tls-cert", f"{tmp}/tls/vision.pem",
+                          "--tls-key", f"{tmp}/tls/vision.key"]
 
         print(f"== launching the real stack{' (mTLS)' if args.tls else ''} ==")
         launch("gate-server", [args.server, "--listen", f"127.0.0.1:{GRPC_PORT}",
@@ -164,7 +175,8 @@ def main():
         launch("dashboard", [args.dashboard, "--listen", "127.0.0.1",
                              "--port", str(HTTP_PORT),
                              "--server", f"127.0.0.1:{GRPC_PORT}",
-                             "--site-id", "site-e2e"] + dash_tls + dash_auth)
+                             "--site-id", "site-e2e",
+                             "--history-db", f"{tmp}/history.db"] + dash_tls + dash_auth)
 
         if args.tls:
             # Enforcement checks: peers without the right credentials
@@ -295,7 +307,7 @@ def main():
             vision = launch("gate-vision",
                             [args.vision, "--server", f"127.0.0.1:{GRPC_PORT}",
                              "--site-id", "site-e2e", "--gate-id", "gate-e2e-02",
-                             "--scenario", scenario_path] + client_tls)
+                             "--scenario", scenario_path] + vision_tls)
             wait_for("gate-e2e-02 opens on the authorized detection",
                      lambda: gate_state(api("/api/status")[1], "gate-e2e-02")
                      in ("OPENING", "OPEN"), timeout_s=15)
@@ -316,6 +328,123 @@ def main():
             code, _ = api("/api/allowlist/KDV777V", "DELETE")
             if code != 200:
                 fail(f"vision allowlist cleanup: {code}")
+
+        if args.lidar:
+            print("== 4l: LiDAR fusion — the vehicle class comes from the point cloud ==")
+            # The plate frames carry NO vehicles: everything about the
+            # vehicle must come from gate-vision's LiDAR path.
+            pillar = {"x": 0, "y": -2.0, "z": 1.2, "roll": 0, "pitch": 1.92, "yaw": 0}
+            with open(f"{tmp}/lidar.json", "w") as f:
+                json.dump({"mount": pillar}, f)
+            with open(f"{tmp}/scene.json", "w") as f:
+                json.dump({"mount": pillar, "realtime": True, "objects": [
+                    {"shape": "car", "length": 4.7, "width": 1.85, "height": 1.78,
+                     "x": 7.35, "y": 0}]}, f)  # an SUV, front 5 m from the gate
+            plates = {"events": [
+                {"offset_ms": ms, "plates": [{"text": "KDL555L", "detection_conf": 0.95,
+                                              "ocr_conf": 0.93}]}
+                for ms in (1500, 1900, 2300)]}
+            with open(f"{tmp}/lidar-plates.json", "w") as f:
+                json.dump(plates, f)
+
+            def run_lidar_vision(allowed_class):
+                code, body = api("/api/allowlist", "POST",
+                                 {"plate": "KDL555L", "ownerName": "LiDAR Resident",
+                                  "ownerUnit": "B-2", "allowedClasses": [allowed_class]})
+                if code != 200:
+                    fail(f"lidar allowlist upsert: {code} {body}")
+                proc = launch("gate-vision-lidar",
+                              [args.vision, "--server", f"127.0.0.1:{GRPC_PORT}",
+                               "--site-id", "site-e2e", "--gate-id", "gate-e2e-01",
+                               "--scenario", f"{tmp}/lidar-plates.json",
+                               "--lidar", f"synthetic:{tmp}/scene.json",
+                               "--lidar-config", f"{tmp}/lidar.json"] + vision_tls)
+                try:
+                    rc = proc.wait(timeout=20)
+                except subprocess.TimeoutExpired:
+                    fail("gate-vision (lidar) did not exit after its scenario")
+                out = proc.stdout.read() or ""
+                if rc != 0:
+                    fail(f"gate-vision (lidar) exited {rc}:\n{out[-2000:]}")
+                return [ln for ln in out.splitlines() if "decision:" in ln], out
+
+            decisions, out = run_lidar_vision("SUV")
+            if len(decisions) != 3 or not all("class=VEHICLE_CLASS_SUV" in d for d in decisions):
+                fail(f"wanted 3 decisions all classed SUV by the LiDAR, got:\n{out[-2000:]}")
+            if not all("AUTH_VERDICT_AUTHORIZED" in d for d in decisions):
+                fail(f"an SUV-allowlisted plate on a LiDAR-seen SUV was not authorized:\n{out[-2000:]}")
+            wait_for("gate-e2e-01 opens on the LiDAR-corroborated plate",
+                     lambda: gate_state(api("/api/status")[1], "gate-e2e-01")
+                     in ("OPENING", "OPEN"), timeout_s=15)
+            print("  ok: plate + LiDAR-classified SUV authorized and opened the gate")
+
+            # Same plate, now registered to a sedan: the LiDAR sees an SUV,
+            # so the swapped-plate check must stop it for a guard.
+            decisions, out = run_lidar_vision("SEDAN")
+            if len(decisions) != 3 or not all("AUTH_VERDICT_MANUAL_REVIEW" in d for d in decisions):
+                fail(f"wanted MANUAL_REVIEW for a sedan's plate on an SUV, got:\n{out[-2000:]}")
+            print("  ok: a sedan's plate on an SUV is held for manual review")
+            code, _ = api("/api/allowlist/KDL555L", "DELETE")
+            if code != 200:
+                fail(f"lidar allowlist cleanup: {code}")
+
+        print("== 4h: history + reports — the operator app's data ==")
+        # Every event above went through the dashboard's history store.
+        wait_for("both sims are known gates in the history store",
+                 lambda: {"gate-e2e-01", "gate-e2e-02"} <= {
+                     g["gateId"] for g in api("/api/gates")[1]}, timeout_s=10)
+        code, body = api("/api/gates/gate-e2e-01", "PUT",
+                         {"name": "Main entry", "location": "North", "direction": "entry"})
+        if code != 200:
+            fail(f"gate configuration: {code} {body}")
+        code, stats = api("/api/reports/stats?from=0")
+        if code != 200 or "captures" not in stats:
+            fail(f"stats: {code} {stats}")
+        if args.vision:
+            if stats["captures"] < 2:
+                fail(f"vision decisions missing from history: {stats}")
+            code, found = api("/api/decisions?from=0&plate=KDV777V")
+            if code != 200 or found.get("total", 0) < 1:
+                fail(f"search for the vision plate: {code} {found}")
+            items = found["items"]
+            if items[0]["verdict"] != "AUTHORIZED":
+                fail(f"search returned the wrong decision: {items[0]}")
+        code, hourly = api("/api/reports/hourly?from=0&tz=180")
+        if code != 200 or len(hourly) != 24:
+            fail(f"hourly report: {code} {hourly}")
+        print(f"  ok: history answers stats ({stats['captures']} captures), search, hourly")
+
+        if args.auth:
+            print("== 4r: roles — viewer / operator / admin ==")
+            for name, role in (("viewer1", "viewer"), ("guard1", "operator")):
+                code, body = api("/api/users", "POST",
+                                 {"username": name, "password": "e2e-password-123",
+                                  "role": role, "fullName": name.title()})
+                if code != 201:
+                    fail(f"create {role}: {code} {body}")
+            tokens = {}
+            for name in ("viewer1", "guard1"):
+                code, body = api("/api/auth/login", "POST",
+                                 {"username": name, "password": "e2e-password-123"},
+                                 with_token=False)
+                if code != 200:
+                    fail(f"login {name}: {code} {body}")
+                tokens[name] = body["token"]
+            checks = [
+                ("viewer reads reports", "viewer1", "/api/reports/stats", "GET", None, 200),
+                ("viewer cannot command a gate", "viewer1",
+                 "/api/gates/gate-e2e-02/command", "POST", {"kind": "CLOSE_GATE"}, 403),
+                ("viewer cannot read the allowlist (PII)", "viewer1",
+                 "/api/allowlist", "GET", None, 403),
+                ("operator commands a gate", "guard1",
+                 "/api/gates/gate-e2e-02/command", "POST", {"kind": "CLOSE_GATE"}, 200),
+                ("operator cannot manage users", "guard1", "/api/users", "GET", None, 403),
+            ]
+            for desc, who, path, method, body, want in checks:
+                code, resp = api(path, method, body, as_token=tokens[who])
+                if code != want:
+                    fail(f"{desc}: got {code}, wanted {want}: {resp}")
+                print(f"  ok: {desc}")
 
         print("== 5: clean teardown ==")
         for name, p in procs:

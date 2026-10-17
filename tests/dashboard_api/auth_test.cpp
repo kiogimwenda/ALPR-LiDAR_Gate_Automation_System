@@ -82,7 +82,11 @@ TEST_CASE("tampered and foreign tokens are rejected") {
     std::string subject;
 
     SECTION("flipped character in the signature") {
-        token.back() = (token.back() == 'A') ? 'B' : 'A';
+        // Not the last character: an HS256 signature is 43 base64url
+        // chars and the last one carries 2 unused bits, so 'A'↔'B'
+        // there can leave the decoded signature unchanged.
+        auto& c = token[token.size() - 5];
+        c = (c == 'A') ? 'B' : 'A';
         CHECK_FALSE(svc.verify_token(token, subject));
     }
     SECTION("token minted under a different secret") {

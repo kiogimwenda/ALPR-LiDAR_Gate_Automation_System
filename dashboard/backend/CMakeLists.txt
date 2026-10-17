@@ -30,6 +30,24 @@ target_link_libraries(gate_dash_json
 
 target_compile_features(gate_dash_json PUBLIC cxx_std_20)
 
+# History + reporting store (SQLite; Drogon-free, host-tested).
+# (vcpkg exports a config package; the FindSQLite3 target is directory-
+# scoped to server/auth, so name the config target directly.)
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+
+add_library(gate_dash_history STATIC
+    src/history_store.cpp
+)
+target_include_directories(gate_dash_history PUBLIC include)
+target_link_libraries(gate_dash_history
+    PUBLIC
+        gate_proto
+        JsonCpp::JsonCpp
+    PRIVATE
+        unofficial::sqlite3::sqlite3
+)
+target_compile_features(gate_dash_history PUBLIC cxx_std_20)
+
 add_library(gate_dash_auth STATIC
     src/auth.cpp
 )
@@ -69,11 +87,14 @@ add_executable(gate-dashboard
     src/controllers/events_ws_controller.cpp
     src/controllers/auth_controller.cpp
     src/controllers/auth_filter.cpp
+    src/controllers/reports_controller.cpp
+    src/controllers/admin_controller.cpp
 )
 
 target_link_libraries(gate-dashboard
     PRIVATE
         gate_dash_api
         gate_dash_auth
+        gate_dash_history
         CLI11::CLI11
 )

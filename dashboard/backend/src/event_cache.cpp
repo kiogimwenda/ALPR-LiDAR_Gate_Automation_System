@@ -20,10 +20,29 @@ void EventCache::ingest(const gate::v1::DashboardEvent& ev) {
     const Json::Value mapped = to_json(ev);
     const std::string frame = compact(mapped);
 
+    // Raw listeners (the HistoryStore) run outside the cache lock: they
+    // do database I/O and must never stall WebSocket fan-out readers.
+    std::vector<Listener> listeners;
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        listeners = listeners_;
+    }
+    for (const auto& l : listeners) {
+        l(ev);
+    }
+
     const std::lock_guard<std::mutex> lock(mutex_);
-    if (ev.event_id() > last_event_id_) {
+    // Event ids are monotonic per gate-server *boot*. A new stream asks
+    // for ids after our cursor, so if its first event is at or below the
+    // cursor the server restarted and counts from 1 again: follow it
+    // down, or every later reconnect would ask for "after 5000" and miss
+    // the new server's replay. Within a stream the cursor only rises.
+    if (stream_fresh_ && ev.event_id() != 0 && ev.event_id() <= last_event_id_) {
+        last_event_id_ = ev.event_id();
+    } else if (ev.event_id() > last_event_id_) {
         last_event_id_ = ev.event_id();
     }
+    stream_fresh_ = false;
     ring_.push_back(frame);
     while (ring_.size() > ring_capacity_) {
         ring_.pop_front();

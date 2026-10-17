@@ -21,12 +21,14 @@ EnvironmentFile=/etc/gate/gate-dashboard.env
 # $TLS_EXTRA_ARGS / $AUTH_EXTRA_ARGS unbraced so systemd word-splits
 # each flag set (TLS toward gate-server; JWT admin auth on the HTTP
 # surface). Empty = plaintext / open — dev only, logged at startup.
-ExecStart=/opt/gate/bin/gate-dashboard --listen ${LISTEN_HOST} --port ${LISTEN_PORT} --server ${GRPC_SERVER} --site-id ${SITE_ID} --www /opt/gate/www $TLS_EXTRA_ARGS $AUTH_EXTRA_ARGS
+ExecStart=/opt/gate/bin/gate-dashboard --listen ${LISTEN_HOST} --port ${LISTEN_PORT} --server ${GRPC_SERVER} --site-id ${SITE_ID} --history-db ${HISTORY_DB} $TLS_EXTRA_ARGS $AUTH_EXTRA_ARGS
 Restart=on-failure
 RestartSec=3
 
 NoNewPrivileges=true
 ProtectSystem=strict
+# The decision history / users / gate configuration database.
+StateDirectory=gate
 ProtectHome=true
 PrivateTmp=true
 
