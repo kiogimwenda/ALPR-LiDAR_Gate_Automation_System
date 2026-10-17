@@ -62,6 +62,12 @@ Server::Server(gate::auth::AllowlistStore& store, gate::fusion::FusionEngine& fu
       field_(bus, fusion, cfg_.default_site_id) {
     dashboard_.set_subscribe_poll_interval(cfg_.subscribe_poll_interval);
     field_.set_subscribe_poll_interval(cfg_.subscribe_poll_interval);
+    // Roles are enforceable only when every caller presents a verified
+    // client certificate.
+    const bool enforce = cfg_.tls.enabled() && cfg_.tls.require_client_cert;
+    admin_.set_enforce_roles(enforce);
+    dashboard_.set_enforce_roles(enforce);
+    field_.set_enforce_roles(enforce);
 }
 
 Server::~Server() {

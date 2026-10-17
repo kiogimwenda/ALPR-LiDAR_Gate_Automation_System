@@ -53,6 +53,7 @@
 #include <functional>
 #include <mutex>
 
+#include "gate_rpc/command_guard.hpp"
 #include "gate_rpc/command_tracker.hpp"
 #include "gate_service.pb.h"
 #include "gate_state_machine/state_machine.hpp"
@@ -186,6 +187,7 @@ private:
 
     std::mutex tracker_mutex_;
     CommandTracker tracker_;
+    CommandGuard guard_;  // replay/staleness refusal; under tracker_mutex_
 };
 
 }  // namespace gate::rpc

@@ -24,6 +24,7 @@ target_compile_features(gate_state_machine PUBLIC cxx_std_20)
 add_library(gate_rpc_framing STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_rpc/src/grpc_framing.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_rpc/src/command_tracker.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_rpc/src/command_guard.cpp
 )
 
 target_include_directories(gate_rpc_framing PUBLIC

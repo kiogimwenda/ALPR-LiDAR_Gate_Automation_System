@@ -44,13 +44,35 @@ int pick_best_plate(const AuthorizeRequest& req) {
     return best;
 }
 
+// Classes that carry a number plate. A LiDAR frame can hold a
+// pedestrian or cyclist beside the car whose plate was read; the plate
+// belongs to a plate-bearing vehicle, so those rank first and the
+// confidence only breaks ties within a rank.
+bool carries_plate(VehicleClass c) {
+    switch (c) {
+        case VehicleClass::VEHICLE_CLASS_MOTORCYCLE:
+        case VehicleClass::VEHICLE_CLASS_SEDAN:
+        case VehicleClass::VEHICLE_CLASS_SUV:
+        case VehicleClass::VEHICLE_CLASS_PICKUP:
+        case VehicleClass::VEHICLE_CLASS_VAN:
+        case VehicleClass::VEHICLE_CLASS_TRUCK:
+            return true;
+        default:
+            return false;
+    }
+}
+
 int pick_best_vehicle(const AuthorizeRequest& req) {
     int best = -1;
+    bool best_plated = false;
     float best_score = -1.0f;
     for (int i = 0; i < req.frame().vehicles_size(); ++i) {
-        const float s = req.frame().vehicles(i).class_conf();
-        if (s > best_score) {
+        const auto& v = req.frame().vehicles(i);
+        const bool plated = carries_plate(v.vehicle_class());
+        const float s = v.class_conf();
+        if ((plated && !best_plated) || (plated == best_plated && s > best_score)) {
             best = i;
+            best_plated = plated;
             best_score = s;
         }
     }

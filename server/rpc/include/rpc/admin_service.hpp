@@ -10,6 +10,7 @@
 
 #include "auth/allowlist_store.hpp"
 #include "gate_service.grpc.pb.h"
+#include "rpc/access_control.hpp"
 
 namespace gate::rpc {
 
@@ -28,7 +29,11 @@ public:
                                  const gate::v1::DeleteAllowlistRequest* req,
                                  gate::v1::UpsertAllowlistResponse* resp) override;
 
+    // Per-RPC role checks from the mTLS client identity (access_control.hpp).
+    void set_enforce_roles(bool on) { policy_.set_enforced(on); }
+
 private:
+    AccessPolicy policy_;
     gate::auth::AllowlistStore& store_;
 };
 

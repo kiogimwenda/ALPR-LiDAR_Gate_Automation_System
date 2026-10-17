@@ -428,3 +428,45 @@ TEST_CASE("integration: Authorize over allowlist hit shows up on dashboard subsc
     sub_ctx.TryCancel();
     sub_reader->Finish();
 }
+
+TEST_CASE("integration: a reconnecting gate is never replayed old commands",
+          "[integration][field][control]") {
+    ServerHarness h;
+    auto stub = h.field_stub();
+
+    // Commands published before the gate (re)connects — e.g. while its
+    // link was down — sit in the broadcaster ring.
+    for (const char* id : {"old-open", "old-reboot"}) {
+        GateCommand cmd;
+        cmd.set_gate_id("gate-east");
+        cmd.set_command_id(id);
+        cmd.set_kind(std::string{id} == "old-open" ? CommandKind::COMMAND_KIND_OPEN_GATE
+                                                   : CommandKind::COMMAND_KIND_REBOOT);
+        h.bus().publish_command("default", cmd);
+    }
+
+    grpc::ClientContext ctx;
+    auto stream = stub->Control(&ctx);
+    {
+        ControlEnvelope env;
+        env.mutable_telemetry()->set_gate_id("gate-east");
+        REQUIRE(stream->Write(env));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{150});
+
+    GateCommand live;
+    live.set_gate_id("gate-east");
+    live.set_command_id("live-close");
+    live.set_kind(CommandKind::COMMAND_KIND_CLOSE_GATE);
+    h.bus().publish_command("default", live);
+
+    // The first (and only) command on the stream is the live one.
+    ControlEnvelope received;
+    REQUIRE(stream->Read(&received));
+    REQUIRE(received.payload_case() == ControlEnvelope::kCommand);
+    CHECK(received.command().command_id() == "live-close");
+
+    stream->WritesDone();
+    ctx.TryCancel();
+    stream->Finish();
+}

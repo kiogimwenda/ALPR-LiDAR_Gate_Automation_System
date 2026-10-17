@@ -18,6 +18,7 @@
 #include "dash/event_broadcaster.hpp"
 #include "fusion/fusion_engine.hpp"
 #include "gate_service.grpc.pb.h"
+#include "rpc/access_control.hpp"
 
 namespace gate::rpc {
 
@@ -39,7 +40,11 @@ public:
     // whether the gRPC writer has been cancelled. Tests can shorten this.
     void set_subscribe_poll_interval(std::chrono::milliseconds dt);
 
+    // Per-RPC role checks from the mTLS client identity (access_control.hpp).
+    void set_enforce_roles(bool on) { policy_.set_enforced(on); }
+
 private:
+    AccessPolicy policy_;
     gate::dash::EventBroadcaster& bus_;
     gate::fusion::FusionEngine& fusion_;
     std::string default_site_id_;

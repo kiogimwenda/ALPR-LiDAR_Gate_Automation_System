@@ -60,9 +60,10 @@ menu "Gate Firmware Configuration"
         string "OTA ed25519 public key (hex)"
         default ""
         help
-            64 hex chars (32-byte ed25519 public key) used to verify
-            the manifest signature over the image digest. Empty until
-            the Phase 4.8 deployment keypair is generated — updates
-            then proceed on the SHA-256 alone, with a loud warning.
+            64 hex chars (32-byte ed25519 public key, from
+            scripts/gen-ota-keys.sh → ota-pubkey.hex) used to verify the
+            manifest signature (scheme gate-ota/v1: version + size +
+            image SHA-256). Required: with no key provisioned every
+            BEGIN_OTA is refused — unsigned images are never flashed.
 
 endmenu

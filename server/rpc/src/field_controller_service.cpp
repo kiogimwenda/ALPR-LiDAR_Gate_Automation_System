@@ -36,6 +36,10 @@ void FieldControllerServiceImpl::set_subscribe_poll_interval(std::chrono::millis
 
 Status FieldControllerServiceImpl::Control(
     ServerContext* ctx, ServerReaderWriter<ControlEnvelope, ControlEnvelope>* stream) {
+    PeerIdentity peer;
+    if (auto denied = policy_.check(ctx, Role::kField, "FieldControllerService.Control", &peer);
+        !denied.ok())
+        return denied;
     // The firmware must open the stream with a Telemetry envelope so we
     // can identify the gate. Without that we don't know how to route
     // commands back, and we'd have to guess the gate_id from later
@@ -51,6 +55,11 @@ Status FieldControllerServiceImpl::Control(
     if (gate_id.empty()) {
         return {StatusCode::INVALID_ARGUMENT, "telemetry.gate_id is required"};
     }
+    // A gate-bound certificate (CN gate-field-<id>) may only speak as
+    // its own gate; later telemetry is checked too, so a stream cannot
+    // switch identity mid-flight.
+    if (auto denied = policy_.check_gate(peer, gate_id); !denied.ok())
+        return denied;
     bus_.publish_telemetry(default_site_id_, first.telemetry());
 
     // Server → firmware: subscribe to broadcaster for commands targeted
@@ -59,9 +68,17 @@ Status FieldControllerServiceImpl::Control(
     // kind filter — Commands always pass through that filter, and
     // everything else (decisions, telemetry, faults, ota) gets dropped
     // before the writer-thread check below.
+    //
+    // Commands are live-only: the subscription starts at the current
+    // event id, so a reconnecting gate is never replayed a command from
+    // the ring (an old OPEN_GATE would open for nobody; an old REBOOT
+    // would loop). A command issued while the gate was offline is
+    // simply not delivered; its issuer sees no ack. The firmware's
+    // CommandGuard refuses duplicates and stale commands as a second line.
     DashboardSubscription filter;
     filter.add_gate_ids(gate_id);
     filter.set_include_decisions(true);
+    filter.set_since_event_id(bus_.last_event_id());
     auto sub = bus_.subscribe(filter);
     if (!sub) {
         return {StatusCode::UNAVAILABLE, "broadcaster is shutting down"};
@@ -97,6 +114,11 @@ Status FieldControllerServiceImpl::Control(
     while (stream->Read(&env)) {
         switch (env.payload_case()) {
             case ControlEnvelope::kTelemetry:
+                if (env.telemetry().gate_id() != gate_id) {
+                    // One stream, one gate: a telemetry tick for another
+                    // gate_id would let one controller spoof another.
+                    break;
+                }
                 bus_.publish_telemetry(default_site_id_, env.telemetry());
                 break;
             case ControlEnvelope::kAck:
@@ -120,22 +142,33 @@ Status FieldControllerServiceImpl::Control(
     return Status::OK;
 }
 
-Status FieldControllerServiceImpl::DeliverOta(ServerContext* /*ctx*/, const OtaManifest* /*req*/,
+Status FieldControllerServiceImpl::DeliverOta(ServerContext* ctx, const OtaManifest* /*req*/,
                                               ServerWriter<OtaChunk>* /*writer*/) {
+    if (auto denied = policy_.check(ctx, Role::kField, "FieldControllerService.DeliverOta");
+        !denied.ok())
+        return denied;
     // OTA delivery requires the firmware-side OTA module (Phase 4.5) and
     // signing infrastructure (Phase 4.8 deployment). Refuse cleanly so a
     // confused client gets a precise error rather than a hang.
     return {StatusCode::UNIMPLEMENTED, "OTA delivery is implemented in Phase 4.5"};
 }
 
-Status FieldControllerServiceImpl::ReportOtaProgress(ServerContext* /*ctx*/,
+Status FieldControllerServiceImpl::ReportOtaProgress(ServerContext* ctx,
                                                      ServerReader<OtaProgress>* /*reader*/,
                                                      google::protobuf::Empty* /*resp*/) {
+    if (auto denied = policy_.check(ctx, Role::kField, "FieldControllerService.ReportOtaProgress");
+        !denied.ok())
+        return denied;
     return {StatusCode::UNIMPLEMENTED, "OTA progress reporting is implemented in Phase 4.5"};
 }
 
-Status FieldControllerServiceImpl::SubmitDetection(ServerContext* /*ctx*/,
-                                                   const DetectionFrame* req, AuthDecision* resp) {
+Status FieldControllerServiceImpl::SubmitDetection(ServerContext* ctx, const DetectionFrame* req,
+                                                   AuthDecision* resp) {
+    // Detections authorize gate openings: only the vision daemon's
+    // identity may submit them, never a field controller's.
+    if (auto denied = policy_.check(ctx, Role::kVision, "FieldControllerService.SubmitDetection");
+        !denied.ok())
+        return denied;
     if (req->gate_id().empty()) {
         return {StatusCode::INVALID_ARGUMENT, "frame.gate_id is required"};
     }

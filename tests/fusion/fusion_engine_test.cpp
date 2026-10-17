@@ -342,3 +342,41 @@ TEST_CASE("FusionEngine: picks the highest-detection-conf plate from a multi-pla
     REQUIRE(d.verdict() == AuthVerdict::AUTH_VERDICT_AUTHORIZED);
     REQUIRE(d.matched_plate() == "HIGHCONF");
 }
+
+TEST_CASE("FusionEngine: a plate-bearing vehicle outranks a more confident pedestrian",
+          "[fusion][lidar]") {
+    auto store = AllowlistStore::open(":memory:");
+    std::vector<Allowlistentry> batch{make_entry("KBZ123A", {VehicleClass::VEHICLE_CLASS_SUV})};
+    store.upsert(kSite, batch);
+    FusionEngine engine{store};
+
+    // The LiDAR sees the SUV (0.6) and the driver standing beside it (0.9).
+    auto req = make_request("KBZ123A", 0.95f, 0.95f, VehicleClass::VEHICLE_CLASS_PEDESTRIAN, 0.9f);
+    *req.mutable_frame()->add_vehicles() = make_vehicle(VehicleClass::VEHICLE_CLASS_SUV, 0.6f);
+    const auto t = kMondayMidnightUtc + 10 * 3600;
+    const auto d = engine.decide_at(req, t, utc_local(t));
+    CHECK(d.matched_class() == VehicleClass::VEHICLE_CLASS_SUV);
+    CHECK(d.verdict() == AuthVerdict::AUTH_VERDICT_AUTHORIZED);
+}
+
+TEST_CASE("FusionEngine: plate-only policy decides on the plate alone", "[fusion][config]") {
+    auto store = AllowlistStore::open(":memory:");
+    std::vector<Allowlistentry> batch{make_entry("KBZ123A")};
+    store.upsert(kSite, batch);
+    FusionConfig cfg;
+    cfg.alpr_weight = 1.0f;
+    cfg.lidar_weight = 0.0f;
+    FusionEngine engine{store, cfg};
+
+    AuthorizeRequest req = make_request("KBZ123A", 0.95f, 0.9f);
+    req.mutable_frame()->clear_vehicles();
+    const auto t = kMondayMidnightUtc + 10 * 3600;
+    const auto d = engine.decide_at(req, t, utc_local(t));
+    CHECK(d.verdict() == AuthVerdict::AUTH_VERDICT_AUTHORIZED);
+    CHECK_THAT(d.combined_conf(), WithinAbs(0.925f, 1e-4f));
+
+    // The default policy refuses the same frame: no LiDAR corroboration.
+    FusionEngine strict{store};
+    CHECK(strict.decide_at(req, t, utc_local(t)).verdict() ==
+          AuthVerdict::AUTH_VERDICT_LOW_CONFIDENCE);
+}

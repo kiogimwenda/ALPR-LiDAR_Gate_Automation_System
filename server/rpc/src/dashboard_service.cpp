@@ -29,6 +29,9 @@ void DashboardServiceImpl::set_subscribe_poll_interval(std::chrono::milliseconds
 
 Status DashboardServiceImpl::Subscribe(ServerContext* ctx, const DashboardSubscription* req,
                                        ServerWriter<DashboardEvent>* writer) {
+    if (auto denied = policy_.check(ctx, Role::kDashboard, "DashboardService.Subscribe");
+        !denied.ok())
+        return denied;
     auto sub = bus_.subscribe(*req);
     if (!sub) {
         return {StatusCode::UNAVAILABLE, "broadcaster is shutting down"};
@@ -61,8 +64,11 @@ Status DashboardServiceImpl::Subscribe(ServerContext* ctx, const DashboardSubscr
     return Status::OK;
 }
 
-Status DashboardServiceImpl::IssueCommand(ServerContext* /*ctx*/, const GateCommand* req,
+Status DashboardServiceImpl::IssueCommand(ServerContext* ctx, const GateCommand* req,
                                           CommandAck* resp) {
+    if (auto denied = policy_.check(ctx, Role::kDashboard, "DashboardService.IssueCommand");
+        !denied.ok())
+        return denied;
     if (req->gate_id().empty()) {
         return {StatusCode::INVALID_ARGUMENT, "gate_id is required"};
     }
@@ -120,8 +126,11 @@ Status DashboardServiceImpl::IssueCommand(ServerContext* /*ctx*/, const GateComm
     return Status::OK;
 }
 
-Status DashboardServiceImpl::Authorize(ServerContext* /*ctx*/, const AuthorizeRequest* req,
+Status DashboardServiceImpl::Authorize(ServerContext* ctx, const AuthorizeRequest* req,
                                        AuthDecision* resp) {
+    if (auto denied = policy_.check(ctx, Role::kDashboard, "DashboardService.Authorize");
+        !denied.ok())
+        return denied;
     if (req->site_id().empty()) {
         return {StatusCode::INVALID_ARGUMENT, "site_id is required"};
     }

@@ -18,8 +18,11 @@ using grpc::StatusCode;
 
 AdminServiceImpl::AdminServiceImpl(gate::auth::AllowlistStore& store) : store_(store) {}
 
-Status AdminServiceImpl::UpsertAllowlist(ServerContext* /*ctx*/, const UpsertAllowlistRequest* req,
+Status AdminServiceImpl::UpsertAllowlist(ServerContext* ctx, const UpsertAllowlistRequest* req,
                                          UpsertAllowlistResponse* resp) {
+    if (auto denied = policy_.check(ctx, Role::kDashboard, "AdminService.UpsertAllowlist");
+        !denied.ok())
+        return denied;
     if (req->site_id().empty()) {
         return {StatusCode::INVALID_ARGUMENT, "site_id is required"};
     }
@@ -38,8 +41,11 @@ Status AdminServiceImpl::UpsertAllowlist(ServerContext* /*ctx*/, const UpsertAll
     return Status::OK;
 }
 
-Status AdminServiceImpl::ListAllowlist(ServerContext* /*ctx*/, const ListAllowlistRequest* req,
+Status AdminServiceImpl::ListAllowlist(ServerContext* ctx, const ListAllowlistRequest* req,
                                        ListAllowlistResponse* resp) {
+    if (auto denied = policy_.check(ctx, Role::kDashboard, "AdminService.ListAllowlist");
+        !denied.ok())
+        return denied;
     if (req->site_id().empty()) {
         return {StatusCode::INVALID_ARGUMENT, "site_id is required"};
     }
@@ -58,8 +64,11 @@ Status AdminServiceImpl::ListAllowlist(ServerContext* /*ctx*/, const ListAllowli
     return Status::OK;
 }
 
-Status AdminServiceImpl::DeleteAllowlist(ServerContext* /*ctx*/, const DeleteAllowlistRequest* req,
+Status AdminServiceImpl::DeleteAllowlist(ServerContext* ctx, const DeleteAllowlistRequest* req,
                                          UpsertAllowlistResponse* resp) {
+    if (auto denied = policy_.check(ctx, Role::kDashboard, "AdminService.DeleteAllowlist");
+        !denied.ok())
+        return denied;
     if (req->site_id().empty()) {
         return {StatusCode::INVALID_ARGUMENT, "site_id is required"};
     }

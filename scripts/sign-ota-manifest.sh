@@ -5,11 +5,16 @@
 # component consumes (schema documented in
 # firmware/components/gate_ota/include/gate_ota/ota_manifest.hpp).
 #
-# Signature convention — must match OtaUpdater::run_inner exactly:
-# the ed25519 signature is over the raw 32-byte SHA-256 digest of the
-# image (the same digest the firmware recomputes from a flash
-# readback), not over the file. openssl's -rawin signs its input as
-# the ed25519 message, which is precisely that.
+# Signature convention (scheme gate-ota/v1) — must match
+# gate::ota::signed_message() exactly. The ed25519 message is the
+# statement
+#
+#     gate-ota/v1\n<version>\n<size>\n<sha256 hex>\n
+#
+# binding the image digest (which the firmware recomputes from a flash
+# readback) to its version and size. The firmware also refuses any
+# version that is not newer than the running one, so an old signed
+# manifest cannot be replayed to downgrade a gate.
 #
 # Usage:
 #   sign-ota-manifest.sh --bin build/gate_firmware.bin \
@@ -47,18 +52,22 @@ trap 'rm -rf "${WORK}"' EXIT
 SIZE="$(stat -c %s "${BIN}")"
 SHA_HEX="$(sha256sum "${BIN}" | cut -d' ' -f1)"
 
-# Raw digest bytes are the ed25519 message (openssl computes them
-# directly — no hex round-trip, no xxd dependency).
-openssl dgst -sha256 -binary "${BIN}" > "${WORK}/digest.bin"
+[[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] || {
+    echo "--version must be MAJOR.MINOR.PATCH[-pre][+build]: ${VERSION}" >&2
+    exit 2
+}
+(( ${#VERSION} < 24 )) || { echo "--version longer than the firmware's 23-char field" >&2; exit 2; }
+
+printf 'gate-ota/v1\n%s\n%s\n%s\n' "${VERSION}" "${SIZE}" "${SHA_HEX}" > "${WORK}/statement.bin"
 openssl pkeyutl -sign -rawin -inkey "${KEY}" \
-    -in "${WORK}/digest.bin" -out "${WORK}/sig.bin"
+    -in "${WORK}/statement.bin" -out "${WORK}/sig.bin"
 SIG_HEX="$(od -An -tx1 "${WORK}/sig.bin" | tr -d ' \n')"
 
 # Self-check before publishing: the public half must accept what the
 # firmware will be asked to accept.
 openssl pkey -in "${KEY}" -pubout -out "${WORK}/pub.pem"
 openssl pkeyutl -verify -rawin -pubin -inkey "${WORK}/pub.pem" \
-    -in "${WORK}/digest.bin" -sigfile "${WORK}/sig.bin" > /dev/null
+    -in "${WORK}/statement.bin" -sigfile "${WORK}/sig.bin" > /dev/null
 
 cat > "${OUT}" <<EOF
 {

@@ -23,3 +23,8 @@ add_executable(test_rpc_field field_controller_service_test.cpp)
 target_link_libraries(test_rpc_field PRIVATE gate_rpc Catch2::Catch2WithMain)
 target_compile_features(test_rpc_field PRIVATE cxx_std_20)
 catch_discover_tests(test_rpc_field)
+
+add_executable(test_rpc_access access_control_test.cpp)
+target_link_libraries(test_rpc_access PRIVATE gate_rpc Catch2::Catch2WithMain)
+target_compile_features(test_rpc_access PRIVATE cxx_std_20)
+catch_discover_tests(test_rpc_access)

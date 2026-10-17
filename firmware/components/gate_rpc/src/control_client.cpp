@@ -466,7 +466,36 @@ void ControlClient::send_ack_completed(const char* command_id, bool success, con
 }
 
 void ControlClient::handle_command(const gate_v1_GateCommand& cmd) {
+    // Replay protection before anything executes: a reconnect must never
+    // re-run an old OPEN_GATE / REBOOT (CommandGuard has the rules).
+    CommandGuard::Verdict admitted;
+    {
+        timeval tv{};
+        gettimeofday(&tv, nullptr);
+        const std::int64_t now_ms =
+            tv.tv_sec < 1'700'000'000LL ? 0 : tv.tv_sec * 1000LL + tv.tv_usec / 1000;
+        const std::int64_t issued_ms =
+            cmd.has_issued_ts ? cmd.issued_ts.seconds * 1000LL + cmd.issued_ts.nanos / 1'000'000
+                              : 0;
+        const std::lock_guard<std::mutex> lock(tracker_mutex_);
+        admitted = guard_.admit(cmd.command_id, issued_ms, now_ms);
+    }
+    if (admitted == CommandGuard::Verdict::kDuplicate) {
+        // Already executed and acked once; a second ack would overwrite
+        // the original outcome server-side. Drop it.
+        ESP_LOGW(kTag, "dropping duplicate command %s", cmd.command_id);
+        return;
+    }
     send_ack_received(cmd);
+    if (!CommandGuard::accepted(admitted)) {
+        ESP_LOGW(kTag, "refusing command %s: %s", cmd.command_id, CommandGuard::describe(admitted));
+        send_ack_completed(cmd.command_id, false, CommandGuard::describe(admitted));
+        return;
+    }
+    if (admitted == CommandGuard::Verdict::kAcceptUnchecked) {
+        ESP_LOGW(kTag, "command %s accepted without an age check (no wall clock or issued_ts)",
+                 cmd.command_id);
+    }
     if (!dispatcher_) {
         send_ack_completed(cmd.command_id, false, "no command dispatcher wired");
         return;

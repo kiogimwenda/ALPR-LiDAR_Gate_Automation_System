@@ -35,7 +35,8 @@ int main(int argc, char** argv) {
     CLI::App app{"gate-automation server: gRPC + ALPR + LiDAR fusion daemon"};
 
     std::string listen_address = "0.0.0.0:50051";
-    std::string site_id = "default";
+    // Matches gate-dashboard's default and the shipped env files.
+    std::string site_id = "site-01";
     std::string db_path = "allowlist.db";
     std::string log_level = "info";
     std::uint32_t shutdown_deadline_sec = 5;
@@ -65,7 +66,37 @@ int main(int argc, char** argv) {
                  "Reject clients without a valid certificate (mTLS).")
         ->needs(app.get_option("--tls-ca"));
 
+    // Fusion policy (fusion_engine.hpp). Defaults: equal ALPR/LiDAR
+    // weight, 0.7 floor — a plate needs LiDAR corroboration to pass.
+    gate::fusion::FusionConfig fusion_cfg;
+    bool plate_only = false;
+    app.add_option("--alpr-weight", fusion_cfg.alpr_weight,
+                   "ALPR weight in the combined confidence.")
+        ->capture_default_str()
+        ->check(CLI::Range(0.0f, 1.0f));
+    app.add_option("--lidar-weight", fusion_cfg.lidar_weight,
+                   "LiDAR weight in the combined confidence.")
+        ->capture_default_str()
+        ->check(CLI::Range(0.0f, 1.0f));
+    app.add_option("--min-confidence", fusion_cfg.min_combined_threshold,
+                   "Combined-confidence floor below which a frame is LOW_CONFIDENCE.")
+        ->capture_default_str()
+        ->check(CLI::Range(0.0f, 1.0f));
+    app.add_option("--lidar-missing-confidence", fusion_cfg.lidar_missing_confidence,
+                   "LiDAR confidence assumed when a frame carries no vehicle.")
+        ->capture_default_str()
+        ->check(CLI::Range(0.0f, 1.0f));
+    app.add_flag("--plate-only", plate_only,
+                 "Site without a LiDAR: decide on the plate alone (alpr-weight 1, lidar-weight 0). "
+                 "Vehicle-class restrictions then cannot be enforced.")
+        ->excludes("--alpr-weight")
+        ->excludes("--lidar-weight");
+
     CLI11_PARSE(app, argc, argv);
+    if (plate_only) {
+        fusion_cfg.alpr_weight = 1.0f;
+        fusion_cfg.lidar_weight = 0.0f;
+    }
 
     spdlog::set_level(spdlog::level::from_str(log_level));
     spdlog::info("gate-server starting (listen={}, site_id={}, db={})", listen_address, site_id,
@@ -79,9 +110,24 @@ int main(int argc, char** argv) {
             "transport: PLAINTEXT — fine for dev/tests; production wants "
             "--tls-cert/--tls-key (Phase 4.10)");
     }
+    if (!(tls.enabled() && tls.require_client_cert)) {
+        spdlog::warn(
+            "RPC role checks are OFF without --require-client-cert: any client may administer "
+            "the allowlist and command gates (rpc/access_control.hpp)");
+    }
+    spdlog::info(
+        "fusion: alpr_weight={:.2f} lidar_weight={:.2f} min_confidence={:.2f} "
+        "lidar_missing={:.2f}{}",
+        fusion_cfg.alpr_weight, fusion_cfg.lidar_weight, fusion_cfg.min_combined_threshold,
+        fusion_cfg.lidar_missing_confidence,
+        plate_only ? " — PLATE-ONLY: vehicle class is not enforced" : "");
+    if (fusion_cfg.alpr_weight + fusion_cfg.lidar_weight <= 0.0f) {
+        spdlog::error("--alpr-weight + --lidar-weight must be > 0");
+        return 2;
+    }
 
     gate::auth::AllowlistStore store = gate::auth::AllowlistStore::open(db_path);
-    gate::fusion::FusionEngine fusion{store};
+    gate::fusion::FusionEngine fusion{store, fusion_cfg};
     gate::dash::EventBroadcaster bus;
 
     gate::rpc::ServerConfig cfg;

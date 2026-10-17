@@ -4,16 +4,17 @@
 //
 //   1. GET the JSON manifest from Config::manifest_url (esp_http_client).
 //   2. Extract → gate::ota::Manifest, then run the pure validate()
-//      rules (version differs, fits the passive slot, uptime gate, …).
+//      rules (strictly newer version, fits the passive slot, uptime
+//      gate, …). No provisioned public key → refused here, before any
+//      download.
 //   3. Stream the image into the passive partition with the
 //      esp_https_ota advanced API (plain http on the field LAN today —
 //      TLS + provisioning arrive with Phase 4.8 deployment).
 //   4. Read the written image back out of the partition, SHA-256 it,
 //      and compare against the manifest digest.
-//   5. Verify the manifest's ed25519 signature over that digest
-//      (libsodium). If no public key is provisioned (Config::pubkey
-//      empty — the deployment keypair is generated in Phase 4.8), log
-//      a loud warning and continue on the checksum alone.
+//   5. Verify the manifest's ed25519 signature (libsodium) over the
+//      gate-ota/v1 statement binding version + size + that digest
+//      (gate::ota::signed_message). Unsigned or mis-signed → abort.
 //   6. esp_https_ota_finish() → passive slot becomes the boot slot.
 //      The caller's DoneCallback fires; main acks the command and
 //      reboots. CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE makes the new

@@ -5,7 +5,10 @@
 # gate_auth (admin → store), gate_fusion (dashboard → fusion engine), and
 # gate_dash (broadcaster). FieldControllerService lands in 4.3.5.
 
+find_package(spdlog CONFIG REQUIRED)
+
 add_library(gate_rpc STATIC
+    src/access_control.cpp
     src/admin_service.cpp
     src/dashboard_service.cpp
     src/field_controller_service.cpp
@@ -23,6 +26,8 @@ target_link_libraries(gate_rpc
         gate_auth
         gate_fusion
         gate_dash
+    PRIVATE
+        spdlog::spdlog
 )
 
 target_compile_features(gate_rpc PUBLIC cxx_std_20)

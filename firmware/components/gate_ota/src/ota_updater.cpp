@@ -204,6 +204,16 @@ const char* OtaUpdater::run_inner() {
     if (err != nullptr) {
         return err;
     }
+    // Unsigned updates are never accepted: without a provisioned key the
+    // checksum alone proves nothing about who built the image. Refuse
+    // before downloading a byte.
+    std::uint8_t pubkey[crypto_sign_PUBLICKEYBYTES];
+    if (cfg_.pubkey_hex == nullptr || cfg_.pubkey_hex[0] == '\0') {
+        return "verify: no OTA public key provisioned (CONFIG_GATE_OTA_PUBKEY) — update refused";
+    }
+    if (!hex_decode(cfg_.pubkey_hex, pubkey, sizeof(pubkey))) {
+        return "verify: provisioned public key is malformed";
+    }
     ESP_LOGI(kTag, "updating %s -> %s (%u bytes, key_id=%s)", cfg_.running_version,
              m.target_version, static_cast<unsigned>(m.image_size), m.signing_key_id);
 
@@ -250,25 +260,21 @@ const char* OtaUpdater::run_inner() {
         return "verify: image sha256 mismatch";
     }
 
-    // 5. Signature over the digest (ADR-009). The deployment keypair
-    // is generated in Phase 4.8; until a public key is provisioned we
-    // proceed on the checksum alone — loudly.
-    std::uint8_t pubkey[crypto_sign_PUBLICKEYBYTES];
-    if (cfg_.pubkey_hex != nullptr && cfg_.pubkey_hex[0] != '\0') {
-        if (!hex_decode(cfg_.pubkey_hex, pubkey, sizeof(pubkey))) {
-            esp_https_ota_abort(handle);
-            return "verify: provisioned public key is malformed";
-        }
-        if (crypto_sign_verify_detached(m.signature.data(), digest, sizeof(digest), pubkey) != 0) {
-            esp_https_ota_abort(handle);
-            return "verify: ed25519 signature rejected";
-        }
-        ESP_LOGI(kTag, "ed25519 signature verified (key_id=%s)", m.signing_key_id);
-    } else {
-        ESP_LOGW(kTag,
-                 "no OTA public key provisioned — accepting on sha256 alone "
-                 "(deployment keypair lands in Phase 4.8)");
+    // 5. Signature (ADR-009, scheme gate-ota/v1) over the statement
+    // binding version + size + the digest just verified from flash.
+    char message[160];
+    const std::size_t message_len = signed_message(m, message, sizeof(message));
+    if (message_len == 0) {
+        esp_https_ota_abort(handle);
+        return "verify: cannot build the signed statement";
     }
+    if (crypto_sign_verify_detached(m.signature.data(),
+                                    reinterpret_cast<const unsigned char*>(message), message_len,
+                                    pubkey) != 0) {
+        esp_https_ota_abort(handle);
+        return "verify: ed25519 signature rejected";
+    }
+    ESP_LOGI(kTag, "ed25519 signature verified (key_id=%s)", m.signing_key_id);
 
     // 6. Validate the image header and flip the boot slot.
     if (esp_https_ota_finish(handle) != ESP_OK) {

@@ -26,6 +26,16 @@ here and must never be committed. A missing file with TLS enabled
 fails the build (`EMBED_TXTFILES`), which is the intended fail-closed
 behaviour: a gate never ships half-provisioned.
 
-Production note: for a real fleet, issue one leaf per gate (SAN =
-gate id) instead of sharing `gate-client.pem`, so a compromised
-controller can be revoked without re-keying the site.
+Production: give each gate its own leaf instead of the shared
+`gate-client.pem`:
+
+```sh
+./scripts/issue-gate-cert.sh /path/to/site-pki gate-01
+cp /path/to/site-pki/gate-01.pem firmware/main/certs/gate.pem
+cp /path/to/site-pki/gate-01.key firmware/main/certs/gate.key
+```
+
+Its CN is `gate-field-gate-01`; gate-server then accepts this board's
+Control stream only as `gate-01` (and never for admin RPCs), so a
+compromised controller is one certificate to retire. The PKI is ECDSA
+P-256 — the ESP32-S3's mbedTLS cannot use Ed25519 certificates.

@@ -11,3 +11,6 @@ target_link_libraries(test_ota_manifest
 )
 
 catch_discover_tests(test_ota_manifest)
+# The scripts-vs-firmware signature agreement test shells out to the
+# shipped scripts/ (bash + openssl).
+target_compile_definitions(test_ota_manifest PRIVATE GATE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
