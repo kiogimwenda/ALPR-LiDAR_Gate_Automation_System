@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <esp_check.h>
 #include <esp_eth.h>
 #include <esp_eth_netif_glue.h>
 #include <esp_event.h>
@@ -111,16 +112,24 @@ esp_err_t Ethernet::start(const Config& cfg) {
         return ESP_ERR_INVALID_STATE;  // already running
     }
 
+    // netif + the default event loop are system services the rest of
+    // the firmware (SNTP, OTA) needs with or without a link: a failure
+    // here is a real fault, so it still aborts.
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
+    // Everything below depends on the W5500 answering on SPI. A board
+    // without one (bench breadboard, unpopulated footprint, dead chip)
+    // must not boot-loop: log and return so main() runs offline.
+    //
     // ethernet_init_all reads its Kconfig (CONFIG_ETH_USE_SPI_ETHERNET +
     // CONFIG_ETHERNET_SPI_DEV0_W5500 + CONFIG_EXAMPLE_ETH_SPI_*) to know
     // which chip and which SPI bus + pins to use. Returns an array of
     // handles — for our single-W5500 setup, exactly one element.
     esp_eth_handle_t* handles = nullptr;
     std::uint8_t port_count = 0;
-    ESP_ERROR_CHECK(ethernet_init_all(&handles, &port_count));
+    ESP_RETURN_ON_ERROR(ethernet_init_all(&handles, &port_count), kTag,
+                        "no ethernet controller (is the W5500 fitted and wired?)");
     if (port_count != 1) {
         ESP_LOGE(kTag, "expected exactly 1 ethernet port, got %u",
                  static_cast<unsigned>(port_count));
@@ -131,29 +140,36 @@ esp_err_t Ethernet::start(const Config& cfg) {
     // we only have one ethernet interface and we're using DHCP.
     esp_netif_config_t netif_cfg = ESP_NETIF_DEFAULT_ETH();
     s.netif = esp_netif_new(&netif_cfg);
-    ESP_ERROR_CHECK(esp_netif_attach(s.netif, esp_eth_new_netif_glue(handles[0])));
+    ESP_RETURN_ON_FALSE(s.netif != nullptr, ESP_ERR_NO_MEM, kTag, "esp_netif_new failed");
+    ESP_RETURN_ON_ERROR(esp_netif_attach(s.netif, esp_eth_new_netif_glue(handles[0])), kTag,
+                        "netif attach failed");
 
     if (cfg.hostname != nullptr && cfg.hostname[0] != '\0') {
-        ESP_ERROR_CHECK(esp_netif_set_hostname(s.netif, cfg.hostname));
+        ESP_RETURN_ON_ERROR(esp_netif_set_hostname(s.netif, cfg.hostname), kTag,
+                            "set hostname failed");
     }
 
     // Set the MAC. esp_eth_ioctl(ETH_CMD_S_MAC_ADDR) overrides the W5500
     // default. We derive a stable locally-administered MAC from the chip
     // factory ID when the caller didn't supply one explicitly.
     auto mac_copy = cfg.mac;
-    ESP_ERROR_CHECK(derive_mac_if_blank(mac_copy));
-    ESP_ERROR_CHECK(esp_eth_ioctl(handles[0], ETH_CMD_S_MAC_ADDR, mac_copy.data()));
+    ESP_RETURN_ON_ERROR(derive_mac_if_blank(mac_copy), kTag, "read factory MAC failed");
+    ESP_RETURN_ON_ERROR(esp_eth_ioctl(handles[0], ETH_CMD_S_MAC_ADDR, mac_copy.data()), kTag,
+                        "set MAC failed");
 
     // Register lifecycle handlers before starting the driver so we don't
     // race the first link-up event.
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &on_eth_event, nullptr));
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &on_ip_event, nullptr));
-    ESP_ERROR_CHECK(
-        esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, &on_ip_event, nullptr));
+    ESP_RETURN_ON_ERROR(
+        esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &on_eth_event, nullptr), kTag,
+        "register ETH_EVENT failed");
+    ESP_RETURN_ON_ERROR(
+        esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &on_ip_event, nullptr), kTag,
+        "register GOT_IP failed");
+    ESP_RETURN_ON_ERROR(
+        esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP, &on_ip_event, nullptr), kTag,
+        "register LOST_IP failed");
 
-    ESP_ERROR_CHECK(esp_eth_start(handles[0]));
+    ESP_RETURN_ON_ERROR(esp_eth_start(handles[0]), kTag, "esp_eth_start failed");
     ESP_LOGI(kTag, "started; awaiting link + DHCP");
     return ESP_OK;
 }
