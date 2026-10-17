@@ -1,0 +1,39 @@
+name: App
+
+# Gate Control — the .NET MAUI operator app (app/). Core (API client,
+# view models, motion physics) is tested on Linux; the full app is built
+# for Android and Windows on a Windows runner. iOS / Mac Catalyst need
+# a macOS runner with Xcode (add one when signing is set up).
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ['app/**', '.github/workflows/app.yml']
+  pull_request:
+    branches: [main, develop]
+    paths: ['app/**', '.github/workflows/app.yml']
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test GateControl.Core
+        run: dotnet test app/tests/GateControl.Core.Tests/GateControl.Core.Tests.csproj -c Release
+
+  app:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install the MAUI workload
+        run: dotnet workload install maui
+      - name: Build (Windows)
+        run: dotnet build app/src/GateControl.App/GateControl.App.csproj -c Release -f net10.0-windows10.0.19041.0
+      - name: Build (Android)
+        run: dotnet build app/src/GateControl.App/GateControl.App.csproj -c Release -f net10.0-android

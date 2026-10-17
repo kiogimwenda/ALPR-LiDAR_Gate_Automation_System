@@ -1,0 +1,42 @@
+# setup-vcpkg — check out vcpkg at the manifest's builtin-baseline and
+# restore its binary cache, so CI configures with the same toolchain
+# file (and the same dependency versions) as a developer machine.
+#
+# Every C++ target in this repo is gated on vcpkg-resolved packages
+# (see the top-level CMakeLists.txt); without this, a CMake configure
+# "succeeds" while skipping server/, dashboard/, simulation/ and tests/.
+name: setup-vcpkg
+description: vcpkg at the manifest baseline + cached binary packages
+inputs:
+  cache-key:
+    description: extra cache-key component (compiler / sanitizer)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Resolve baseline
+      id: baseline
+      shell: bash
+      run: |
+        commit=$(jq -r '."builtin-baseline"' vcpkg.json)
+        [[ "${commit}" =~ ^[0-9a-f]{40}$ ]] || { echo "vcpkg.json has no builtin-baseline" >&2; exit 1; }
+        echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+        echo "VCPKG_ROOT=${RUNNER_TEMP}/vcpkg" >> "$GITHUB_ENV"
+        echo "VCPKG_DEFAULT_BINARY_CACHE=${RUNNER_TEMP}/vcpkg-bincache" >> "$GITHUB_ENV"
+        mkdir -p "${RUNNER_TEMP}/vcpkg-bincache"
+
+    - name: Restore vcpkg binary cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/vcpkg-bincache
+        key: vcpkg-${{ runner.os }}-${{ inputs.cache-key }}-${{ steps.baseline.outputs.commit }}-${{ hashFiles('vcpkg.json') }}
+        restore-keys: |
+          vcpkg-${{ runner.os }}-${{ inputs.cache-key }}-${{ steps.baseline.outputs.commit }}-
+          vcpkg-${{ runner.os }}-${{ inputs.cache-key }}-
+
+    - name: Bootstrap vcpkg
+      shell: bash
+      run: |
+        git clone --filter=tree:0 https://github.com/microsoft/vcpkg.git "${VCPKG_ROOT}"
+        git -C "${VCPKG_ROOT}" checkout --quiet "${{ steps.baseline.outputs.commit }}"
+        "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics

@@ -12,46 +12,44 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compiler: [gcc-13, gcc-14, clang-17, clang-18]
-        build_type: [Debug, Release]
+        include:
+          - { compiler: gcc-14,   cc: gcc-14,   cxx: g++-14,     preset: debug-cpu }
+          - { compiler: gcc-14,   cc: gcc-14,   cxx: g++-14,     preset: release-cpu }
+          - { compiler: clang-18, cc: clang-18, cxx: clang++-18, preset: debug-cpu }
+
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install toolchain
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y cmake ninja-build ccache pkg-config \
-            libsqlite3-dev
-          # Install specific compiler
-          case "${{ matrix.compiler }}" in
-            gcc-13)  sudo apt-get install -y gcc-13 g++-13 ;;
-            gcc-14)  sudo apt-get install -y gcc-14 g++-14 ;;
-            clang-17) sudo apt-get install -y clang-17 ;;
-            clang-18) sudo apt-get install -y clang-18 ;;
-          esac
+          sudo apt-get install -y cmake ninja-build pkg-config autoconf automake \
+            libtool bison flex python3 openssl ${{ matrix.compiler == 'gcc-14' && 'gcc-14 g++-14' || 'clang-18' }}
 
-      - name: Configure CMake
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: ${{ matrix.compiler }}
+
+      - name: Configure (${{ matrix.preset }})
+        # A configure without the vcpkg packages "succeeds" while skipping
+        # server/, dashboard/, simulation/ and tests/ — which is how CI
+        # used to pass while building nothing. Any skip is a failure here.
         run: |
-          case "${{ matrix.compiler }}" in
-            gcc-13)   export CC=gcc-13 CXX=g++-13 ;;
-            gcc-14)   export CC=gcc-14 CXX=g++-14 ;;
-            clang-17) export CC=clang-17 CXX=clang++-17 ;;
-            clang-18) export CC=clang-18 CXX=clang++-18 ;;
-          esac
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX \
-            -DENABLE_GPU=OFF
+          cmake --preset ${{ matrix.preset }} 2>&1 | tee configure.log
+          if grep -q "Skipping " configure.log; then
+            echo "::error::a C++ tree was skipped at configure time"; exit 1
+          fi
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build/${{ matrix.preset }} --parallel
 
-      - name: Test (if tests exist)
+      - name: Test
         run: |
-          if ctest --test-dir build --no-tests=ignore -N 2>/dev/null | grep -q "Total Tests:"; then
-            ctest --test-dir build --no-tests=ignore --output-on-failure
-          else
-            echo "No tests registered yet — skipping."
-          fi
+          n=$(ctest --test-dir build/${{ matrix.preset }} -N | sed -n 's/^Total Tests: //p')
+          echo "registered tests: ${n}"
+          [ "${n:-0}" -ge 200 ] || { echo "expected the full suite (>= 200 tests)" >&2; exit 1; }
+          ctest --test-dir build/${{ matrix.preset }} --output-on-failure -j "$(nproc)"

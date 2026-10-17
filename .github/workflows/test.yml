@@ -14,41 +14,45 @@ jobs:
       matrix:
         sanitizer: [asan, ubsan]
 
+    env:
+      CC: gcc-14
+      CXX: g++-14
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install toolchain
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y cmake ninja-build gcc-14 g++-14 pkg-config \
-            libsqlite3-dev
+          sudo apt-get install -y cmake ninja-build pkg-config autoconf automake \
+            libtool bison flex python3 openssl gcc-14 g++-14
 
-      - name: Configure with sanitizers
+      # Dependencies build without sanitizers (same cache as the gcc-14
+      # build job); only this repo's code is instrumented.
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-key: gcc-14
+
+      - name: Configure (${{ matrix.sanitizer }})
         run: |
-          SANITIZER_FLAGS=""
-          case "${{ matrix.sanitizer }}" in
-            asan)  SANITIZER_FLAGS="-fsanitize=address -fno-omit-frame-pointer" ;;
-            ubsan) SANITIZER_FLAGS="-fsanitize=undefined -fno-omit-frame-pointer" ;;
-          esac
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=gcc-14 \
-            -DCMAKE_CXX_COMPILER=g++-14 \
-            -DCMAKE_C_FLAGS="$SANITIZER_FLAGS" \
-            -DCMAKE_CXX_FLAGS="$SANITIZER_FLAGS" \
-            -DCMAKE_EXE_LINKER_FLAGS="$SANITIZER_FLAGS" \
-            -DENABLE_GPU=OFF
+          cmake --preset ${{ matrix.sanitizer }} 2>&1 | tee configure.log
+          if grep -q "Skipping " configure.log; then
+            echo "::error::a C++ tree was skipped at configure time"; exit 1
+          fi
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build/${{ matrix.sanitizer }} --parallel
 
-      - name: Run tests
+      - name: Test
         env:
-          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          # gRPC keeps process-lifetime singletons; leak checking would
+          # flag them on every test binary.
+          ASAN_OPTIONS: detect_leaks=0:detect_container_overflow=0:halt_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
-          if ctest --test-dir build --no-tests=ignore -N 2>/dev/null | grep -q "Total Tests:"; then
-            ctest --test-dir build --no-tests=ignore --output-on-failure
-          else
-            echo "No tests registered yet — will run once tests are added."
-          fi
+          n=$(ctest --test-dir build/${{ matrix.sanitizer }} -N | sed -n 's/^Total Tests: //p')
+          [ "${n:-0}" -ge 190 ] || { echo "expected the full suite (>= 190 tests), got ${n}" >&2; exit 1; }
+          # Deps are not instrumented: container-overflow / use-after-poison
+          # reports from grpc/protobuf internals are mismatch noise, and the
+          # multi-process e2e passes time out under sanitizer slowdown.
+          ctest --test-dir build/${{ matrix.sanitizer }} --output-on-failure -j "$(nproc)" -E "^e2e_"
