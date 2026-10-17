@@ -14,16 +14,18 @@ which upstream commands to run, and the scripts pick up from the resulting
 
 | File | Purpose |
 |---|---|
-| `convert_onnx_to_trt.py` | ONNX → `.plan` builder. FP16 default, optional INT8, dynamic-shape profiles, sm_80…sm_120 hardware-compat by default. |
+| `build_engines.sh` | **Deployment entry point.** Builds both ALPR engines on the host's own GPU (any RTX 20-series or newer), writes `.meta` sidecars, skips engines already built for this GPU + TensorRT. Uses the Python converter when TensorRT's Python bindings exist, else `trtexec`. Run by `install-server.sh --models`. |
+| `convert_onnx_to_trt.py` | ONNX → `.plan` builder. FP16 default, optional INT8, dynamic-shape profiles, native-to-this-GPU by default (`--hardware-compat same_cc` / `ampere_plus` optional), workspace sized to the GPU's VRAM, writes the `.meta` sidecar. |
 | `inspect_engine.py` | Print a `.plan`'s I/O tensor names, shapes, and dtypes. Use this to verify upstream didn't rename a tensor before the C++ side fails on `setTensorAddress`. |
 
 ## Prerequisites
 
-- TensorRT 10.x (`pip install tensorrt`) — the same major version as the
-  C++ side (`/usr/include/x86_64-linux-gnu/NvInfer.h`).
-- CUDA Toolkit 13.1 (the host the engines are *built* on must have a CUDA
-  driver ≥ TensorRT's minimum; the engine itself runs on whatever the
-  deploy box has, modulo `--hardware-compat`).
+- An NVIDIA RTX 20-series or newer GPU (Turing sm_75 and up) with driver ≥ 580.
+- TensorRT 10.x — the same version the C++ side links. `build_engines.sh`
+  needs only the `trtexec` CLI (`libnvinfer-bin`); `convert_onnx_to_trt.py`
+  needs the Python bindings of the *same* version.
+- Engines are built **on the machine that runs them** (see the
+  hardware-compatibility note below).
 
 ## Step 1 — get the ONNX models from upstream
 
@@ -136,10 +138,19 @@ do not rename it in the engine.
 
 ## Hardware-compatibility note
 
-Engines are built with `HardwareCompatibilityLevel.AMPERE_PLUS` by default, so
-the same `.plan` runs on the dev box (RTX 5060, sm_120) and the production
-server (RTX 4060, sm_89) without rebuilding. To get arch-specific kernels —
-small inference-time win, no portability — pass `--hardware-compat none`.
+The system supports every NVIDIA RTX generation from the 20 series: Turing
+(sm_75), Ampere (sm_86), Ada (sm_89) and Blackwell (sm_120). TensorRT's
+portable modes cannot cover that range — `AMPERE_PLUS` requires sm_80 or newer
+(it excludes every RTX 20 card) and `SAME_COMPUTE_CAPABILITY` covers one
+generation — so engines are built **native, on the host that runs them**
+(`--hardware-compat none`, the default). `build_engines.sh` does that at
+install time and again whenever the GPU or TensorRT version changes.
+
+Each `.plan` gets a `<plan>.meta` sidecar (build GPU, compute capability,
+TensorRT version, compatibility mode). The C++ loader checks it before
+deserializing and refuses a mismatched engine with a "rebuild on this host"
+message, and rejects pre-Turing GPUs outright. `--hardware-compat ampere_plus`
+is still available for a fleet that is entirely sm_80 or newer.
 
 ## Where the .plan files live
 

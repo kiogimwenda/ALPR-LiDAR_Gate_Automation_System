@@ -11,7 +11,7 @@ This is the most powerful computer in the system. It runs the AI models that det
 | Part | Model | Price (approx) |
 |------|-------|-----------------|
 | **Mini PC / SFF PC** | Any mini PC with PCIe x16 slot — e.g., MINISFORUM or BeeLink with desktop CPU | KES 30,000–50,000 / USD 230–385 |
-| **GPU** | NVIDIA GeForce RTX 4060 8GB | KES 40,000–55,000 / USD 310–425 |
+| **GPU** | NVIDIA GeForce RTX 4060 8GB (reference; any RTX 20-series or newer works — see below) | KES 40,000–55,000 / USD 310–425 |
 | **RAM** | 16–32 GB DDR4/DDR5 (depends on mini PC) | Included in mini PC or KES 5,000–10,000 |
 | **Storage** | 256 GB NVMe SSD minimum (for OS + models) | Included in mini PC or KES 4,000–8,000 |
 | **OS** | Debian 12 (Bookworm) or Ubuntu 24.04 LTS | Free |
@@ -25,7 +25,26 @@ If you can't find a mini PC with a PCIe slot, use any desktop PC with:
 - 256 GB SSD
 - Total budget: KES 60,000–80,000 / USD 460–615
 
-### Why RTX 4060?
+### Supported GPUs
+
+Any NVIDIA RTX GPU from the 20 series onward runs the system:
+
+| Generation | Examples | Compute capability |
+|---|---|---|
+| Turing | RTX 2060 / 2070 / 2080 (Super/Ti), Quadro RTX | sm_75 |
+| Ampere | RTX 3050 – 3090 (Ti), RTX A2000 – A6000 | sm_86 |
+| Ada Lovelace | RTX 4060 – 4090, RTX 2000 – 6000 Ada | sm_89 |
+| Blackwell | RTX 5050 – 5090, RTX PRO Blackwell | sm_120 |
+
+- **VRAM:** 4 GB minimum, 6–8 GB recommended (room for the LiDAR model later).
+- **Driver:** 580 or newer (required by CUDA 13).
+- **Engines are built on this machine** for whatever GPU it has:
+  `sudo deployment/install-server.sh … --models <onnx dir>`. If you later
+  swap the GPU or upgrade TensorRT, re-run that command — `gate-vision`
+  refuses an engine built for a different GPU and tells you to.
+- GTX 10-series and older are not supported and are refused at startup.
+
+### Why RTX 4060 as the reference?
 
 - Supports TensorRT 10.x with sm_89 architecture
 - 8 GB VRAM — enough for YOLOv9 + PaddleOCR + LiDAR model simultaneously

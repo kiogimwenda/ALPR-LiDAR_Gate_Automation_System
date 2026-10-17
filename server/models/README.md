@@ -10,29 +10,19 @@ Runtime assets the inference server loads at startup.
 
 ## What does NOT live here
 
-The TensorRT engine plans (`*.plan`) and ONNX exports (`*.onnx`) are
-**not** committed. They are large binary artifacts produced from
-upstream model weights via the conversion tooling that ships in
-Phase 4.2.5 (`scripts/convert_onnx_to_trt.py`).
-
-Build them locally with:
+The TensorRT engine plans (`*.plan`, with their `.meta` sidecars) and ONNX
+exports (`*.onnx`) are **not** committed. Engines are specific to the GPU
+generation and TensorRT version they are built with, so they are built on
+the machine that runs them — any NVIDIA RTX 20-series or newer GPU:
 
 ```bash
-# Coming in Phase 4.2.5:
-python3 scripts/convert_onnx_to_trt.py \
-    --onnx  models/yolov9_plate.onnx \
-    --plan  server/models/yolov9_plate.plan \
-    --fp16
-
-python3 scripts/convert_onnx_to_trt.py \
-    --onnx  models/ppocr_plate_rec.onnx \
-    --plan  server/models/ppocr_plate_rec.plan \
-    --fp16
+scripts/export-models/build_engines.sh --onnx-dir <dir with the ONNX exports> --out-dir server/models
 ```
 
-The server expects the resulting `.plan` files at the paths configured
-in its YAML config (see Phase 4.3 — server RPC milestone for the
-config schema).
+On a deployed server `install-server.sh --models <onnx dir>` runs the same
+script into `/opt/gate/models`. `gate-vision` takes the paths on its command
+line (`--detector-engine`, `--recognizer-engine`; see
+`deployment/config/gate-vision.env`).
 
 ## Why a Kenya-plate dictionary
 

@@ -18,7 +18,7 @@ The current CI matrix runs CPU-only builds (`-DENABLE_GPU=OFF`) on GitHub-hosted
 To run GPU tests (TensorRT inference, CUDA kernels, OpenCV CUDA pipelines), a
 **self-hosted runner** with an NVIDIA GPU is required. Setup steps:
 
-1. Provision a machine with an NVIDIA GPU (RTX 4060 or better) running Ubuntu 24.04
+1. Provision a machine with an NVIDIA RTX 20-series or newer GPU (driver ≥ 580) running Ubuntu 24.04
 2. Install the CUDA toolkit, cuDNN, TensorRT, and OpenCV-with-CUDA
 3. Register as a GitHub Actions self-hosted runner per
    https://docs.github.com/en/actions/hosting-your-own-runners

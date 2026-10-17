@@ -21,6 +21,13 @@ option(BUILD_SIM        "Build the gate-sim virtual field controller"   ON)
 add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 
 if(ENABLE_GPU)
+    # Supported GPUs: every NVIDIA RTX generation from the 20 series —
+    # Turing (75), Ampere (86), Ada (89), Blackwell (120). Must be set
+    # before enable_language(CUDA). Override with -DCMAKE_CUDA_ARCHITECTURES=native
+    # for a single-host build.
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES 75 86 89 120)
+    endif()
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()

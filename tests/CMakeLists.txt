@@ -19,6 +19,10 @@ if(TARGET gate_inference)
     add_subdirectory(inference)
 endif()
 
+# Engine-vs-GPU compatibility rules (RTX 20 / Turing and newer). Header-only,
+# no TensorRT — built in every configuration.
+add_subdirectory(engine_compat)
+
 # Auth tests link against gate_auth (which transitively requires gate_proto).
 # Gated the same way so a CPU-only proto build still gets full coverage of
 # the allowlist/blocklist store without paying for TensorRT.
@@ -103,7 +107,7 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard AND TARGET g
                 --sim $<TARGET_FILE:gate-sim>
                 --dashboard $<TARGET_FILE:gate-dashboard>
         )
-        set_tests_properties(e2e_local_stack PROPERTIES TIMEOUT 120)
+        set_tests_properties(e2e_local_stack PROPERTIES TIMEOUT 120 RESOURCE_LOCK e2e_fixed_ports)
 
         # The same pass under mTLS (Phase 4.10.1): ephemeral site PKI,
         # every channel encrypted, plus enforcement checks that
@@ -115,7 +119,7 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard AND TARGET g
                 --dashboard $<TARGET_FILE:gate-dashboard>
                 --tls
         )
-        set_tests_properties(e2e_tls_stack PROPERTIES TIMEOUT 120)
+        set_tests_properties(e2e_tls_stack PROPERTIES TIMEOUT 120 RESOURCE_LOCK e2e_fixed_ports)
 
         # And under JWT admin auth (Phase 4.10.2): admin routes 401
         # without a token, login mints one, the CRUD + command
@@ -127,7 +131,7 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard AND TARGET g
                 --dashboard $<TARGET_FILE:gate-dashboard>
                 --auth
         )
-        set_tests_properties(e2e_auth_stack PROPERTIES TIMEOUT 120)
+        set_tests_properties(e2e_auth_stack PROPERTIES TIMEOUT 120 RESOURCE_LOCK e2e_fixed_ports)
 
         # Phase 5.3: the vision ingest path — gate-vision replays a
         # scripted scenario into SubmitDetection; the unknown plate is
@@ -140,7 +144,20 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard AND TARGET g
                 --dashboard $<TARGET_FILE:gate-dashboard>
                 --vision $<TARGET_FILE:gate-vision>
         )
-        set_tests_properties(e2e_vision_stack PROPERTIES TIMEOUT 120)
+        set_tests_properties(e2e_vision_stack PROPERTIES TIMEOUT 120 RESOURCE_LOCK e2e_fixed_ports)
+
+        # Phase 6.1: the LiDAR path end to end — plate-only frames plus a
+        # ray-cast scene through gate-vision's detector; the LiDAR's SUV
+        # classification authorizes an SUV-registered plate and holds a
+        # sedan-registered one for manual review.
+        add_test(NAME e2e_lidar_stack
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/e2e/e2e_local_stack.py
+                --server $<TARGET_FILE:gate-server>
+                --sim $<TARGET_FILE:gate-sim>
+                --dashboard $<TARGET_FILE:gate-dashboard>
+                --vision $<TARGET_FILE:gate-vision> --lidar
+        )
+        set_tests_properties(e2e_lidar_stack PROPERTIES TIMEOUT 180 RESOURCE_LOCK e2e_fixed_ports)
 
         # Phase 4.10.4 closure, extended by 5.3: the full production
         # posture in one pass — every channel mTLS, the admin surface
@@ -152,8 +169,8 @@ if(TARGET gate-server AND TARGET gate-sim AND TARGET gate-dashboard AND TARGET g
                 --sim $<TARGET_FILE:gate-sim>
                 --dashboard $<TARGET_FILE:gate-dashboard>
                 --tls --auth
-                --vision $<TARGET_FILE:gate-vision>
+                --vision $<TARGET_FILE:gate-vision> --lidar
         )
-        set_tests_properties(e2e_hardened_stack PROPERTIES TIMEOUT 120)
+        set_tests_properties(e2e_hardened_stack PROPERTIES TIMEOUT 180 RESOURCE_LOCK e2e_fixed_ports)
     endif()
 endif()

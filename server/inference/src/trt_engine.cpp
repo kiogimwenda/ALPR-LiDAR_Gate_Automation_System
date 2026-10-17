@@ -13,6 +13,8 @@
 #include <sstream>
 #include <utility>
 
+#include "inference/detail/engine_compat.hpp"
+
 namespace gate::inference {
 
 namespace {
@@ -60,6 +62,29 @@ spdlog::level::level_enum to_spdlog(nvinfer1::ILogger::Severity s) noexcept {
             return spdlog::level::debug;
     }
     return spdlog::level::info;
+}
+
+// The GPU this process runs on, for compatibility checks and logs.
+struct DeviceInfo {
+    std::string name;
+    int major = 0;
+    int minor = 0;
+};
+
+DeviceInfo current_device() {
+    int dev = 0;
+    check_cuda(cudaGetDevice(&dev), "cudaGetDevice");
+    cudaDeviceProp prop{};
+    check_cuda(cudaGetDeviceProperties(&prop, dev), "cudaGetDeviceProperties");
+    return DeviceInfo{prop.name, prop.major, prop.minor};
+}
+
+// "major.minor.patch" of the TensorRT library actually loaded at runtime
+// (getInferLibVersion() = major*10000 + minor*100 + patch).
+std::string linked_tensorrt_version() {
+    const int v = getInferLibVersion();
+    return std::to_string(v / 10000) + "." + std::to_string((v / 100) % 100) + "." +
+           std::to_string(v % 100);
 }
 
 }  // namespace
@@ -137,6 +162,26 @@ std::string shape_to_string(const nvinfer1::Dims& d) {
 // ---- TrtEngine: lifecycle --------------------------------------------------
 
 TrtEngine TrtEngine::load(const std::filesystem::path& engine_path, nvinfer1::ILogger& logger) {
+    // GPU generation gate (RTX 20 / Turing and newer) and engine-vs-host
+    // checks first, so a wrong .plan fails with a fix, not an opaque error.
+    const auto dev = current_device();
+    const auto trt_version = linked_tensorrt_version();
+    if (auto why = detail::check_device_supported(dev.name, dev.major, dev.minor)) {
+        throw TrtException(*why);
+    }
+    auto meta_path = engine_path;
+    meta_path += ".meta";
+    if (std::ifstream meta_in{meta_path}) {
+        const auto meta = detail::parse_engine_meta(meta_in);
+        if (auto why =
+                detail::check_engine_compat(meta, dev.name, dev.major, dev.minor, trt_version)) {
+            throw TrtException(engine_path.string() + ": " + *why);
+        }
+    } else {
+        spdlog::warn("{}: no .meta sidecar — cannot pre-check GPU/TensorRT compatibility",
+                     engine_path.string());
+    }
+
     auto blob = read_engine_blob(engine_path);
 
     TrtEngine self;
@@ -152,7 +197,12 @@ TrtEngine TrtEngine::load(const std::filesystem::path& engine_path, nvinfer1::IL
 
     self.engine_.reset(self.runtime_->deserializeCudaEngine(blob.data(), blob.size()));
     if (!self.engine_) {
-        throw TrtException("deserializeCudaEngine failed for: " + engine_path.string());
+        throw TrtException("deserializeCudaEngine failed for: " + engine_path.string() + " on '" +
+                           dev.name + "' (" + detail::sm_label(dev.major, dev.minor) +
+                           ", TensorRT " + trt_version +
+                           "). Engines are specific to the GPU generation and TensorRT version "
+                           "they were built with — rebuild them on this host: "
+                           "scripts/export-models/build_engines.sh");
     }
 
     self.context_.reset(self.engine_->createExecutionContext());
@@ -180,8 +230,9 @@ TrtEngine TrtEngine::load(const std::filesystem::path& engine_path, nvinfer1::IL
 
     self.allocate_buffers_();
 
-    spdlog::info("Loaded TensorRT engine: {} ({} I/O tensors)", engine_path.string(),
-                 self.tensors_.size());
+    spdlog::info("Loaded TensorRT engine: {} ({} I/O tensors) on {} ({}, TensorRT {})",
+                 engine_path.string(), self.tensors_.size(), dev.name,
+                 detail::sm_label(dev.major, dev.minor), trt_version);
     return self;
 }
 
