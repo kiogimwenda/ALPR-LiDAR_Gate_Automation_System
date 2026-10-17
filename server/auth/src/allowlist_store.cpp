@@ -553,9 +553,11 @@ AllowlistStore::Page AllowlistStore::list(const std::string& site_id, std::uint3
     plates.reserve(limit);
     while (sqlite3_step(s.get()) == SQLITE_ROW) {
         if (page.entries.size() == limit) {
-            // The (limit+1)-th row exists — keep paging from the previous plate.
+            // The (limit+1)-th row exists — keep paging from the previous
+            // plate. Break, don't return: this page's classes and windows
+            // still have to be hydrated below.
             page.next_token = page.entries.back().plate_text();
-            return page;
+            break;
         }
         gate::v1::Allowlistentry e;
         e.set_plate_text(column_text(s.get(), 0));

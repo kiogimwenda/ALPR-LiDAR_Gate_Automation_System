@@ -159,6 +159,37 @@ TEST_CASE("AllowlistStore: list paginates and orders by plate_text", "[allowlist
     REQUIRE(p3.next_token.empty());
 }
 
+TEST_CASE("AllowlistStore: every page carries its classes and time windows",
+          "[allowlist][list]") {
+    auto store = AllowlistStore::open(":memory:");
+    std::vector<Allowlistentry> batch;
+    for (const char* p : {"AAA111", "BBB222", "CCC333"}) {
+        auto e = make_entry(p);
+        e.add_allowed_classes(VehicleClass::VEHICLE_CLASS_SUV);
+        auto* w = e.add_time_windows();
+        w->set_start_minute_of_day(360);
+        w->set_end_minute_of_day(1080);
+        w->set_days_of_week_mask(0x1F);
+        batch.push_back(e);
+    }
+    store.upsert("site-a", batch);
+
+    // A full page (more rows follow) used to return before hydration and
+    // silently drop the restrictions of everything but the last page.
+    std::string token;
+    int pages = 0;
+    do {
+        const auto page = store.list("site-a", 1, token);
+        REQUIRE(page.entries.size() == 1);
+        INFO(page.entries[0].plate_text());
+        CHECK(page.entries[0].allowed_classes_size() == 1);
+        CHECK(page.entries[0].time_windows_size() == 1);
+        token = page.next_token;
+        ++pages;
+    } while (!token.empty());
+    CHECK(pages == 3);
+}
+
 TEST_CASE("AllowlistStore: blocklist upsert + lookup are site-scoped", "[allowlist][blocklist]") {
     auto store = AllowlistStore::open(":memory:");
 
