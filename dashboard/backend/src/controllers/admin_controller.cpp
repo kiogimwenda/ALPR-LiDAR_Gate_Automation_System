@@ -105,7 +105,7 @@ public:
             cb(drogon::HttpResponse::newHttpJsonResponse(out));
         }
     }
-    void ack(const drogon::HttpRequestPtr& req, Callback&& cb, std::string id) const {
+    void ack(const drogon::HttpRequestPtr& req, Callback&& cb, const std::string& id) const {
         if (const auto h = store_or_error(cb)) {
             if (!h->acknowledge_alert(parse_id(id), request_user(req))) {
                 cb(json_error(drogon::k404NotFound, "no such alert"));
@@ -218,7 +218,8 @@ public:
         cb(resp);
     }
 
-    void update_user(const drogon::HttpRequestPtr& req, Callback&& cb, std::string id) const {
+    void update_user(const drogon::HttpRequestPtr& req, Callback&& cb,
+                     const std::string& id) const {
         const auto h = store_or_error(cb);
         const auto body = req->getJsonObject();
         if (h == nullptr) {
@@ -241,7 +242,8 @@ public:
         cb(drogon::HttpResponse::newHttpJsonResponse(user_json(*u)));
     }
 
-    void delete_user(const drogon::HttpRequestPtr& req, Callback&& cb, std::string id) const {
+    void delete_user(const drogon::HttpRequestPtr& req, Callback&& cb,
+                     const std::string& id) const {
         if (const auto h = store_or_error(cb)) {
             const auto me = h->user_by_name(request_user(req));
             if (me && me->id == parse_id(id)) {
