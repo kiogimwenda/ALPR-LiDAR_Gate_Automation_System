@@ -53,10 +53,19 @@ jobs:
       - name: Configure + generate the proto headers
         run: |
           cmake --preset debug-cpu 2>&1 | tee configure.log
-          if grep -q "Skipping " configure.log; then
+          if grep -qE "Skipping [^ ]+: .*not found" configure.log; then
             echo "::error::a C++ tree was skipped at configure time"; exit 1
           fi
           cmake --build build/debug-cpu --target gate_proto
+
+      - name: Save vcpkg binary cache
+        # Right after configure (which runs vcpkg install) and even when
+        # it failed, so packages that did build are kept for the next run.
+        if: always() && env.VCPKG_CACHE_KEY != '' && env.VCPKG_CACHE_HIT != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/vcpkg-bincache
+          key: ${{ env.VCPKG_CACHE_KEY }}
 
       - name: Run clang-tidy
         # Checks and naming rules: .clang-tidy (warnings are errors).
