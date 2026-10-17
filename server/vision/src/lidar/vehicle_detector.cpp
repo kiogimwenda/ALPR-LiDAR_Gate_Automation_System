@@ -367,7 +367,8 @@ void VehicleDetector::cluster() {
                     if (x < 0 || x >= nx) {
                         continue;
                     }
-                    const auto n = static_cast<std::size_t>(y * nx + x);
+                    const auto n = static_cast<std::size_t>(y) * static_cast<std::size_t>(nx) +
+                                   static_cast<std::size_t>(x);
                     if (label[n] < 0 && start[n + 1] != start[n]) {
                         label[n] = next_label;
                         queue.push_back(static_cast<std::int32_t>(n));

@@ -12,7 +12,7 @@ namespace gate::vision::lidar {
 
 namespace {
 
-using json = nlohmann::json;
+using json = nlohmann::json;  // NOLINT(readability-identifier-naming): nlohmann idiom
 
 [[noreturn]] void fail(const std::string& where, const std::string& why) {
     throw std::runtime_error("lidar config: " + where + ": " + why);

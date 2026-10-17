@@ -10,11 +10,13 @@
 #include <stdexcept>
 #include <thread>
 
+#include "vision/stop.hpp"
+
 namespace gate::vision::lidar {
 
 namespace {
 
-using json = nlohmann::json;
+using json = nlohmann::json;  // NOLINT(readability-identifier-naming): nlohmann idiom
 
 struct Box {
     float cx, cy, yaw;  // footprint centre + heading (gate frame)
@@ -158,9 +160,8 @@ std::optional<PointCloud> SyntheticSource::next() {
         return std::nullopt;
     }
     if (cfg_.realtime) {
-        std::this_thread::sleep_until(
-            steady_t0_ +
-            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(t)));
+        vision::sleep_until(steady_t0_ + std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::duration<double>(t)));
     }
     ++batch_;
 

@@ -7,6 +7,8 @@
 #include <thread>
 #include <unitree_lidar_sdk.h>
 
+#include "vision/stop.hpp"
+
 namespace gate::vision::lidar {
 
 namespace usdk = unitree_lidar_sdk;
@@ -103,7 +105,7 @@ UnitreeL1Source::~UnitreeL1Source() {
 
 std::optional<PointCloud> UnitreeL1Source::next() {
     const auto deadline = std::chrono::steady_clock::now() + cfg_.timeout;
-    while (std::chrono::steady_clock::now() < deadline) {
+    while (std::chrono::steady_clock::now() < deadline && !vision::stop_requested()) {
         switch (impl_->reader->runParse()) {
             case usdk::POINTCLOUD: {
                 const usdk::PointCloudUnitree& c = impl_->reader->getCloud();

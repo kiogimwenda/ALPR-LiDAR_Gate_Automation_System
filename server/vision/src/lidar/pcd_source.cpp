@@ -9,6 +9,8 @@
 #include <stdexcept>
 #include <thread>
 
+#include "vision/stop.hpp"
+
 namespace gate::vision::lidar {
 
 namespace fs = std::filesystem;
@@ -212,7 +214,7 @@ std::optional<PointCloud> PcdReplaySource::next() {
         const auto due =
             t0_ + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                       std::chrono::duration<double>(static_cast<double>(emitted_) / cfg_.rate_hz));
-        std::this_thread::sleep_until(due);
+        vision::sleep_until(due);
     }
     PointCloud pc;
     try {

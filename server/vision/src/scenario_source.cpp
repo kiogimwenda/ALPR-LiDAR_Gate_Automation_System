@@ -9,6 +9,8 @@
 #include <thread>
 #include <utility>
 
+#include "vision/stop.hpp"
+
 namespace gate::vision {
 
 namespace {
@@ -169,7 +171,7 @@ std::chrono::system_clock::time_point SteadyClock::wall_now() {
 }
 
 void SteadyClock::sleep_until(std::chrono::steady_clock::time_point tp) {
-    std::this_thread::sleep_until(tp);
+    vision::sleep_until(tp);  // wakes early on SIGTERM (stop.hpp)
 }
 
 ScenarioSource::ScenarioSource(std::vector<ScenarioEvent> events, unsigned loops,
@@ -245,6 +247,9 @@ std::optional<ObservationSet> ScenarioSource::next() {
     }
     const ScenarioEvent& ev = events_[index_];
     clock_->sleep_until(epoch_ + ev.offset);
+    if (stop_requested()) {
+        return std::nullopt;  // shutting down: don't emit a frame we won't submit
+    }
 
     ObservationSet out;
     out.capture_ts = clock_->wall_now();

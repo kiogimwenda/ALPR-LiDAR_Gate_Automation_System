@@ -11,6 +11,8 @@
 #include <thread>
 #include <utility>
 
+#include "vision/stop.hpp"
+
 namespace gate::vision {
 
 namespace {
@@ -96,7 +98,9 @@ gate::v1::AuthDecision SubmitClient::submit(const gate::v1::DetectionFrame& fram
             "submit_client: SubmitDetection frame_id={} UNAVAILABLE (attempt {}/{}), "
             "retrying in {} ms",
             frame.frame_id(), attempt, attempts, backoff.count());
-        std::this_thread::sleep_for(backoff);
+        if (!vision::sleep_for(backoff)) {
+            break;  // shutting down
+        }
         backoff *= 2;
     }
 

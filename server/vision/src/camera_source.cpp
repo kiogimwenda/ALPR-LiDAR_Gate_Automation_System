@@ -11,6 +11,8 @@
 #include <thread>
 #include <utility>
 
+#include "vision/stop.hpp"
+
 namespace gate::vision {
 
 namespace {
@@ -80,7 +82,7 @@ std::optional<ObservationSet> CameraSource::next() {
         next_due_ = now;
     }
     if (next_due_ > now) {
-        std::this_thread::sleep_until(next_due_);
+        vision::sleep_until(next_due_);
     }
     next_due_ += std::chrono::milliseconds{cfg_.frame_interval_ms};
 
@@ -95,7 +97,9 @@ std::optional<ObservationSet> CameraSource::next() {
                 "camera capture dead after " + std::to_string(failures - 1) + " failed reads";
             return std::nullopt;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        if (!vision::sleep_for(std::chrono::milliseconds{100})) {
+            return std::nullopt;  // shutting down
+        }
     }
 
     ObservationSet out;

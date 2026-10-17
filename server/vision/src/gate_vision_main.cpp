@@ -44,6 +44,7 @@
 #include "vision/lidar/pcd_source.hpp"
 #include "vision/lidar/synthetic_source.hpp"
 #include "vision/scenario_source.hpp"
+#include "vision/stop.hpp"
 #include "vision/submit_client.hpp"
 
 #if defined(GATE_VISION_HAVE_UNITREE)
@@ -56,12 +57,12 @@
 
 namespace {
 
-// Same async-signal-safe pattern as gate-server: the handler only sets
-// the flag; the submit loop polls it between frames.
-volatile std::sig_atomic_t g_shutdown_requested = 0;
-
+// The handler only sets a lock-free atomic (async-signal-safe). Every
+// wait in the daemon goes through vision::sleep_until (stop.hpp), so a
+// SIGTERM ends a scripted gap, a camera cadence or a submit backoff
+// within ~50 ms instead of whenever the next frame was due.
 void handle_signal(int /*sig*/) {
-    g_shutdown_requested = 1;
+    gate::vision::request_stop();
 }
 
 // --lidar <spec> → driver. Throws on an unknown or unavailable scheme.
@@ -246,7 +247,7 @@ int main(int argc, char** argv) {
 
         std::uint64_t submitted = 0;
         std::uint64_t authorized = 0;
-        while (g_shutdown_requested == 0) {
+        while (!gate::vision::stop_requested()) {
             const auto obs = source->next();
             if (!obs) {
                 break;  // Stream ended (scenario done, camera dead).
@@ -270,11 +271,12 @@ int main(int argc, char** argv) {
                 frame.vehicles_size(), decision.combined_conf(), decision.reason_text());
         }
 
-        const std::string failure = g_shutdown_requested ? std::string{} : source->failure();
+        const std::string failure =
+            gate::vision::stop_requested() ? std::string{} : source->failure();
         spdlog::info("gate-vision stopping ({}): {} frames submitted, {} authorized",
-                     g_shutdown_requested ? "signal"
-                     : failure.empty()    ? "end of stream"
-                                          : "source failed",
+                     gate::vision::stop_requested() ? "signal"
+                     : failure.empty()              ? "end of stream"
+                                                    : "source failed",
                      submitted, authorized);
         if (lidar_worker) {
             lidar_worker->stop();
@@ -291,6 +293,11 @@ int main(int argc, char** argv) {
         // One exit path for every fail-closed throw: bad PEM, bad
         // scenario, dead camera, exhausted submit retries. systemd
         // restarts us; a scripted E2E sees the non-zero exit.
+        if (gate::vision::stop_requested()) {
+            // A submit cut short by SIGTERM is a clean stop, not a fault.
+            spdlog::info("gate-vision stopping (signal): {}", e.what());
+            return 0;
+        }
         spdlog::error("gate-vision: fatal: {}", e.what());
         return 1;
     }

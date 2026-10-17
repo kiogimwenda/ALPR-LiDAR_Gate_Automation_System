@@ -16,7 +16,10 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
+
+#include "vision/stop.hpp"
 
 using gate::vision::Clock;
 using gate::vision::ObservationSet;
@@ -238,4 +241,28 @@ TEST_CASE("scenario stamps capture_ts from the injected clock", "[vision][scenar
     REQUIRE(second.has_value());
     const auto delta = second->capture_ts - first->capture_ts;
     CHECK(std::chrono::duration_cast<std::chrono::milliseconds>(delta).count() == 750);
+}
+
+TEST_CASE("scenario wakes from a long gap when a stop is requested", "[vision][scenario][stop]") {
+    // Real clock: SIGTERM mid-gap must not wait out the 60 s offset.
+    gate::vision::reset_stop();
+    auto src = ScenarioSource::from_json(
+        R"({"events": [
+             {"offset_ms": 0,     "plates": [{"text": "A1", "detection_conf": 0.9, "ocr_conf": 0.9}]},
+             {"offset_ms": 60000, "plates": [{"text": "B2", "detection_conf": 0.9, "ocr_conf": 0.9}]}
+           ]})");
+    REQUIRE(src.next().has_value());
+
+    std::thread stopper([] {
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        gate::vision::request_stop();
+    });
+    const auto start = std::chrono::steady_clock::now();
+    const auto second = src.next();
+    const auto waited = std::chrono::steady_clock::now() - start;
+    stopper.join();
+    gate::vision::reset_stop();
+
+    CHECK_FALSE(second.has_value());
+    CHECK(waited < std::chrono::seconds{1});
 }
