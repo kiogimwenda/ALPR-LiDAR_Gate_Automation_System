@@ -15,7 +15,7 @@
         </Style>
     </ContentPage.Resources>
     <ScrollView>
-        <VerticalStackLayout Padding="16,8,16,40" MaximumWidthRequest="700">
+        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,40', Default='28,12,28,40'}">
             <!-- Who's signed in -->
             <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">

@@ -33,7 +33,7 @@
 
     <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
         <ScrollView>
-            <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="1100">
+            <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
                 <c:SegmentedControl x:Name="PeriodPicker" Margin="0,4,0,14"
                                     SelectedIndex="{Binding Period, Converter={StaticResource EnumIndex}}" />
 

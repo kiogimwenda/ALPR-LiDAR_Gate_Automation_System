@@ -12,7 +12,7 @@
             Title="Users">
     <Grid>
         <ScrollView>
-            <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="700">
+            <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
                 <Grid ColumnDefinitions="*,Auto" Margin="2,8,2,6">
                     <Label Text="Accounts" Style="{StaticResource SectionHeader}" Margin="0" VerticalOptions="Center" />
                     <Button Grid.Column="1" Text="Add user" Style="{StaticResource TintedButton}" HeightRequest="34"

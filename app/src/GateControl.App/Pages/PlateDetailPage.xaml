@@ -8,7 +8,7 @@
             x:DataType="vm:PlateDetailViewModel"
             Title="{Binding Plate}">
     <ScrollView>
-        <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="900">
+        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
             <!-- The plate, printed large -->
             <Border StrokeThickness="2" StrokeShape="RoundRectangle 10" Padding="18,8" HorizontalOptions="Start"
                     Stroke="{AppThemeBinding Light={StaticResource LabelLight}, Dark={StaticResource LabelDark}}"

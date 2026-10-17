@@ -8,7 +8,7 @@
             x:DataType="vm:GatesViewModel"
             Title="Gates">
     <ScrollView>
-        <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="700" Spacing="0">
+        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}" Spacing="0">
             <Label Style="{StaticResource Footnote}" Margin="4,10,4,4"
                    Text="Name each gate and say which way it lets vehicles through. Visits, dwell time and who is on site need an entry gate and an exit gate." />
             <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}" Margin="4,8"

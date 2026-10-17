@@ -7,7 +7,7 @@
             x:DataType="vm:DataSettingsViewModel"
             Title="Data">
     <ScrollView>
-        <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="700">
+        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
             <Label Text="Keep history for" Style="{StaticResource SectionHeader}" />
             <Border Style="{StaticResource Card}">
                 <VerticalStackLayout Spacing="6">

@@ -11,7 +11,7 @@
     <Grid>
         <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
             <ScrollView>
-                <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="900">
+                <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
                     <Border Style="{StaticResource Inset}" HeightRequest="40">
                         <Entry Text="{Binding Query}" Placeholder="Search plate, owner or unit"
                                IsSpellCheckEnabled="False" ReturnType="Search" VerticalOptions="Center" />

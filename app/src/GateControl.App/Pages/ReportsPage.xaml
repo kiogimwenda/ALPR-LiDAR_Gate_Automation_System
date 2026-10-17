@@ -41,7 +41,7 @@
     </ContentPage.Resources>
 
     <ScrollView>
-        <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="1100">
+        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
             <c:SegmentedControl x:Name="KindPicker" Margin="0,4,0,12"
                                 SelectedIndex="{Binding Kind, Converter={StaticResource EnumIndex}}" />
 

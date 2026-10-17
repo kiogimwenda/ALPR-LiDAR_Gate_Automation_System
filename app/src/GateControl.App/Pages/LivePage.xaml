@@ -9,7 +9,7 @@
             x:DataType="vm:LiveViewModel">
     <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
         <ScrollView>
-            <VerticalStackLayout Padding="16,8,16,32" Spacing="0" MaximumWidthRequest="1100">
+            <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}" Spacing="0">
 
                 <!-- Status line: connection + today's tally -->
                 <HorizontalStackLayout Spacing="10" Margin="2,4,2,4">
