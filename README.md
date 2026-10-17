@@ -6,7 +6,7 @@ to authorize or deny entry. ALPR runs YOLOv9 for plate detection and
 PaddleOCR for character recognition, both accelerated via TensorRT on
 NVIDIA GPUs. A 3D LiDAR pipeline classifies the vehicle independently. A
 custom 4-layer ESP32-S3 field PCB drives the gate motor and senses
-limit/safety inputs. A Drogon + SvelteKit dashboard provides real-time
+limit/safety inputs. A Drogon API and the native Gate Control app (.NET MAUI: Android, iOS, macOS, Windows) provide real-time
 monitoring, manual override, and audit logs.
 
 **Repository:** [github.com/kiogimwenda/ALPR-LiDAR_Gate_Automation_System](https://github.com/kiogimwenda/ALPR-LiDAR_Gate_Automation_System)
@@ -27,8 +27,9 @@ alternative that:
 - **Cross-checks plate against vehicle class** via 3D LiDAR — a sedan with
   a truck's plate is denied even if OCR succeeds. This is the LiDAR-fusion
   story that makes the system tailgating- and clone-resistant.
-- **Runs entirely on a single GPU server on the local LAN** (RTX 4060 8 GB)
-  — no cloud round-trip, no monthly per-gate fees.
+- **Runs entirely on a single GPU server on the local LAN** — any NVIDIA
+  RTX 20-series or newer GPU (reference build: RTX 4060 8 GB) — no cloud
+  round-trip, no monthly per-gate fees.
 - **Is repairable in the field** — every component is sourced from
   Luthuli Avenue (Nairobi) or AliExpress, the BOM is published, and the
   PCB is hand-solderable with documented through-hole points for the
@@ -55,7 +56,7 @@ alternative that:
 │                                                            │             │
 │   GPU server: ALPR (YOLOv9 + PaddleOCR, TensorRT) +       │             │
 │   LiDAR pipeline + fusion engine + gRPC server +          │             │
-│   Drogon dashboard backend + SvelteKit dashboard frontend │             │
+│   Drogon dashboard API (+ Gate Control app: MAUI)          │             │
 │                                                            │             │
 └────────────────────────────────────────────────────────────┴─────────────┘
 ```
@@ -78,6 +79,7 @@ release on GitHub.
 | **4** | Implementation | ✅ Complete | Modern C++20 server, ESP-IDF firmware, simulation, dashboard, security hardening. |
 | **5** | Vision ingest & hardware readiness | ✅ Complete | ADR-012 fusion sensing, `gate-vision` ingest daemon, auto-open on authorized detection, bench validation plan. |
 | **6** | Delivery | ✅ Complete | Runbook, commissioning checklist, one-command demo, v1.0.0 release. |
+| **7** | Release hardening | 🔧 In progress | RTX 20+ support, release-blocker fixes (command replay, RPC authorization, OTA anti-rollback, ESP32-compatible PKI), the LiDAR path, CI that actually builds. |
 
 ### Phase 6 sub-milestones (current)
 
@@ -355,7 +357,7 @@ gate. The ADR set:
 - **001** — Package manager (vcpkg, not Conan or Hunter — manifest mode + binary cache + better Windows story).
 - **002** — RPC mechanism (gRPC, not REST or raw TCP — bidi streams for telemetry, schema-first, language coverage).
 - **003** — Web framework for dashboard backend (Drogon C++ — same toolchain as the inference server, no Node runtime in the deploy).
-- **004** — Frontend framework (SvelteKit — small bundle, server-rendered fallbacks for edge devices).
+- **004** — Frontend framework (SvelteKit — small bundle, server-rendered fallbacks for edge devices). *Superseded by ADR-013: native .NET MAUI app.*
 - **005** — MCU / SoC choice (ESP32-S3 — dual-core 240 MHz Xtensa, PSRAM option, mature ESP-IDF).
 - **006** — LiDAR sensor (Unitree L1 PM — 4D 360° × 90° at the price point that fits the budget).
 - **007** — ALPR camera (Hikvision DS-2CD2043G2-I — 4 MP IR with PoE, available on Luthuli Avenue).
@@ -430,7 +432,8 @@ documented gotcha list.
 | `docs/hardware/08-network-switch.md` | TP-Link TL-SG1005P PoE — VLAN config (per ADR-008's dedicated VLAN constraint), PoE budget math. |
 | `docs/hardware/09-gpu-server.md` | Production server BOM — RTX 4060, Ryzen 5, 32 GB RAM, NVMe — and why this combination fits the inference workload at the budget. |
 | `docs/hardware/BUILD_BOOK.md` | Master assembly walkthrough — unboxing → first power-on → smoke test, in order. |
-| `docs/hardware/10-pcb-design-kicad10.{html,pdf}` | KiCad 10.0 guide (rev 3.12, 81 pp), one section per module — footprints (every capacitor marked ceramic/unpolarized or electrolytic/polarized, verified KiCad symbol/footprint pairings including relay, RJ45, USB-C, and all four screw terminals), schematic (relay flyback-diode polarity corrected with an unambiguous three-branch parallel diagram, relay COM/NO/NC pin numbers and relay-state LED wiring, RJ45's real internal pinout with correct active-low LED polarity, a real crystal-network diagram; USB-C as one linear connector → ESD clamp → resistor → MCU diagram), direct pin-to-pin connections, and programming/debug header wiring — for the custom 4-layer field PCB, through layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
+| `docs/hardware/10-pcb-design-kicad10.{html,pdf}` | KiCad 10.0 guide (rev 3.13, 82 pp), one section per module — footprints (every capacitor marked ceramic/unpolarized or electrolytic/polarized, verified KiCad symbol/footprint pairings including relay, RJ45, USB-C, and all four screw terminals), schematic (relay flyback-diode polarity corrected with an unambiguous three-branch parallel diagram, relay COM/NO/NC pin numbers and relay-state LED wiring, RJ45's real internal pinout with correct active-low LED polarity, a real crystal-network diagram; USB-C as one linear connector → ESD clamp → resistor → MCU diagram), direct pin-to-pin connections, and programming/debug header wiring — for the custom 4-layer field PCB, through layer stack, copper pours, DRC, gerber export, JLCPCB upload. |
+| `docs/hardware/12-field-controller-datasheet.{html,pdf}` | GFC-100 product datasheet (rev 2.2, 7 pp), commercial format. Features, block diagram, typical application wiring, specifications and absolute maximum ratings, connection drawing and pinouts, status-LED patterns, interface equivalent circuits, mechanical dimensions, installation notes, ordering information. Companion engineering reference with all KiCad schematic sheets, MCU pin map, PCB stack-up and BOM: `12-field-controller-design-reference.{html,pdf}`. |
 | `docs/hardware/11-bench-validation-plan.md` | Phase 5.4 — staged bench bring-up and validation plan: flash → W5500 → plaintext gRPC → on-hardware mTLS → OTA (with must-reject negatives) → 8 h soak, each stage with pass criteria, debug tables, and a host-test mirror so bench failures isolate to hardware, not logic. |
 | `hardware/bom/prototype-bom.md` | Per-line BOM with KES + USD pricing, supplier names, and a single-gate subtotal. |
 
@@ -4902,8 +4905,9 @@ merged, the release published on GitHub.
 0 through 6: environment → decisions → architecture → hardware
 research → implementation (server, firmware, simulation, dashboard,
 deployment, E2E, security) → vision ingest and hardware readiness →
-delivery. 164 CPU / 170 GPU tests, five multi-process E2E passes, all
-green in CI at every step of the way.
+delivery. 164 CPU / 170 GPU tests and five multi-process E2E passes,
+green locally. (A later audit found CI had been configuring without the
+vcpkg toolchain and so building no C++ at all — fixed in Phase 7.)
 
 What remains is deliberately not software: put a board on the bench
 ([the plan](docs/hardware/11-bench-validation-plan.md)), commission a
@@ -4915,6 +4919,26 @@ repos — it was moved to `workflow_dispatch` because GHAS is
 paid-only on private ones); add repo topics and a description;
 protect `main`; and mind Git LFS bandwidth (the PCB PDF ships via
 LFS — public clones count against the quota).
+
+---
+
+## Phase 7 — Release hardening (in progress)
+
+A release audit after v1.0.0 turned up blockers that the test suite had
+not exercised. Each fix below has its own tests; the suite is now **210
+CPU tests + six multi-process E2E passes**.
+
+| Area | What changed |
+|---|---|
+| GPUs | Every NVIDIA RTX generation from the 20 series (sm_75 / 86 / 89 / 120). Engines are built on the host (`scripts/export-models/build_engines.sh`, `install-server.sh --models`), and a `.meta` sidecar is checked before deserializing. |
+| Command replay | `Control` streams are live-only. A reconnecting gate is never replayed an old OPEN_GATE or REBOOT. The firmware's `CommandGuard` refuses duplicate ids and commands older than 30 s. |
+| RPC authorization | Under mTLS each RPC checks the caller's certificate role (dashboard / vision / field, gate-bound). There is a new `vision.pem` identity and per-gate leaves via `scripts/issue-gate-cert.sh`. See [docs/security.md](docs/security.md). |
+| Site PKI | ECDSA P-256 instead of Ed25519, so the ESP32-S3's mbedTLS can complete the handshake. |
+| OTA | The signature covers version + size + digest (`gate-ota/v1`). Only strictly newer versions are accepted, and an update is refused when no key is provisioned. |
+| LiDAR | The full path is in `server/vision/`: Unitree L1 driver (serial or UDP), PCD replay, ray-cast simulator, ground fit, clustering, tracking and classification, plus timestamp pairing with the camera. Requirements and commissioning: [docs/lidar.md](docs/lidar.md). |
+| gate-server | Fusion flags (`--plate-only`, weights, floor). The default site id is now `site-01`, matching the dashboard. gate-vision exits non-zero when its camera or LiDAR dies, so systemd restarts it. |
+| CI | Build and test jobs bootstrap vcpkg at the manifest baseline (cached), fail if any C++ tree is skipped, and require the full suite to run. |
+| Operator app | The SvelteKit web dashboard is replaced by **Gate Control**, a native .NET MAUI app for Android, iOS, macOS and Windows ([app/README.md](app/README.md), [ADR-013](docs/decisions/ADR-013-native-operator-app.md)). It brings MeruLPR's console features: dashboard KPIs and charts, live feed, search with CSV export, visits and dwell time, unreadable reads, alerts, users with roles, gate configuration and retention. Its interaction design follows Apple's motion principles (touch-down press, interruptible springs, drag-to-dismiss sheets, Reduce Motion). gate-dashboard gains a SQLite **history store** and role-checked report, alert, user and settings endpoints. |
 
 ---
 
@@ -4986,8 +5010,32 @@ Full BOM with sources and prices: [`hardware/bom/prototype-bom.md`](hardware/bom
 
 Build book (9 step-by-step component guides + master assembly): [`docs/hardware/BUILD_BOOK.md`](docs/hardware/BUILD_BOOK.md).
 
-Production PCB: 4-layer 100×80 mm field controller designed in KiCad 10.0
+Production PCB: 4-layer 100×90 mm field controller designed in KiCad 10.0
 — [design guide PDF](docs/hardware/10-pcb-design-kicad10.pdf).
+
+### Supported GPUs
+
+The GPU server runs on **any NVIDIA RTX GPU from the 20 series onward**,
+GeForce or professional:
+
+| Generation | Examples | Compute capability |
+|---|---|---|
+| Turing | RTX 2060 / 2070 / 2080 (Super/Ti), Quadro RTX | sm_75 |
+| Ampere | RTX 3050 – 3090 (Ti), RTX A2000 – A6000 | sm_86 |
+| Ada Lovelace | RTX 4060 – 4090, RTX 2000 – 6000 Ada | sm_89 |
+| Blackwell | RTX 5050 – 5090, RTX PRO Blackwell | sm_120 |
+
+Requirements: NVIDIA driver ≥ 580 (CUDA 13), ≥ 4 GB VRAM (6–8 GB
+recommended). Older GPUs (GTX 10-series and earlier) are refused at
+startup with a clear message.
+
+TensorRT engines are specific to the GPU generation and TensorRT version
+they are built with, and no TensorRT compatibility mode spans Turing and
+newer — so the engines are **built on the server itself**:
+`install-server.sh --models <onnx dir>` (or
+`scripts/export-models/build_engines.sh`). Re-run it after a GPU swap or a
+TensorRT upgrade; `gate-vision` refuses a mismatched engine with that
+instruction instead of an opaque TensorRT error.
 
 ---
 
@@ -4995,7 +5043,7 @@ Production PCB: 4-layer 100×80 mm field controller designed in KiCad 10.0
 
 | Layer | Tools |
 |---|---|
-| Compute | NVIDIA GPU (CUDA 13.1, cuDNN 9.19, TensorRT 10.15) |
+| Compute | Any NVIDIA RTX 20-series or newer GPU (CUDA 13.1, TensorRT 10.16) |
 | Inference | YOLOv9 (plate detection), PaddleOCR (character recognition) |
 | Vision | OpenCV 4.14 (CUDA-enabled, source build) |
 | Server (C++) | C++20, CMake 3.31, Ninja, mold, ccache, vcpkg manifest mode |
@@ -5017,13 +5065,19 @@ Production PCB: 4-layer 100×80 mm field controller designed in KiCad 10.0
 ```bash
 cd scripts/bootstrap
 ./01-toolchain.sh        # GCC, Clang, CMake, Ninja, mold, ccache
-./02-cuda-stack.sh       # CUDA 13.1 + cuDNN 9.19 + TensorRT 10.15
-./03-opencv-cuda.sh      # OpenCV 4.14 from source with CUDA
+./02-gpu-stack.sh        # checks GPU (RTX 20-series+), driver >= 580, CUDA 13, TensorRT;
+                         # verifies sm_75 / sm_86 / sm_89 / sm_120 compile and launch
+./03-ml-tools.sh         # Python ML tooling for the model exports
 ./04-vcpkg.sh            # vcpkg + manifest install
-./05-esp-idf.sh          # ESP-IDF for firmware development
 ```
 
 Verify with the GPU smoke test (see [`docs/env-audit.md`](docs/env-audit.md)).
+
+### Build the ALPR engines for this GPU
+
+```bash
+scripts/export-models/build_engines.sh --onnx-dir <dir with the ONNX exports> --out-dir server/models
+```
 
 ### Validate the proto schema
 

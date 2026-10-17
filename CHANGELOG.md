@@ -9,6 +9,99 @@ README's chronological log; this file is the executive summary.
 
 ## [Unreleased]
 
+- **Gate Control app (replaces the web dashboard).**
+  - New native .NET MAUI app in `app/` for Android, iOS, macOS (Mac
+    Catalyst) and Windows: Live, Dashboard, Reports, Vehicles and
+    Alerts, plus Account and admin screens.
+  - Its motion engine follows the apple-design principles: touch-down
+    press feedback, interruptible springs, a drag-to-dismiss sheet with
+    rubber-banding and momentum, haptics, and Reduce Motion.
+  - `GateControl.Core` holds the API and live-feed clients, view models
+    and spring physics, with 43 xUnit tests.
+  - `dashboard/frontend` (SvelteKit) and the `--www` serving path are
+    removed; ADR-013 supersedes ADR-004.
+- **Dashboard history store.**
+  - gate-dashboard persists decisions, faults, commands and acks in
+    SQLite (`--history-db`, `HISTORY_DB`). It derives alerts from them,
+    keeps operator accounts with viewer / operator / admin roles (the
+    configured admin credential is seeded on first start) and stores gate
+    direction configuration.
+  - New endpoints: `/api/reports/{stats,hourly,daily,classes,verdicts,top-plates,sessions,rejected}`,
+    `/api/decisions` (search) and `/api/decisions/export` (CSV, with
+    spreadsheet-formula escaping), `/api/plates/{plate}`, `/api/alerts`
+    (+ack), `/api/gates`, `/api/users`, `/api/settings`, `/api/auth/me`
+    and `/api/auth/password`.
+  - Gate commands now need the operator role and record who issued them.
+  - Retention purges hourly (90 days by default).
+  - The event cursor follows a gate-server restart down instead of
+    stalling.
+  - Fixed a flaky JWT tamper test.
+- **Release-blocker fixes (Phase 7).**
+  - *Command replay:* `FieldControllerService.Control` subscribes from
+    the current event id, so a reconnecting gate is no longer sent old
+    OPEN_GATE / REBOOT commands from the ring. A new firmware
+    `CommandGuard` refuses duplicate `command_id`s and commands issued
+    more than 30 s ago (or 30 s in the future).
+  - *RPC authorization:* with `--require-client-cert`, each RPC checks
+    the client certificate's CN role (`rpc/access_control.hpp`). A
+    gate-bound leaf can open a Control stream only for its own gate,
+    and telemetry for a different gate on that stream is dropped. There
+    is a new `vision.pem` identity and a new `scripts/issue-gate-cert.sh`.
+  - *PKI:* `gen-tls-certs.sh` now issues ECDSA P-256 certificates,
+    which the ESP32-S3's mbedTLS supports; Ed25519 certificates are not.
+  - *OTA:* the signature now covers `gate-ota/v1` (version, size and
+    SHA-256) instead of the digest alone. The firmware refuses any
+    version that is not strictly newer, and refuses every update when
+    no public key is provisioned. Manifests signed by the old script
+    no longer verify and must be re-signed.
+  - *gate-vision* exits non-zero when its camera or LiDAR fails.
+  - *gate-server* gains fusion flags (`--plate-only`,
+    `--alpr-weight`, `--lidar-weight`, `--min-confidence`,
+    `--lidar-missing-confidence`) and defaults `--site-id` to `site-01`.
+  - Fusion prefers plate-bearing vehicle classes over pedestrians and
+    cyclists.
+  - *CI:* the build and test workflows bootstrap vcpkg at the new
+    `builtin-baseline`, fail if any C++ tree is skipped, and require
+    at least 200 tests to run.
+- **LiDAR path (Phase 7).** New in `server/vision/`:
+  - `VehicleDetector`: ground RANSAC, range-adaptive BEV clustering,
+    lane-aligned boxes, near-face alpha-beta tracking, and a
+    dimension-envelope classifier.
+  - `LidarWorker` and `FusedSource`, which pair LiDAR vehicles with
+    camera plates by timestamp and fail closed when the LiDAR goes
+    silent.
+  - Drivers: a Unitree L1 driver (serial or UDP, built when
+    `UNITREE_LIDAR_SDK_DIR` is set), PCD replay and recording, and a
+    ray-cast simulator.
+  - New `lidar-bench` tool and `docs/lidar.md` (requirements L1–L10,
+    sweep results, commissioning).
+  - gate-vision gets `--lidar`, `--lidar-config` and `--record-lidar`.
+  - Hardware guide 03 is corrected: the L1 connects over USB-serial,
+    and needs an adapter for Ethernet.
+  - New `e2e_lidar_stack` test; `e2e_hardened_stack` now runs the
+    LiDAR path under mTLS.
+- GPU support widened to every NVIDIA RTX generation from the 20 series:
+  Turing sm_75, Ampere sm_86, Ada sm_89 and Blackwell sm_120 (driver
+  ≥ 580). TensorRT has no hardware-compatibility level that covers Turing,
+  so the ALPR engines are now built on the deployment host by the new
+  `scripts/export-models/build_engines.sh` (`install-server.sh --models`).
+  It writes a `.meta` sidecar beside each `.plan`. Before deserializing,
+  `TrtEngine::load` checks the GPU generation and the sidecar against the
+  running GPU and TensorRT version, and a mismatch now fails with a
+  "rebuild the engines" message instead of an opaque TensorRT error.
+  CUDA code builds for `75;86;89;120` by default, and the GPU bootstrap
+  checks all four architectures. New tests: `test_engine_compat`.
+- PCB design guide revision 3.13: the field-controller board outline
+  goes from 100 × 80 mm to 100 × 90 mm, with M3 holes on a 92 × 82 mm
+  pattern. The real placement set the size: four 16 mm relays, the
+  12-way and 6-way pluggable headers side by side on one edge, and the
+  48 mm ESP32-S3 antenna keep-out left no routing room at 80 mm. 90 mm
+  is the smallest single-sided layout with no courtyard overlaps, and
+  it stays in the 100 × 100 mm fab price tier. The enclosure fit is now
+  written down in `hardware/enclosure/README.md` (standoff pattern,
+  connector edges, component heights, antenna keep-out, LED positions)
+  with a 1:1 DXF drilling template, so the next outline change has one
+  place to land on the enclosure side.
 - PCB design guide revision 3.12: caught reviewing the first built
   relay-driver schematic sheet — §4.4.3's pin-to-pin table had the
   flyback diode's polarity backwards (cathode at the collector node,

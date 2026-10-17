@@ -11,19 +11,41 @@ wrong credentials provably never reach the stack.
 | Surface | Mechanism | Introduced |
 |---|---|---|
 | gRPC fabric (server ↔ dashboard, sims, gate-vision, firmware) | mTLS against the site CA; server refuses to start on unreadable certs; clients throw on unreadable/empty/half-configured PEMs | 4.10.1 / 4.10.3 / 5.3 |
+| gRPC authorization (which RPCs each identity may call) | Role from the client certificate CN, checked per RPC under `--require-client-cert`; gate-bound field leaves may only act as their own gate | 6.1 (`rpc/access_control.hpp`) |
 | Dashboard admin API (allowlist, gate commands) | PBKDF2 credential → HS256 JWT; per-route filter | 4.10.2 |
-| OTA images | SHA-256 readback + ed25519 signature over the digest (transport-independent) | 4.5.5 / ADR-009 |
+| Gate commands | Live-only delivery (no replay to reconnecting gates); firmware refuses duplicate `command_id`s and commands older than 30 s | 6.1 (`CommandGuard`) |
+| OTA images | SHA-256 readback + ed25519 signature over `gate-ota/v1` (version + size + digest); strictly-newer versions only; no provisioned key → no update | 4.5.5 / ADR-009, hardened 6.1 |
 | OTA transport | https against the site CA (nginx 8444 mirror) | 4.10.3 |
 | systemd units | NoNewPrivileges, ProtectSystem=strict, PrivateTmp, dedicated user | 4.8 |
 
 ## The site PKI
 
-`scripts/gen-tls-certs.sh` mints an ed25519 CA (10 yr) and three
+`scripts/gen-tls-certs.sh` mints an ECDSA P-256 CA (10 yr) and four
 leaf certs (3 yr): `server.pem` (SAN-bearing, serverAuth),
-`dashboard.pem` and `gate-client.pem` (clientAuth). One CA per site;
-the CA key never leaves the machine that minted it. Fleet note: issue
-one leaf per gate (SAN = gate id) so a compromised controller can be
-revoked without re-keying the site.
+`dashboard.pem`, `vision.pem` and `gate-client.pem` (clientAuth). P-256,
+not Ed25519, because the ESP32-S3's mbedTLS cannot use Ed25519
+certificates in TLS — the field controller must handshake with this CA.
+One CA per site; the CA key never leaves the machine that minted it.
+Per-gate leaves: `scripts/issue-gate-cert.sh <pki-dir> <gate-id>` issues
+CN `gate-field-<gate-id>` from the same CA, so a compromised controller
+is one certificate, not a site re-key.
+
+### What each identity may call
+
+Under `--require-client-cert`, gate-server maps the client certificate's
+CN to a role and checks it on every RPC (`server/rpc/include/rpc/access_control.hpp`,
+proven over real mTLS by `tests/integration/mtls_access_test.cpp`):
+
+| CN | Role | Allowed RPCs |
+|---|---|---|
+| `gate-dashboard` | dashboard | `DashboardService.*`, `AdminService.*` |
+| `gate-vision`, `gate-vision-*` | vision | `FieldControllerService.SubmitDetection` |
+| `gate-field-<gate-id>` | field (gate-bound) | `Control` / `DeliverOta` / `ReportOtaProgress`, only as `<gate-id>` |
+| `gate-field-client` | field (shared bench leaf) | the same, any gate id |
+| anything else | — | nothing (`PERMISSION_DENIED`) |
+
+Without `--require-client-cert` there is no peer identity to check; the
+server then logs that role checks are off.
 
 The ladder is deliberate, and identical on every process:
 
