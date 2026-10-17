@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<p:PageBase xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+            xmlns:p="clr-namespace:GateControl.Pages"
+            xmlns:m="clr-namespace:GateControl.Motion"
+            xmlns:vm="clr-namespace:GateControl.Core.ViewModels;assembly=GateControl.Core"
+            x:Class="GateControl.Pages.LivePage"
+            x:Name="Page"
+            x:DataType="vm:LiveViewModel">
+    <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Padding="16,8,16,32" Spacing="0" MaximumWidthRequest="1100">
+
+                <!-- Status line: connection + today's tally -->
+                <HorizontalStackLayout Spacing="10" Margin="2,4,2,4">
+                    <Border StrokeThickness="0" StrokeShape="RoundRectangle 11" Padding="10,3"
+                            x:Name="FeedPill">
+                        <HorizontalStackLayout Spacing="6">
+                            <Ellipse x:Name="FeedDot" WidthRequest="8" HeightRequest="8" VerticalOptions="Center" />
+                            <Label Text="{Binding FeedStateText}" FontSize="13" FontAttributes="Bold" />
+                        </HorizontalStackLayout>
+                    </Border>
+                    <Label VerticalOptions="Center" Style="{StaticResource Footnote}">
+                        <Label.FormattedText>
+                            <FormattedString>
+                                <Span Text="Today " />
+                                <Span Text="{Binding TodayAllowed}" FontAttributes="Bold" />
+                                <Span Text=" allowed · " />
+                                <Span Text="{Binding TodayDenied}" FontAttributes="Bold" />
+                                <Span Text=" refused" />
+                            </FormattedString>
+                        </Label.FormattedText>
+                    </Label>
+                </HorizontalStackLayout>
+
+                <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}"
+                       TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}"
+                       Margin="2,8" />
+
+                <Label Text="Gates" Style="{StaticResource SectionHeader}" Margin="2,18,2,8" />
+                <FlexLayout BindableLayout.ItemsSource="{Binding Gates}" Wrap="Wrap" JustifyContent="Start"
+                            Direction="Row" AlignItems="Start">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="vm:GateTileViewModel">
+                            <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="340"
+                                    FlexLayout.Grow="1" MinimumWidthRequest="280">
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <VerticalStackLayout>
+                                            <Label Text="{Binding Name}" Style="{StaticResource Title3}" />
+                                            <Label Style="{StaticResource Footnote}">
+                                                <Label.FormattedText>
+                                                    <FormattedString>
+                                                        <Span Text="{Binding DirectionText}" />
+                                                        <Span Text="  ·  " />
+                                                        <Span Text="{Binding BeamText}" />
+                                                    </FormattedString>
+                                                </Label.FormattedText>
+                                            </Label>
+                                        </VerticalStackLayout>
+                                        <Border Grid.Column="1" StrokeThickness="0" StrokeShape="RoundRectangle 12"
+                                                Padding="10,4" VerticalOptions="Start"
+                                                BackgroundColor="{Binding StateTone, Converter={StaticResource ToneTint}}">
+                                            <Label Text="{Binding StateText}" FontSize="13" FontAttributes="Bold"
+                                                   TextColor="{Binding StateTone, Converter={StaticResource ToneColor}}" />
+                                        </Border>
+                                    </Grid>
+                                    <Label Text="{Binding LastActivity}" Style="{StaticResource Callout}"
+                                           LineBreakMode="TailTruncation" />
+                                    <Label Text="{Binding Detail}" Style="{StaticResource Caption}"
+                                           IsVisible="{Binding Detail, Converter={StaticResource HasText}}" />
+                                    <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8"
+                                          IsVisible="{Binding Vm.CanOperate, Source={x:Reference Page}, x:DataType=p:LivePage}">
+                                        <Button Text="Open" Style="{StaticResource TintedButton}" Command="{Binding OpenCommand}" />
+                                        <Button Grid.Column="1" Text="Close" Style="{StaticResource TintedButton}" Command="{Binding CloseCommand}" />
+                                        <Button Grid.Column="2" Text="•••" Style="{StaticResource TintedButton}"
+                                                Clicked="OnMoreClicked" CommandParameter="{Binding .}"
+                                                SemanticProperties.Description="More gate controls" />
+                                    </Grid>
+                                    <Label Text="{Binding CommandStatus}" Style="{StaticResource Caption}"
+                                           IsVisible="{Binding CommandStatus, Converter={StaticResource HasText}}" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                    <BindableLayout.EmptyView>
+                        <Label Text="No gates have reported yet." Style="{StaticResource Subhead}" Margin="2,0" />
+                    </BindableLayout.EmptyView>
+                </FlexLayout>
+
+                <Label Text="Latest vehicles" Style="{StaticResource SectionHeader}" Margin="2,14,2,8" />
+                <Border Style="{StaticResource Card}" Padding="0">
+                    <VerticalStackLayout x:Name="FeedList" BindableLayout.ItemsSource="{Binding Feed}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DecisionRow">
+                                <Grid Padding="16,12" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto"
+                                      m:Pressable.Command="{Binding Vm.ShowPlateCommand, Source={x:Reference Page}, x:DataType=p:LivePage}"
+                                      m:Pressable.CommandParameter="{Binding .}">
+                                    <Label Text="{Binding Plate}" Style="{StaticResource Plate}" />
+                                    <Label Grid.Row="1" Style="{StaticResource Footnote}" LineBreakMode="TailTruncation">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="{Binding Detail}" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                    <VerticalStackLayout Grid.Column="1" Grid.RowSpan="2" HorizontalOptions="End" Spacing="4">
+                                        <Border StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="9,3"
+                                                HorizontalOptions="End"
+                                                BackgroundColor="{Binding Tone, Converter={StaticResource ToneTint}}">
+                                            <Label Text="{Binding Verdict}" FontSize="13" FontAttributes="Bold"
+                                                   TextColor="{Binding Tone, Converter={StaticResource ToneColor}}" />
+                                        </Border>
+                                        <Label Text="{Binding TimeText}" Style="{StaticResource Caption}" HorizontalOptions="End" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                        <BindableLayout.EmptyView>
+                            <Label Text="Vehicles appear here the moment a plate is read." Style="{StaticResource Subhead}"
+                                   Padding="16,18" />
+                        </BindableLayout.EmptyView>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</p:PageBase>

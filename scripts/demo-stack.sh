@@ -6,8 +6,8 @@
 #   gate-server        the real daemon, temp SQLite allowlist
 #   gate-sim x2        virtual field controllers with visible travel
 #                      times (gate-demo-01 auto-closes)
-#   gate-dashboard     REST/WebSocket bridge on :8080, serving the
-#                      built SPA when dashboard/frontend/build exists
+#   gate-dashboard     REST/WebSocket API on :8080 — point the Gate
+#                      Control app (app/) at it
 #   gate-vision        a looping scripted scenario against gate-demo-01:
 #                      an unknown plate (denied) then the allowlisted
 #                      demo plate (authorized → the gate auto-opens)
@@ -138,6 +138,7 @@ api() { # api <method> <path> [json-body]
 SERVER_TLS=()
 CLIENT_TLS=()
 DASH_TLS=()
+VISION_TLS=()
 DASH_AUTH=()
 if [[ "${HARDENED}" -eq 1 ]]; then
     echo "== generating an ephemeral site PKI (--hardened) =="
@@ -146,6 +147,8 @@ if [[ "${HARDENED}" -eq 1 ]]; then
                 --tls-ca "${TMP}/tls/ca.pem" --require-client-cert)
     CLIENT_TLS=(--tls-ca "${TMP}/tls/ca.pem"
                 --tls-cert "${TMP}/tls/gate-client.pem" --tls-key "${TMP}/tls/gate-client.key")
+    VISION_TLS=(--tls-ca "${TMP}/tls/ca.pem"
+                --tls-cert "${TMP}/tls/vision.pem" --tls-key "${TMP}/tls/vision.key")
     DASH_TLS=(--tls-ca "${TMP}/tls/ca.pem"
               --tls-cert "${TMP}/tls/dashboard.pem" --tls-key "${TMP}/tls/dashboard.key")
 
@@ -181,17 +184,11 @@ launch sim-gate-demo-01 "${SIM_BIN}" --server "127.0.0.1:${GRPC_PORT}" \
 launch sim-gate-demo-02 "${SIM_BIN}" --server "127.0.0.1:${GRPC_PORT}" \
     --gate-id gate-demo-02 --travel-ms 5000 --telemetry-ms 250 "${CLIENT_TLS[@]}"
 
-SPA_DIR="${ROOT}/dashboard/frontend/build"
-DASH_WWW=()
-SPA_NOTE="  (the built SPA, served same-origin)"
-if [[ -f "${SPA_DIR}/index.html" ]]; then
-    DASH_WWW=(--www "${SPA_DIR}")
-else
-    SPA_NOTE="  (API only — build the SPA first: cd dashboard/frontend && npm ci && npm run build)"
-fi
+SPA_NOTE="  (API for the Gate Control app — app/README.md)"
 launch gate-dashboard "${DASH_BIN}" --listen 127.0.0.1 --port "${HTTP_PORT}" \
     --server "127.0.0.1:${GRPC_PORT}" --site-id site-demo \
-    "${DASH_WWW[@]}" "${DASH_TLS[@]}" "${DASH_AUTH[@]}"
+    --history-db "${TMP}/history.db" \
+    "${DASH_TLS[@]}" "${DASH_AUTH[@]}"
 
 echo "== waiting for the dashboard to see the gate-server =="
 for _ in $(seq 1 60); do
@@ -247,7 +244,7 @@ EOF
 echo "== launching gate-vision (scripted scenario against gate-demo-01) =="
 launch gate-vision "${VISION_BIN}" --server "127.0.0.1:${GRPC_PORT}" \
     --site-id site-demo --gate-id gate-demo-01 \
-    --scenario "${TMP}/scenario.json" "${CLIENT_TLS[@]}"
+    --scenario "${TMP}/scenario.json" "${VISION_TLS[@]}"
 
 # ---------------------------------------------------------------- banner
 cat <<EOF

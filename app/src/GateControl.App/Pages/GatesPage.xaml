@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<p:PageBase xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+            xmlns:p="clr-namespace:GateControl.Pages"
+            xmlns:vm="clr-namespace:GateControl.Core.ViewModels;assembly=GateControl.Core"
+            x:Class="GateControl.Pages.GatesPage"
+            x:Name="Page"
+            x:DataType="vm:GatesViewModel"
+            Title="Gates">
+    <ScrollView>
+        <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="700" Spacing="0">
+            <Label Style="{StaticResource Footnote}" Margin="4,10,4,4"
+                   Text="Name each gate and say which way it lets vehicles through. Visits, dwell time and who is on site need an entry gate and an exit gate." />
+            <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}" Margin="4,8"
+                   TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}" />
+            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Items}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="vm:GateConfigRow">
+                        <VerticalStackLayout>
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,20,4,6">
+                                <Label Text="{Binding GateId}" Style="{StaticResource SectionHeader}" Margin="0" />
+                                <Label Grid.Column="1" Text="{Binding Status}" Style="{StaticResource Caption}" />
+                            </Grid>
+                            <Border Style="{StaticResource Card}" Padding="16,2">
+                                <VerticalStackLayout>
+                                    <Entry Text="{Binding Name}" Placeholder="Name, e.g. Main entrance" />
+                                    <BoxView Style="{StaticResource Separator}" />
+                                    <Entry Text="{Binding Location}" Placeholder="Location" />
+                                    <BoxView Style="{StaticResource Separator}" />
+                                    <Picker ItemsSource="{x:Static vm:GatesViewModel.Directions}"
+                                            ItemDisplayBinding="{Binding Label, x:DataType=vm:Choice}"
+                                            SelectedItem="{Binding Direction}" Title="Direction" />
+                                </VerticalStackLayout>
+                            </Border>
+                            <Button Text="Save" Style="{StaticResource TintedButton}" HeightRequest="36" HorizontalOptions="End"
+                                    Margin="0,8,0,0" IsVisible="{Binding Dirty}"
+                                    Command="{Binding Vm.SaveCommand, Source={x:Reference Page}, x:DataType=p:GatesPage}"
+                                    CommandParameter="{Binding .}" />
+                        </VerticalStackLayout>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+                <BindableLayout.EmptyView>
+                    <Label Text="Gates appear here once their controllers connect." Style="{StaticResource Subhead}" Margin="4,20" />
+                </BindableLayout.EmptyView>
+            </VerticalStackLayout>
+        </VerticalStackLayout>
+    </ScrollView>
+</p:PageBase>

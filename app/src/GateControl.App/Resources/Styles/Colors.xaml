@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Colors.xaml — semantic colour tokens, light and dark.
+
+  Apple's system palette: grouped backgrounds, one accent, and four
+  meanings (positive / negative / caution / neutral). Views never use a
+  raw hue; they ask for a meaning (Display.Tone in GateControl.Core),
+  and the pair below decides how it looks in each appearance.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- Backgrounds (systemGroupedBackground family) -->
+    <Color x:Key="BackgroundLight">#F2F2F7</Color>
+    <Color x:Key="BackgroundDark">#000000</Color>
+    <Color x:Key="SurfaceLight">#FFFFFF</Color>
+    <Color x:Key="SurfaceDark">#1C1C1E</Color>
+    <Color x:Key="SurfaceRaisedLight">#FFFFFF</Color>
+    <Color x:Key="SurfaceRaisedDark">#2C2C2E</Color>
+    <Color x:Key="FillLight">#1F787880</Color>
+    <Color x:Key="FillDark">#3D787880</Color>
+
+    <!-- Labels -->
+    <Color x:Key="LabelLight">#000000</Color>
+    <Color x:Key="LabelDark">#FFFFFF</Color>
+    <Color x:Key="SecondaryLabelLight">#993C3C43</Color>
+    <Color x:Key="SecondaryLabelDark">#99EBEBF5</Color>
+    <Color x:Key="TertiaryLabelLight">#4D3C3C43</Color>
+    <Color x:Key="TertiaryLabelDark">#4DEBEBF5</Color>
+    <Color x:Key="SeparatorLight">#4A3C3C43</Color>
+    <Color x:Key="SeparatorDark">#99545458</Color>
+
+    <!-- Meanings -->
+    <Color x:Key="AccentLight">#007AFF</Color>
+    <Color x:Key="AccentDark">#0A84FF</Color>
+    <Color x:Key="PositiveLight">#34C759</Color>
+    <Color x:Key="PositiveDark">#30D158</Color>
+    <Color x:Key="NegativeLight">#FF3B30</Color>
+    <Color x:Key="NegativeDark">#FF453A</Color>
+    <Color x:Key="CautionLight">#FF9500</Color>
+    <Color x:Key="CautionDark">#FF9F0A</Color>
+    <Color x:Key="NeutralLight">#8E8E93</Color>
+    <Color x:Key="NeutralDark">#8E8E93</Color>
+
+    <!-- The one translucent layer (tab bar / sheet backdrop). Glass is
+         never stacked on glass; content shows through a single layer. -->
+    <Color x:Key="ChromeLight">#E6F9F9F9</Color>
+    <Color x:Key="ChromeDark">#E61C1C1E</Color>
+    <Color x:Key="ScrimLight">#66000000</Color>
+    <Color x:Key="ScrimDark">#99000000</Color>
+
+    <Color x:Key="White">#FFFFFF</Color>
+    <Color x:Key="Transparent">#00000000</Color>
+
+</ResourceDictionary>

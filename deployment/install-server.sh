@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
 # install-server.sh — install/upgrade the GPU-host services.
 #
-# Copies the built binaries, the SPA, systemd units, and (first run
-# only) the env configs; keeps the previous binaries as *.prev for the
-# manual rollback path described in gate-server.service.
+# Copies the built binaries, systemd units, and (first run only) the env
+# configs; keeps the previous binaries as *.prev for the manual rollback
+# path described in gate-server.service. Operators use the Gate Control
+# app (app/, .NET MAUI: Android, iOS, macOS, Windows) against
+# gate-dashboard's API on port 8080 — there is no web UI to install.
 #
 # Usage (from a build on the GPU host):
 #   sudo deployment/install-server.sh \
 #       --build build/release \
-#       --www dashboard/frontend/build
+#       --models /path/to/onnx-exports      # optional: build ALPR engines
 #
-# Idempotent: re-running upgrades binaries + www and never overwrites
+# --models builds the TensorRT engines ON THIS HOST's GPU (any NVIDIA RTX
+# 20-series or newer) into ${PREFIX}/models via
+# scripts/export-models/build_engines.sh. Engines are GPU-generation and
+# TensorRT-version specific, so re-run with --models after a GPU swap or a
+# TensorRT upgrade; up-to-date engines are skipped.
+#
+# Idempotent: re-running upgrades binaries and never overwrites
 # an edited /etc/gate/*.env.
 
 set -euo pipefail
 
-BUILD="" WWW="" PREFIX="/opt/gate"
+BUILD="" PREFIX="/opt/gate" MODELS=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --build)  BUILD="$2"; shift 2 ;;
-        --www)    WWW="$2"; shift 2 ;;
+        --www)    echo "--www is gone: the web dashboard was replaced by the Gate Control app (app/)" >&2; exit 2 ;;
         --prefix) PREFIX="$2"; shift 2 ;;
+        --models) MODELS="$2"; shift 2 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -50,12 +59,11 @@ install_binary "${BUILD}/server/gate-server" gate-server
 install_binary "${BUILD}/dashboard/backend/gate-dashboard" gate-dashboard
 install_binary "${BUILD}/server/vision/gate-vision" gate-vision
 
-# SPA (optional — dashboard runs API-only without it).
-if [[ -n "${WWW}" ]]; then
-    [[ -f "${WWW}/index.html" ]] || { echo "--www dir has no index.html: ${WWW}" >&2; exit 1; }
-    rm -rf "${PREFIX}/www"
-    cp -r "${WWW}" "${PREFIX}/www"
-    echo "installed SPA to ${PREFIX}/www"
+# ALPR engines — built for this host's GPU (optional).
+if [[ -n "${MODELS}" ]]; then
+    install -d -m 0755 "${PREFIX}/models"
+    install -m 0644 "${HERE}/../server/models/dict_kenya_plates.txt" "${PREFIX}/models/"
+    "${HERE}/../scripts/export-models/build_engines.sh" --onnx-dir "${MODELS}" --out-dir "${PREFIX}/models"
 fi
 
 # Config — first install only; upgrades never clobber operator edits.

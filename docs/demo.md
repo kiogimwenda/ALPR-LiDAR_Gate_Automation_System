@@ -16,10 +16,9 @@ plate is checked against the allowlist, and the gate opens by itself.
   ```
 
 - `curl` and `python3` (already required by the test suite).
-- Optional, for the browser UI: the built SPA at
-  `dashboard/frontend/build` (`cd dashboard/frontend && npm ci && npm
-  run build`). Without it the demo still runs — you just watch the JSON
-  API instead of the web page.
+- Optional, for the operator UI: the Gate Control app (`app/README.md`)
+  pointed at `http://127.0.0.1:8080`. Without it the demo still runs —
+  you just watch the JSON API instead.
 
 ## The one command
 
@@ -66,7 +65,7 @@ authorized anything at gate 2.
 | --- | --- |
 | `curl -X POST -H 'Content-Type: application/json' -d '{"kind":"OPEN_GATE"}' http://127.0.0.1:8080/api/gates/gate-demo-02/command` (or the dashboard's gate controls) | The idle gate travels the full open/close cycle on operator command — the manual path alongside the automatic one. |
 | `curl -X DELETE http://127.0.0.1:8080/api/allowlist/KDA123X` | Within one scenario lap, KDA123X's verdict flips to DENIED and the gate stops opening. Re-add it (`curl -X POST -H 'Content-Type: application/json' -d '{"plate":"KDA123X","ownerName":"Demo Resident","ownerUnit":"D-1","allowedClasses":["SEDAN","SUV"]}' http://127.0.0.1:8080/api/allowlist`) and the auto-opens resume. Live policy, no restarts. |
-| Re-run as `scripts/demo-stack.sh --hardened` | An ephemeral site PKI is minted (`scripts/gen-tls-certs.sh`); every gRPC hop is mTLS; the admin surface locks: `curl -i http://127.0.0.1:8080/api/allowlist` → **401**, then log in (`curl -X POST -H 'Content-Type: application/json' -d '{"username":"demo-admin","password":"demo-open-sesame"}' http://127.0.0.1:8080/api/auth/login`) and retry with `-H "Authorization: Bearer <token>"` → **200**. Monitoring (`/api/status`, `/api/health`) stays open by design. The SPA login page drives the same flow. |
+| Re-run as `scripts/demo-stack.sh --hardened` | An ephemeral site PKI is minted (`scripts/gen-tls-certs.sh`); every gRPC hop is mTLS; the admin surface locks: `curl -i http://127.0.0.1:8080/api/allowlist` → **401**, then log in (`curl -X POST -H 'Content-Type: application/json' -d '{"username":"demo-admin","password":"demo-open-sesame"}' http://127.0.0.1:8080/api/auth/login`) and retry with `-H "Authorization: Bearer <token>"` → **200**. Monitoring (`/api/status`, `/api/health`) stays open by design. The Gate Control app's sign-in screen drives the same flow. |
 | In a second terminal (plaintext demo): `build/debug-cpu/simulation/gate-sim --server 127.0.0.1:58051 --gate-id gate-demo-03 --travel-ms 4000 --interactive` | A third gate appears on the dashboard, hand-driven from your keyboard: `open`, `close`, `stop`, `trip` (safety beam), `clear`, `status`, `quit`. Watch the reverse-on-beam policy by typing `trip` while it is closing. |
 
 ## What this demo is NOT

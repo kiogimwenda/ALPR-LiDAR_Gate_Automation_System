@@ -18,7 +18,7 @@
 //
 //   gate-mock-server --listen 127.0.0.1:50051 &
 //   gate-sim --server 127.0.0.1:50051 --gate-id gate-01 &
-//   gate-dashboard --port 8080 --server 127.0.0.1:50051 --www …/build
+//   gate-dashboard --port 8080 --server 127.0.0.1:50051
 //
 // Demo-grade by intent: in-memory everything, no persistence, no auth.
 

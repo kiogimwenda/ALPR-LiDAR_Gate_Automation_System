@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<p:PageBase xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+            xmlns:p="clr-namespace:GateControl.Pages"
+            xmlns:vm="clr-namespace:GateControl.Core.ViewModels;assembly=GateControl.Core"
+            x:Class="GateControl.Pages.DataPage"
+            x:DataType="vm:DataSettingsViewModel"
+            Title="Data">
+    <ScrollView>
+        <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="700">
+            <Label Text="Keep history for" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="6">
+                    <Label x:Name="RetentionLabel" Style="{StaticResource Title3}" />
+                    <Slider Minimum="7" Maximum="365" Value="{Binding RetentionDays}" />
+                    <Label Style="{StaticResource Footnote}"
+                           Text="Older vehicle records, faults and cleared alerts are deleted automatically. Kenya's data protection rules favour keeping no more than you need; 90 days is the site default." />
+                </VerticalStackLayout>
+            </Border>
+            <Label Text="A visit ends after" Style="{StaticResource SectionHeader}" />
+            <Border Style="{StaticResource Card}">
+                <VerticalStackLayout Spacing="6">
+                    <Label x:Name="TimeoutLabel" Style="{StaticResource Title3}" />
+                    <Slider Minimum="1" Maximum="48" Value="{Binding SessionTimeoutHours}" />
+                    <Label Style="{StaticResource Footnote}"
+                           Text="A vehicle that entered and was never seen leaving stops counting as on site after this long." />
+                </VerticalStackLayout>
+            </Border>
+            <Grid ColumnDefinitions="*,Auto" Margin="4,16,0,0">
+                <Label Text="{Binding Saved}" Style="{StaticResource Footnote}" VerticalOptions="Center" />
+                <Button Grid.Column="1" Text="Save" Style="{StaticResource FilledButton}" HeightRequest="44" Command="{Binding SaveCommand}" />
+            </Grid>
+            <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}" Margin="4,8"
+                   TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</p:PageBase>

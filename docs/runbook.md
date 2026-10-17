@@ -21,7 +21,7 @@ is the gate's configured id (`CONFIG_GATE_ID`, e.g. `gate-01`). All
 | Process | systemd unit | Host | Port(s) | Config | Logs |
 |---|---|---|---|---|---|
 | `gate-server` (gRPC + fusion + allowlist) | `gate-server.service` | GPU host | 50051 gRPC | `/etc/gate/gate-server.env` | `journalctl -u gate-server` |
-| `gate-dashboard` (REST/WS + SPA) | `gate-dashboard.service` | GPU host | 8080 HTTP/WS | `/etc/gate/gate-dashboard.env` | `journalctl -u gate-dashboard` |
+| `gate-dashboard` (REST/WS API for the Gate Control app) | `gate-dashboard.service` | GPU host | 8080 HTTP/WS | `/etc/gate/gate-dashboard.env` | `journalctl -u gate-dashboard` |
 | `gate-vision` (camera → SubmitDetection) | `gate-vision.service` | GPU host | none (client of 50051) | `/etc/gate/gate-vision.env` | `journalctl -u gate-vision` |
 | OTA file server | nginx (site `gate-ota`) | GPU host | 8081 http, 8444 https mirror | `/etc/nginx/sites-available/gate-ota` | `journalctl -u nginx` |
 | Field controller firmware | — (ESP32-S3) | at the gate | dials `<gpu-host>:50051` | Kconfig (build-time) | serial: `idf.py -p /dev/ttyACM0 monitor` |
@@ -30,7 +30,7 @@ Fixed paths on the GPU host:
 
 - Binaries: `/opt/gate/bin/{gate-server,gate-dashboard,gate-vision}`,
   each with a `.prev` sibling kept by the installer for rollback.
-- SPA: `/opt/gate/www` (dashboard runs API-only without it).
+- Operator app: Gate Control (`app/`, Android / iOS / macOS / Windows), pointed at `http://<gpu-host>:8080`. Decision history, users and gate configuration live in `/var/lib/gate/dashboard-history.db`.
 - Allowlist/audit DB: `/var/lib/gate/gate.db` (SQLite, WAL mode).
 - Site PKI: `/etc/gate/tls` (`root:gate`, keys mode 0640).
 - JWT secret (if pinned): `/etc/gate/jwt.secret`.
@@ -262,8 +262,9 @@ planned maintenance window, not a 2 a.m. task.
 Production framing of the flow in
 [`deployment/README.md`](../deployment/README.md) and
 [ADR-009](decisions/ADR-009-ota-strategy.md). Integrity is carried by
-the manifest — SHA-256 of the image plus an ed25519 signature over
-that digest — not by the transport, which is why plain http on 8081
+the manifest — SHA-256 of the image plus an ed25519 signature over the
+`gate-ota/v1` statement binding version, size and digest — not by the
+transport, which is why plain http on 8081
 is acceptable and why the signing key's location is the whole
 security story.
 
@@ -316,10 +317,13 @@ verify `fwVersion` and a command round-trip, then proceed to the rest.
 - A new image that crash-loops is reverted by the bootloader on its
   own (`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`: the image boots
   `PENDING_VERIFY` and is only marked valid at steady state).
-- To *deliberately* downgrade, sign the previous binary as a new
-  release — the manifest validator refuses a `target_version` equal
-  to the running version, so a re-serve of the old manifest is a
-  no-op by design.
+- To *deliberately* go back to older code, rebuild it with a **higher**
+  version number and sign that — the firmware refuses any
+  `target_version` that is not strictly newer than the running one
+  (anti-rollback), so a re-served old manifest is refused by design.
+- A gate with no `CONFIG_GATE_OTA_PUBKEY` refuses every update —
+  provision the key (`scripts/gen-ota-keys.sh` → `ota-pubkey.hex`) in
+  the site build.
 - Host services roll back via `.prev` binaries (§7), not OTA.
 
 Rejections and stuck updates: [§8.5](#85-ota-stuck-or-rejected).
@@ -370,8 +374,7 @@ is nothing to copy, and its loss on restart merely forces re-login.
 
 ```bash
 cmake --preset release && cmake --build --preset release
-(cd dashboard/frontend && npm ci && npm run build)
-sudo deployment/install-server.sh --build build/release --www dashboard/frontend/build
+sudo deployment/install-server.sh --build build/release
 sudo systemctl restart gate-server gate-dashboard gate-vision
 ```
 
@@ -499,10 +502,11 @@ bad cert/secret, the journal names the unreadable file (§2).
 
 ### 8.3 Suspected compromised gate or certificate
 
-Current posture (single-site, known risk R7 in the
-[bench plan](hardware/11-bench-validation-plan.md#known-risks-and-open-items)):
-all field clients share one `gate-client.pem` leaf, and there is no
-CRL/revocation infrastructure. Consequences:
+There is no CRL/revocation infrastructure. With per-gate leaves
+(`scripts/issue-gate-cert.sh`, CN `gate-field-<gate-id>`) a stolen
+controller can only ever act as its own gate and cannot call the admin
+or dashboard RPCs; with the shared bench `gate-client.pem` it can act as
+any gate. Consequences:
 
 1. **Contain first at the network**: disable the compromised gate's
    switch port (or pull its cable). mTLS cannot distinguish it from

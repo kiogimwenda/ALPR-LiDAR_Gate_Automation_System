@@ -164,7 +164,7 @@ The stack listens on ([`deployment/README.md`](../deployment/README.md),
 | Port | Service | Who needs it | Off-segment exposure |
 |---|---|---|---|
 | 50051 | gate-server gRPC (mTLS) | Firmware, gate-vision, dashboard backend | **None** — gate segment only |
-| 8080 | gate-dashboard HTTP + `/ws/events` | Operator browser | Only if the operator sits off-segment; admin routes are JWT-gated (§5), monitoring stays open by design |
+| 8080 | gate-dashboard HTTP + `/ws/events` | Gate Control app (phones, tablets, office PCs) | Only if the operator sits off-segment; admin routes are JWT-gated (§5), monitoring stays open by design |
 | 8081 | nginx OTA, plain http | Nothing, once TLS firmware ships (it fetches 8444) | **None** — may be firewalled off entirely at a TLS site |
 | 8444 | nginx OTA, https mirror | Firmware OTA fetch | **None** — gate segment only |
 
@@ -179,8 +179,7 @@ Per [`deployment/README.md`](../deployment/README.md), on the GPU host:
 
 ```bash
 cmake --preset release && cmake --build --preset release
-(cd dashboard/frontend && npm ci && npm run build)
-sudo deployment/install-server.sh --build build/release --www dashboard/frontend/build
+sudo deployment/install-server.sh --build build/release
 ```
 
 Then bring the configs to the **production posture** before first start.
@@ -192,7 +191,7 @@ mTLS everywhere and an authenticated admin surface, no exceptions.
 |---|---|---|
 | 5.1 | `/etc/gate/gate-server.env`: `SITE_ID` set for this site; **`TLS_EXTRA_ARGS` uncommented** (server pair + CA + `--require-client-cert`) | ☐ |
 | 5.2 | `/etc/gate/gate-dashboard.env`: `SITE_ID` matches; **`TLS_EXTRA_ARGS` uncommented**; **`AUTH_EXTRA_ARGS` uncommented** with the hash from `scripts/gen-admin-hash.sh` (§8 — minted with the owner) and `--jwt-secret-file /etc/gate/jwt.secret` (single line of high-entropy text, mode 0640 root:gate, so sessions survive backend restarts) | ☐ |
-| 5.3 | `/etc/gate/gate-vision.env`: `SITE_ID`/`GATE_ID` match; **`TLS_EXTRA_ARGS` uncommented** (gate-client identity) | ☐ |
+| 5.3 | `/etc/gate/gate-vision.env`: `SITE_ID`/`GATE_ID` match; **`TLS_EXTRA_ARGS` uncommented** (`vision.pem` identity — only CN `gate-vision` may submit detections) | ☐ |
 | 5.4 | ALPR models installed under `/opt/gate/models` — built per [`scripts/export-models/README.md`](../scripts/export-models/README.md) (`convert_onnx_to_trt.py`, verify with `inspect_engine.py`). Required before the camera path goes live; skippable only if the camera is deferred (§2 decision) | ☐ |
 | 5.5 | `gate-vision.env` `SOURCE_ARGS`: the production `--camera rtsp://…` form with the real camera credentials and the *site* camera IP (`192.168.1.10` per the IP plan — the env file's example IP is not the plan's), `--detector-engine`/`--recognizer-engine`/`--ocr-dictionary` pointing into `/opt/gate/models`. If the camera is deferred: the `--scenario` form for acceptance testing (§7 A8) | ☐ |
 | 5.6 | `sudo systemctl restart gate-server gate-dashboard` after §6.1 installs the TLS material; then `sudo systemctl enable --now gate-vision` (the installer deliberately leaves gate-vision disabled until its source is configured) | ☐ |
@@ -216,8 +215,9 @@ sudo install -m 0640 -o root -g gate site-pki/{ca,server,dashboard}.pem \
      site-pki/{server,dashboard}.key /etc/gate/tls/
 ```
 
-(Also install `gate-client.pem`/`gate-client.key` to `/etc/gate/tls/` for
-gate-vision, per its env file.) The script refuses to overwrite an existing
+(Also install `vision.pem`/`vision.key` to `/etc/gate/tls/` for
+gate-vision, per its env file — under mTLS only that identity may call
+SubmitDetection.) The script refuses to overwrite an existing
 CA — one CA per site, minted once.
 
 **R7 disposition (record):** this is a single-gate residential site — the
@@ -225,9 +225,9 @@ shared `gate-client` leaf is the accepted posture, per the bench risk
 register. First multi-gate site: issue **one leaf per gate (SAN = gate id)**
 so a compromised controller can be revoked without re-keying
 ([`firmware/main/certs/README.md`](../firmware/main/certs/README.md),
-[docs/security.md](security.md)); note that `gen-tls-certs.sh` does not
-automate per-gate leafs today — that is tooling work the multi-gate site
-inherits.
+[docs/security.md](security.md)): `scripts/issue-gate-cert.sh site-pki <gate-id>`.
+A gate-bound leaf is preferred even on a single-gate site — the server
+then refuses it for any other gate id.
 
 | # | Check | ✔ |
 |---|---|---|
@@ -260,7 +260,7 @@ Every value below is confirmed by hand, none trusted from defaults:
 | `CONFIG_GATE_TLS_ENABLE` | `y` | ☐ |
 | `CONFIG_GATE_SNTP_SERVER` | `192.168.1.50` (LAN chrony — `pool.ntp.org` does not resolve on an isolated segment; R3) | ☐ |
 | `CONFIG_GATE_OTA_MANIFEST_URL` | `https://192.168.1.50:8444/firmware/manifest.json` (**R2** — TLS mirror, not 8080/8081) | ☐ |
-| `CONFIG_GATE_OTA_PUBKEY` | 64-hex pubkey from `scripts/gen-ota-keys.sh` output (`ota-pubkey.hex`). ⚠ Empty legally degrades OTA to SHA-256-only with a warning — never acceptable at a commissioned site | ☐ |
+| `CONFIG_GATE_OTA_PUBKEY` | 64-hex pubkey from `scripts/gen-ota-keys.sh` output (`ota-pubkey.hex`). ⚠ Empty = every OTA is refused (unsigned images are never flashed) | ☐ |
 
 | # | Step | ✔ |
 |---|---|---|
@@ -279,19 +279,19 @@ The on-site mirror of the E2E suite (`e2e_local_stack`, `e2e_tls_stack`,
 travel happens: clear the opening of people and vehicles before starting.
 Run in order; every row lands on the sign-off sheet.
 
-Commands assume the dashboard SPA for normal driving; the raw API equivalents
+Commands assume the Gate Control app for normal driving; the raw API equivalents
 (`/api/auth/login`, `/api/gates/{gate_id}/command`, `/api/status`,
 `/ws/events`, `/api/allowlist`) are shown where a terminal is more precise.
 
 | # | Test | Procedure | Expected | ✔ |
 |---|---|---|---|---|
-| A1 | Admin auth gate | Request a gate command with no token; then log in via the SPA (or `POST /api/auth/login`) and repeat | Bare request rejected (401); authenticated command accepted. Monitoring (`/api/status`) open without a token — by design, the guard-booth view survives session expiry | ☐ |
+| A1 | Admin auth gate | Request a gate command with no token; then sign in from the Gate Control app (or `POST /api/auth/login`) and repeat | Bare request rejected (401); authenticated command accepted. Monitoring (`/api/status`) open without a token — by design, the guard-booth view survives session expiry | ☐ |
 | A2 | Command round-trip, real travel | Authenticated OPEN from the dashboard | Immediate ack; gate physically opens; motion stops at the open limit; completion ack on `/ws/events` (the double-ack contract); state `Open` in the dashboard | ☐ |
 | A3 | Close round-trip | Authenticated CLOSE | Mirror of A2 to the closed limit | ☐ |
 | A4 | Safety beam interrupt | Command CLOSE; break the beam mid-travel with a test object (never a limb) | Motion stops on `SafetyBeamObstacle`, then **reverses to opening** (UL 325-style policy, bench 3.6) | ☐ |
 | A5 | Blocked-beam close refused | With the beam blocked, command CLOSE | Rejected with a reasoned error ack; gate does not move (bench 3.7) | ☐ |
 | A6 | Motor timeout | Disconnect the motor trigger lead (or hold the gate per the installer's judgment); command OPEN | After the 30 s motor timeout: `Faulted(MotorTimeout)`, completion ack carries the fault. Recover via `REBOOT` command (**R5**: no remote `clear_fault()` — REBOOT is the documented field workaround) | ☐ |
-| A7 | Allowlist seed | Seed one real resident plate via the SPA or `POST /api/allowlist` | Entry visible in the allowlist view; write is JWT-gated | ☐ |
+| A7 | Allowlist seed | Seed one real resident plate from the app's Vehicles tab or `POST /api/allowlist` | Entry visible in the allowlist view; write is JWT-gated | ☐ |
 | A8 | Detection round-trip — scripted | With the camera deferred: `SOURCE_ARGS=--scenario …` in `gate-vision.env` replaying one unknown plate then the seeded plate (the `events`/`offset_ms`/`plates` JSON shape used by [`tests/e2e/e2e_local_stack.py`](../tests/e2e/e2e_local_stack.py)); restart gate-vision | Unknown plate: **gate does not move**. Seeded plate: OPEN_GATE auto-dispatched, gate opens, audit actor `auto:<decision-id>` in the event stream | ☐ |
 | A9 | Detection round-trip — live camera | Camera commissioned: drive a vehicle with the seeded plate up the lane at normal approach speed; repeat after dark (IR) | Same outcome as A8 from real optics; recognition at the surveyed distance band. Skipped-and-scheduled if the camera is deferred — record the return-visit date | ☐ |
 | A10 | OTA no-op | Re-issue BEGIN_OTA against the already-installed baseline manifest | Refused with a reasoned ack — same-version offer rejected by `validate()` (bench 5.4). Confirms the full fetch-and-validate path against the 8444 mirror without flashing anything | ☐ |
@@ -308,7 +308,7 @@ Commands assume the dashboard SPA for normal driving; the raw API equivalents
 | 8.1 | Admin credential | Password minted **with the owner present** via `scripts/gen-admin-hash.sh` (prompted, never echoed, never in argv). The owner keeps the password; the installer retains only the hash in `/etc/gate/gate-dashboard.env`. Recovery path = installer re-mints the hash on request | ☐ |
 | 8.2 | Key custody recorded | Site CA key: PKI machine per §6.1 decision (installer custody). OTA signing key: offline release machine (installer/vendor custody) — the site never holds it. JWT secret + TLS keys: on the GPU host, root:gate 0640 | ☐ |
 | 8.3 | Camera credential | Camera admin password recorded in the site file; note it is embedded in `SOURCE_ARGS` in `/etc/gate/gate-vision.env` (mode-protected, flagged as a residual item in [docs/security.md](security.md)) | ☐ |
-| 8.4 | Resident allowlist seeded | Full resident plate list loaded (A7 proved the path); owner shown the SPA allowlist screen: add, remove, and that these routes require login | ☐ |
+| 8.4 | Resident allowlist seeded | Full resident plate list loaded (A7 proved the path); owner shown the app's Vehicles tab: add, edit, swipe to remove, and that it needs the operator role; admins shown Account → Users and roles | ☐ |
 | 8.5 | Operator orientation | Owner/guard walked through: dashboard monitoring view (open without login — survives session expiry), issuing open/close, what a `Faulted` state looks like and the REBOOT recovery (R5), and who to call. The operator's standing reference is the [operations runbook](runbook.md) — hand it over with the credentials | ☐ |
 | 8.6 | Warranty and support notes | Motor safety functions (anti-crush, soft-start) remain inside the Centurion — the dry-contact interface does not void the motor warranty (ADR-008 rationale). Relay modules are a wear item (~100k mechanical cycles class, bench Stage 6 note). Record the support contact and the OTA release channel: updates arrive only as signed manifests from the installer | ☐ |
 | 8.7 | Site file archived | Survey values (§2), R4/segmentation/PKI decisions, baseline firmware version + manifest key-id, soak + acceptance logs, this signed sheet — filed with the installer and a copy to the owner | ☐ |

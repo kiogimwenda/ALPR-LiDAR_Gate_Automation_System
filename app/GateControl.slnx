@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GateControl.App/GateControl.App.csproj" />
+    <Project Path="src/GateControl.Core/GateControl.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GateControl.Core.Tests/GateControl.Core.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -9,20 +9,19 @@ GPU host (Ubuntu server)                     Field
 │ gate-dashboard   :8080  (HTTP) │           │ (or gate-sim fleet)  │
 │ nginx gate-ota   :8081  (HTTP) │           └──────────────────────┘
 └────────────────────────────────┘
-        ▲ browser (dashboard SPA, same-origin from :8080)
+        ▲ Gate Control app (app/ — Android, iOS, macOS, Windows) → :8080
 ```
 
 ## Install / upgrade (GPU host)
 
 ```bash
 cmake --preset release && cmake --build --preset release
-(cd dashboard/frontend && npm ci && npm run build)
-sudo deployment/install-server.sh --build build/release --www dashboard/frontend/build
+sudo deployment/install-server.sh --build build/release
 ```
 
 The installer creates the `gate` service account, installs binaries to
 `/opt/gate/bin` (keeping the previous as `*.prev` for manual
-rollback), the SPA to `/opt/gate/www`, default configs to
+rollback), default configs to
 `/etc/gate/*.env` (first run only — upgrades never clobber edits), and
 enables both units. Runtime knobs live in the env files; the units
 never need editing.

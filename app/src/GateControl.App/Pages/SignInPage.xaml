@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:GateControl.Core.ViewModels;assembly=GateControl.Core"
+             x:Class="GateControl.Pages.SignInPage"
+             x:DataType="vm:SignInViewModel"
+             Shell.NavBarIsVisible="False">
+    <ScrollView>
+        <Grid RowDefinitions="*,Auto,*" Padding="20">
+            <VerticalStackLayout x:Name="Card" Grid.Row="1" MaximumWidthRequest="420" Spacing="0">
+
+                <Image Source="brand_gate.png" HeightRequest="72" WidthRequest="72" HorizontalOptions="Start" />
+                <Label Text="Gate Control" Style="{StaticResource LargeTitle}" Margin="0,16,0,4" />
+                <Label Text="Sign in to your site's gate server." Style="{StaticResource Subhead}" />
+
+                <Label Text="Server" Style="{StaticResource SectionHeader}" Margin="4,28,4,6" />
+                <Border Style="{StaticResource Card}" Padding="16,2">
+                    <Entry x:Name="ServerEntry" Text="{Binding Server}" Placeholder="192.168.1.50:8080"
+                           Keyboard="Url" IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
+                           ReturnType="Next" Completed="OnServerCompleted"
+                           SemanticProperties.Description="Gate server address" />
+                </Border>
+
+                <Label Text="Account" Style="{StaticResource SectionHeader}" Margin="4,22,4,6" />
+                <Border Style="{StaticResource Card}" Padding="16,2">
+                    <VerticalStackLayout>
+                        <Entry x:Name="UserEntry" Text="{Binding Username}" Placeholder="Username"
+                               IsSpellCheckEnabled="False" IsTextPredictionEnabled="False"
+                               ReturnType="Next" Completed="OnUserCompleted" />
+                        <BoxView Style="{StaticResource Separator}" />
+                        <Entry x:Name="PasswordEntry" Text="{Binding Password}" Placeholder="Password"
+                               IsPassword="True" ReturnType="Go"
+                               ReturnCommand="{Binding SignInCommand}" />
+                    </VerticalStackLayout>
+                </Border>
+                <Label Text="Leave the account empty if your server has no sign-in."
+                       Style="{StaticResource Footnote}" Margin="4,8,4,0" />
+
+                <Label Text="{Binding Error}" IsVisible="{Binding HasError}"
+                       TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}"
+                       FontSize="15" Margin="4,16,4,0" />
+
+                <Grid Margin="0,24,0,0">
+                    <Button Text="Sign In" Style="{StaticResource FilledButton}"
+                            Command="{Binding SignInCommand}" IsVisible="{Binding IsIdle}" />
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                       HeightRequest="50" />
+                </Grid>
+            </VerticalStackLayout>
+        </Grid>
+    </ScrollView>
+</ContentPage>

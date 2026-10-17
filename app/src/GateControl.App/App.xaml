@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:c="clr-namespace:GateControl.Controls"
+             x:Class="GateControl.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
+                <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <c:ToneColorConverter x:Key="ToneColor" />
+            <c:ToneTintConverter x:Key="ToneTint" />
+            <c:InvertBoolConverter x:Key="Not" />
+            <c:NotNullConverter x:Key="NotNull" />
+            <c:HasTextConverter x:Key="HasText" />
+            <c:PositiveConverter x:Key="Positive" />
+            <c:EnumIndexConverter x:Key="EnumIndex" />
+            <c:LocalTimeConverter x:Key="LocalTime" />
+            <c:PlateConverter x:Key="PlateText" />
+            <c:VerdictTextConverter x:Key="VerdictText" />
+            <c:VerdictToneConverter x:Key="VerdictTone" />
+            <c:RoleTextConverter x:Key="RoleText" />
+            <c:EnumEqualsConverter x:Key="Is" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

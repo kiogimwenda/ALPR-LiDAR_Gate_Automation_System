@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<p:PageBase xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+            xmlns:p="clr-namespace:GateControl.Pages"
+            xmlns:c="clr-namespace:GateControl.Controls"
+            xmlns:m="clr-namespace:GateControl.Motion"
+            xmlns:vm="clr-namespace:GateControl.Core.ViewModels;assembly=GateControl.Core"
+            x:Class="GateControl.Pages.VehiclesPage"
+            x:Name="Page"
+            x:DataType="vm:AllowlistViewModel">
+    <Grid>
+        <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
+            <ScrollView>
+                <VerticalStackLayout Padding="16,8,16,32" MaximumWidthRequest="900">
+                    <Border Style="{StaticResource Inset}" HeightRequest="40">
+                        <Entry Text="{Binding Query}" Placeholder="Search plate, owner or unit"
+                               IsSpellCheckEnabled="False" ReturnType="Search" VerticalOptions="Center" />
+                    </Border>
+
+                    <Grid ColumnDefinitions="*,Auto" Margin="2,18,2,6">
+                        <Label Text="{Binding CountText}" Style="{StaticResource SectionHeader}" Margin="0" />
+                        <Button Grid.Column="1" Text="Add vehicle" Style="{StaticResource TintedButton}"
+                                Command="{Binding AddCommand}" IsVisible="{Binding CanEdit}" HeightRequest="34" />
+                    </Grid>
+
+                    <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}"
+                           TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}"
+                           Margin="2,0,2,8" />
+                    <Label Text="Managing registered vehicles needs the operator role." Style="{StaticResource Subhead}"
+                           IsVisible="{Binding CanEdit, Converter={StaticResource Not}}" Margin="2,0,2,8" />
+
+                    <Border Style="{StaticResource Card}" Padding="0">
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding Items}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="vm:AllowlistRow">
+                                    <SwipeView>
+                                        <SwipeView.RightItems>
+                                            <SwipeItems Mode="Execute">
+                                                <SwipeItem Text="Remove" BackgroundColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}"
+                                                           Command="{Binding Vm.RemoveCommand, Source={x:Reference Page}, x:DataType=p:VehiclesPage}"
+                                                           CommandParameter="{Binding .}" />
+                                            </SwipeItems>
+                                        </SwipeView.RightItems>
+                                        <Grid Padding="16,11" ColumnDefinitions="*,Auto" ColumnSpacing="12"
+                                              BackgroundColor="{AppThemeBinding Light={StaticResource SurfaceLight}, Dark={StaticResource SurfaceDark}}"
+                                              m:Pressable.Command="{Binding Vm.EditCommand, Source={x:Reference Page}, x:DataType=p:VehiclesPage}"
+                                              m:Pressable.CommandParameter="{Binding .}">
+                                            <VerticalStackLayout Spacing="1">
+                                                <Label Text="{Binding Plate}" Style="{StaticResource Plate}" />
+                                                <Label Text="{Binding Owner}" Style="{StaticResource Subhead}"
+                                                       IsVisible="{Binding Owner, Converter={StaticResource HasText}}" />
+                                                <Label Style="{StaticResource Caption}">
+                                                    <Label.FormattedText>
+                                                        <FormattedString>
+                                                            <Span Text="{Binding Classes}" />
+                                                        </FormattedString>
+                                                    </Label.FormattedText>
+                                                </Label>
+                                            </VerticalStackLayout>
+                                            <Border Grid.Column="1" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="9,3"
+                                                    VerticalOptions="Center" IsVisible="{Binding HasRestriction}"
+                                                    BackgroundColor="{AppThemeBinding Light=#1FFF9500, Dark=#33FF9F0A}">
+                                                <Label Text="{Binding Restricted}" FontSize="12" FontAttributes="Bold"
+                                                       TextColor="{AppThemeBinding Light={StaticResource CautionLight}, Dark={StaticResource CautionDark}}" />
+                                            </Border>
+                                        </Grid>
+                                    </SwipeView>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                            <BindableLayout.EmptyView>
+                                <Label Text="No registered vehicles match." Style="{StaticResource Subhead}" Padding="16,14" />
+                            </BindableLayout.EmptyView>
+                        </VerticalStackLayout>
+                    </Border>
+                    <Label Text="Swipe left on a vehicle to remove it." Style="{StaticResource Footnote}"
+                           IsVisible="{Binding CanEdit}" Margin="4,8" />
+                </VerticalStackLayout>
+            </ScrollView>
+        </RefreshView>
+
+        <!-- Add / edit: an iOS sheet (drag down to dismiss). -->
+        <c:Sheet x:Name="EditorSheet" IsOpen="{Binding Editor, Converter={StaticResource NotNull}, Mode=OneWay}"
+                 DismissCommand="{Binding Editor.CancelCommand, FallbackValue={x:Null}}">
+            <c:Sheet.SheetContent>
+                <ScrollView x:DataType="vm:AllowlistViewModel">
+                    <VerticalStackLayout x:Name="EditorForm" Padding="16,0,16,16" x:DataType="vm:PlateEditorViewModel">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <Button Text="Cancel" Style="{StaticResource PlainButton}" Command="{Binding CancelCommand}" />
+                            <Label Grid.Column="1" Text="{Binding Title}" Style="{StaticResource Headline}"
+                                   HorizontalOptions="Center" VerticalOptions="Center" />
+                            <Button Grid.Column="2" Text="Save" Style="{StaticResource PlainButton}" FontAttributes="Bold"
+                                    Command="{Binding SaveCommand}" />
+                        </Grid>
+                        <Label Text="Vehicle" Style="{StaticResource SectionHeader}" Margin="4,16,4,6" />
+                        <Border Style="{StaticResource SheetCard}" Padding="16,2">
+                            <VerticalStackLayout>
+                                <Entry Text="{Binding Plate}" Placeholder="Plate, e.g. KDA 123A" IsEnabled="{Binding IsNew}"
+                                       IsSpellCheckEnabled="False" IsTextPredictionEnabled="False" FontAttributes="Bold" />
+                                <BoxView Style="{StaticResource Separator}" />
+                                <Entry Text="{Binding OwnerName}" Placeholder="Owner" />
+                                <BoxView Style="{StaticResource Separator}" />
+                                <Entry Text="{Binding OwnerUnit}" Placeholder="House / unit" />
+                                <BoxView Style="{StaticResource Separator}" />
+                                <Entry Text="{Binding Notes}" Placeholder="Notes" />
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <Label Text="Allowed vehicle types" Style="{StaticResource SectionHeader}" Margin="4,18,4,6" />
+                        <Border Style="{StaticResource SheetCard}" Padding="16,4">
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding Classes}">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ClassToggle">
+                                        <Grid ColumnDefinitions="*,Auto" MinimumHeightRequest="44">
+                                            <Label Text="{Binding Label}" VerticalOptions="Center" />
+                                            <Switch Grid.Column="1" IsToggled="{Binding Selected}" VerticalOptions="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </Border>
+                        <Label Text="Leave all off to allow any vehicle. When types are set and the LiDAR sees a different one, the gate holds the vehicle for review."
+                               Style="{StaticResource Footnote}" Margin="4,8,4,0" />
+
+                        <Label Text="Access" Style="{StaticResource SectionHeader}" Margin="4,18,4,6" />
+                        <Border Style="{StaticResource SheetCard}" Padding="16,4">
+                            <VerticalStackLayout>
+                                <Grid ColumnDefinitions="*,Auto" MinimumHeightRequest="44">
+                                    <Label Text="Expires" VerticalOptions="Center" />
+                                    <Switch Grid.Column="1" IsToggled="{Binding HasExpiry}" VerticalOptions="Center" />
+                                </Grid>
+                                <DatePicker Date="{Binding Expires}" IsVisible="{Binding HasExpiry}" Format="d MMMM yyyy" />
+                            </VerticalStackLayout>
+                        </Border>
+
+                        <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}" Margin="4,12,4,0"
+                               TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}" />
+                    </VerticalStackLayout>
+                </ScrollView>
+            </c:Sheet.SheetContent>
+        </c:Sheet>
+    </Grid>
+</p:PageBase>

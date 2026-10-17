@@ -1,0 +1,26 @@
+<Project>
+  <!-- Shared by every project in the GateControl solution. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Authors>Gate Automation</Authors>
+    <Product>GateControl</Product>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <!--
+    Windows: build output goes to local disk, not next to the sources.
+    The repo lives in WSL and is opened from Windows through a mapped
+    drive (e.g. W: = \\wsl.localhost\Debian). WinUI refuses to start an
+    app from a network location, the Windows App SDK manifest tool cannot
+    read UNC paths, and bin/obj traffic across the WSL boundary is slow —
+    so bin/ and obj/ live under %LOCALAPPDATA%\GateControl\build instead.
+    Set GateLocalBuild=false to keep them beside the projects.
+  -->
+  <PropertyGroup Condition="'$(OS)' == 'Windows_NT' And '$(GateLocalBuild)' != 'false'">
+    <GateBuildRoot>$(LOCALAPPDATA)\GateControl\build\</GateBuildRoot>
+    <BaseIntermediateOutputPath>$(GateBuildRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(GateBuildRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

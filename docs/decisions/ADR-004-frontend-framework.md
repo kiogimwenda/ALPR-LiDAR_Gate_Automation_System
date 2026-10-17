@@ -1,7 +1,8 @@
 # ADR-004: Frontend Framework — SvelteKit
 
 ## Status
-Accepted
+Superseded by [ADR-013](ADR-013-native-operator-app.md) (2026-10-17): the
+operator surface is now the native Gate Control app (.NET MAUI).
 
 ## Date
 2026-04-19
