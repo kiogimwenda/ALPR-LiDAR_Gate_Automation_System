@@ -41,6 +41,7 @@ public sealed class NavCapsule : ContentView
     private bool _placed;
     private bool _compact;
     private readonly Border _capsule;
+    private readonly BoxView _sheen;
 
     public NavCapsule()
     {
@@ -72,7 +73,22 @@ public sealed class NavCapsule : ContentView
         _pill.Children.Add(_right);
         _pill.Opacity = 0;
 
-        var layer = new Grid { Children = { _pill, _items } };
+        // Light caught across the top of the glass; barely any fill, and it
+        // passes touches through.
+        _sheen = new BoxView
+        {
+            IsVisible = false,
+            InputTransparent = true,
+            CornerRadius = ItemHeight / 2,
+            Background = new LinearGradientBrush(
+                [
+                    new GradientStop(Color.FromRgba(255, 255, 255, 34), 0f),
+                    new GradientStop(Colors.Transparent, 0.55f),
+                    new GradientStop(Color.FromRgba(255, 255, 255, 12), 1f),
+                ],
+                new Point(0.2, 0), new Point(0.8, 1)),
+        };
+        var layer = new Grid { Children = { _sheen, _pill, _items } };
         _capsule = new Border { Style = (Style)Application.Current!.Resources["Capsule"], Padding = 4, Content = layer };
         Content = _capsule;
         _items.SizeChanged += (_, _) => Update(animated: _placed);
@@ -93,11 +109,24 @@ public sealed class NavCapsule : ContentView
         set
         {
             _compact = value;
-            // Floating over cards of the same fill: an outline keeps it legible.
-            _capsule.StrokeThickness = value ? 1 : 0;
+            // Liquid glass: no fill at all, so the page shows through; only
+            // a bright specular rim marks the edge.
+            _capsule.StrokeThickness = value ? 1.2 : 0;
             if (value)
             {
-                _capsule.SetAppThemeColor(Border.StrokeProperty, Color.FromRgba(0, 0, 0, 40), Color.FromRgba(255, 255, 255, 48));
+                _capsule.BackgroundColor = Colors.Transparent;
+                _capsule.Background = Brush.Transparent;
+                // Refraction: faint spectral fringes along the bright rim.
+                _capsule.Stroke = new LinearGradientBrush(
+                    [
+                        new GradientStop(Color.FromRgba(255, 255, 255, 190), 0f),
+                        new GradientStop(Color.FromRgba(120, 200, 255, 110), 0.22f),
+                        new GradientStop(Color.FromRgba(255, 255, 255, 36), 0.5f),
+                        new GradientStop(Color.FromRgba(255, 170, 200, 100), 0.78f),
+                        new GradientStop(Color.FromRgba(255, 255, 255, 150), 1f),
+                    ],
+                    new Point(0, 0), new Point(1, 1));
+                _sheen.IsVisible = true;
             }
         }
     }
@@ -150,6 +179,18 @@ public sealed class NavCapsule : ContentView
             HorizontalTextAlignment = TextAlignment.Center,
             InputTransparent = true,
         };
+        if (Compact && !onInk)
+        {
+            // Halo: keeps the label readable over whatever scrolls behind.
+            var dark = Application.Current.RequestedTheme == AppTheme.Dark;
+            label.Shadow = new Shadow
+            {
+                Brush = dark ? Colors.Black : Colors.White,
+                Radius = 6,
+                Opacity = 1,
+                Offset = new Point(0, 0),
+            };
+        }
         if (onInk)
         {
             label.SetAppThemeColor(Label.TextColorProperty, (Color)res["OnInkLight"], (Color)res["OnInkDark"]);
