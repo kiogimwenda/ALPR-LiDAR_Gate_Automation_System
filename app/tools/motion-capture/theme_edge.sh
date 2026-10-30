@@ -1,6 +1,6 @@
 #!/bin/bash
 # theme_edge.sh — the wipe's edge cases, in-app: tap again mid-wipe, switch tab mid-wipe, resize
-# mid-wipe, press held > 1 s, and Reduce Motion; after each, "themeinfo" logs the theme, whether
+# mid-wipe, press held > 1 s, press then drag away, press then window deactivation, and Reduce Motion; after each, "themeinfo" logs the theme, whether
 # a press/wipe is still in progress, leftover overlays and the caption colour.
 source "$(dirname "$(readlink -f "$0")")/env.sh"
 C=/mnt/c/Users/User/AppData/Local/Temp/gc-cmd.txt; L=$C.log
@@ -10,6 +10,7 @@ P send.ps1 -Cmd "signout" >/dev/null; sleep 3; timeout 120 "$T/signin.sh" >/dev/
 printf "tab 1\n" > $C; sleep 2; printf "theme dark\n" > $C; sleep 2
 : > $L
 step(){ echo "== $1" >> $L; }
+step "start"; printf "themeinfo\n" > $C; sleep 1
 step "retap mid-wipe (to light, then to dark 250 ms in)"
 printf "trace 1600 TE-retap\nthemepress\n" > $C; sleep 0.09; printf "theme light\n" > $C; sleep 0.25; printf "themepress\n" > $C; sleep 0.09; printf "theme dark\n" > $C; sleep 2.5; printf "themeinfo\n" > $C; sleep 1
 step "tab switch mid-wipe (to light, Reports 250 ms in)"
@@ -21,6 +22,10 @@ step "press held 1.4 s, then tap (to light)"
 printf "trace 2400 TE-hold\nthemepress\n" > $C; sleep 1.4; printf "theme light\n" > $C; sleep 2.5; printf "themeinfo\n" > $C; sleep 1
 step "press without a tap (cancelled press)"
 printf "trace 1800 TE-cancel\nthemepress\n" > $C; sleep 2.5; printf "themeinfo\n" > $C; sleep 1
+step "press, drag away, release (cancel on drag: theme and saved preference unchanged)"
+printf "trace 1800 TE-drag\nthemepress\n" > $C; sleep 0.12; printf "themecancel drag\n" > $C; sleep 2; printf "themeinfo\n" > $C; sleep 1
+step "press, Alt-Tab / Esc to another window (cancel on deactivation)"
+printf "trace 1800 TE-deact\nthemepress\n" > $C; sleep 0.12; printf "themecancel deactivated\n" > $C; sleep 2; printf "themeinfo\n" > $C; sleep 1
 step "Reduce Motion (to dark)"
 printf "reduce on\n" > $C; sleep 1; printf "trace 900 TE-rm\nthemepress\n" > $C; sleep 0.09; printf "theme dark\n" > $C; sleep 1.5; printf "themeinfo\n" > $C; sleep 1
 printf "reduce os\n" > $C; sleep 1

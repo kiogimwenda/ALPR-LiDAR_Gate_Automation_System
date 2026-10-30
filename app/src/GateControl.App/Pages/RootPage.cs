@@ -137,8 +137,33 @@ public sealed class RootPage : ContentPage
         };
 
         _themeButton = IconButton(_themeIcon, "Light or dark", () => ToggleTheme(_themeButton!, null));
+        // The press starts the reveal (PrepareTheme); a press that will not
+        // become a tap — the pointer leaves the button or drags away — is
+        // undone at once, so the window is never left as a frozen snapshot
+        // (review round 3). The 1 s timeout in ThemeReveal stays as the
+        // backstop for a press that is simply held.
         var themeDown = new PointerGestureRecognizer();
-        themeDown.PointerPressed += (_, _) => PrepareTheme();
+        Point? pressedAt = null;
+        themeDown.PointerPressed += (_, e) =>
+        {
+            pressedAt = e.GetPosition(_themeButton);
+            PrepareTheme();
+        };
+        themeDown.PointerMoved += (_, e) =>
+        {
+            if (pressedAt is { } d && e.GetPosition(_themeButton) is { } p &&
+                Math.Abs(p.X - d.X) + Math.Abs(p.Y - d.Y) > GateControl.Core.Motion.Gesture.DragThreshold)
+            {
+                pressedAt = null;
+                CancelThemePress("drag");
+            }
+        };
+        themeDown.PointerExited += (_, _) =>
+        {
+            pressedAt = null;
+            CancelThemePress("exit");
+        };
+        themeDown.PointerReleased += (_, _) => pressedAt = null;
         _themeButton.GestureRecognizers.Add(themeDown);
         var search = IconButton(new IconView { Glyph = Icons.Search, Size = 16 }, "Search reports", () => Select(2));
         _badgeText = new Label
@@ -296,6 +321,16 @@ public sealed class RootPage : ContentPage
                         WhenIdle(SettleXamlCleanup);
                     }
                 });
+            }
+        };
+        // Alt-Tab / Esc to another window mid-press: undo the press.
+        var deactivationHooked = false;
+        Loaded += (_, _) =>
+        {
+            if (!deactivationHooked && Window is { } w)
+            {
+                deactivationHooked = true;
+                w.Deactivated += (_, _) => CancelThemePress("deactivated");
             }
         };
         // A wipe's snapshot is the old window size: cut it short on a resize.
@@ -713,6 +748,10 @@ public sealed class RootPage : ContentPage
     }
 
     // Pointer-down on a theme button: snapshot now (spec A11 start latency).
+    // Undo a press in progress (pointer left / dragged away / window
+    // deactivated: Alt-Tab, Esc to another window).
+    public void CancelThemePress(string why) => ThemeReveal.CancelPress(_window, why);
+
     public void PrepareTheme()
     {
         var target = Effective == AppTheme.Dark ? AppTheme.Light : AppTheme.Dark;
@@ -723,17 +762,24 @@ public sealed class RootPage : ContentPage
         ClipHostForSnapshot(true);
         ThemeReveal.Prepare(_window, _window, target, () => ApplyTheme(target), () =>
         {
-            _appearance.Current = previous;
+            // In memory only: the press never touched the saved preference.
+            _appearance.Preview(previous);
             RestoreParkedAfterRestyle();
         });
     }
 
+    // Switches the theme in memory (UserAppTheme) — not saved, and not seen by
+    // the appearance setting's listeners, until the tap's wipe has run
+    // (CommitTheme).
     private void ApplyTheme(AppTheme target)
     {
         HideParkedForRestyle();
         ClipHostForSnapshot(true);
-        _appearance.Current = target == AppTheme.Dark ? Appearance.Dark : Appearance.Light;
+        _appearance.Preview(target == AppTheme.Dark ? Appearance.Dark : Appearance.Light);
     }
+
+    private void CommitTheme(AppTheme target) =>
+        _appearance.Current = target == AppTheme.Dark ? Appearance.Dark : Appearance.Light;
 
     // The theme reveal from the rail's sun / moon (or the header toggle on
     // phones), as if that button was tapped.
@@ -755,8 +801,12 @@ public sealed class RootPage : ContentPage
         ClipHostForSnapshot(true);
         var res = Application.Current!.Resources;
         var newOuter = (Color)res[target == AppTheme.Dark ? "OuterDark" : "OuterLight"];
-        await ThemeReveal.RunAsync(_window, _window, origin, target, () => ApplyTheme(target), newOuter,
-                                   RestoreParkedAfterRestyle, () => App.ApplyCaption(target));
+        await ThemeReveal.RunAsync(_window, _window, origin, target, () => ApplyTheme(target), newOuter, () =>
+        {
+            // The wipe has run (or been cut short by a newer one): saved now.
+            CommitTheme(target);
+            RestoreParkedAfterRestyle();
+        }, () => App.ApplyCaption(target));
     }
 
     // A theme switch restyles every element of every tab. With the parked tabs

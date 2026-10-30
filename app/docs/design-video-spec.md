@@ -345,6 +345,8 @@ New primitives (built in Phase 2a; file → what it does):
 | Theme reveal (A11) | snapshot + animated clip (verified) | snapshot + clip (built, not run-tested; needs a device) | same | same (not built here) |
 | Theme reveal curve | **0.62 s, InQuad on covered area** (`TimedProgress.ThemeReveal`): a timed curve, not a spring, calibrated so the covered area grows like the reference's wipe | same | same | same |
 | Theme reveal start | first wipe frame **median 24–33 ms, worst 91 ms** after the tap (round 3: snapshot *and* theme switch on pointer-down, under the snapshot; the tap only starts the wipe; keyboard / screen-reader activation has no press and takes ~100–140 ms) | native PixelCopy snapshot (API 26+), View.Draw fallback (built, not run-tested; needs a device) | — | PNG round-trip (not tuned) |
+| Theme toggle's own press feedback | hidden under the snapshot: the press already lays the old-theme snapshot over the window (so the restyle can run during the press), and the toggle's press scale is drawn under it | — | — | — |
+| Keyboard access (Windows) | every pressable (nav items, rail items, header buttons, segmented controls, plate / vehicle / user rows, settings rows) is a Tab stop in visual order, with Enter / Space, the system focus visual on keyboard focus only, and a UIA Button or TabItem (selected state as ItemStatus "Selected"; Left / Right move between nav and segmented items). Parked tabs are out of the order. No UIA Invoke pattern on these (activation is by keyboard). | not built (Android / iOS keyboard access) | — | — |
 | Window caption during the wipe | outside the snapshot, so it cannot be wiped: it switches on the wipe's first frame (it used to switch when the theme was applied) | — | — | — |
 | Theme toggle position | **top-right of the window** (user request), wipe from there; the reference has it on the rail | same | same | same |
 | Accent glow | **restored as a pre-rendered image** (`accent_glow.png`, a blurred brand rounded rect) behind the accent card, faded in by opacity once the blob clip has settled; no MAUI `Shadow` (that cost 18–25 ms frames and its WrapperView threw when toggled). Frames during the fade are no longer than the frames before it (`phase2b-evidence/round2/glow-frames.md`) | same | same | same |
@@ -712,4 +714,34 @@ Tables: `phase2b-evidence/round2/acceptance-table.md`; GC traces:
   - WinTransform removes its transform from an inner view once a container appears.
   - Anchor / RTL / Reduce Motion parity with stock MAUI holds.
   - SettleXamlCleanup re-arms on resize and theme changes.
+
+### Round 3 final review — group 7: theme press fixes and keyboard accessibility (2026-10-30)
+
+- **No persisting on press.** The press switches only the in-memory theme
+  (`AppearanceService.Preview`). The saved preference, and the appearance setting's listeners,
+  change only when the tap's wipe has run.
+- **Immediate rollback.** A press is undone at once on pointer exit, a drag past the threshold,
+  or window deactivation. The 1 s timeout is only the backstop for a held press.
+  - Edge cases now include "press, drag away" and "press, Alt-Tab".
+  - In all of them, the theme and the saved preference (read back) are unchanged and no overlay
+    is left (`phase2b-evidence/round2/theme-reveal.md`).
+- **Theme rows (final code):**
+  - 0 dropped frames in every wipe.
+  - Coverage 487–492 ms (wide) and 521 ms (phone).
+  - Tap → first wipe ≤ 64 ms in 29 of 30 wipes. One run took 112 ms: a gen-2 collection during
+    the press-time restyle, under the static snapshot, at 88 % machine memory load.
+- **SettleXamlCleanup with the final code:** resize / maximise-restore / theme → tab entrance,
+  3 rounds plus an interrupted run: 0 gen-2 collections and no frame over 25 ms (appendix in
+  `acceptance-table.md`).
+- **Keyboard (a regression from Phase 2a, fixed).** `Pressable` makes each tappable a Windows
+  keyboard stop: Enter / Space, the system focus visual on keyboard focus only, and a UIA Button
+  or TabItem with selected state. Left / Right arrows work inside the nav and segmented controls.
+  `ParkHost` also takes these out of the order while a tab is parked.
+  - Reachable controls per tab, before → after: Live 6 → 20, Dashboard 1 → 17,
+    Reports 12 → 80, Vehicles 3 → 18, Alerts 1 → 17. All have 0 in parked tabs.
+  - The UIA tree shows the nav as TabItems; header and rail items as Buttons.
+- **Entrances after group 7 (run F, 5 launches):** all rows pass. That is median 0, worst ≤ 1,
+  and the longest reveal frame 28 ms; tap → pill motion has a median of 3.9 ms and a worst of
+  10.5 ms.
+- **Limitation:** no human Narrator pass (accepted as documented).
 

@@ -67,3 +67,8 @@ binary contains no harness (`builds/release-harness-check.txt`).
 - **Not measured:** low-end GPUs.
 
 **6 (optional), not done:** driving the ticker from Composition.
+
+**Final review, item 4 (group 7):** the low reachable counts above were a Phase 2a regression,
+caused by custom tappables that were not focusable. With group 7, `Pressable` makes every
+tappable a keyboard stop. Reachable controls per tab: Live 20, Dashboard 17, Reports 80,
+Vehicles 18, Alerts 17, with 0 inside parked tabs (`a11y-after/`).

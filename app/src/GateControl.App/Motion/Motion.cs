@@ -417,6 +417,8 @@ public static class Spr
 // Press feedback for any view: scale 0.97 on touch-down, back on release,
 // with the action (Command) on release — and a ~10 pt move turns the press
 // into a scroll instead of a tap.
+public enum PressRole { Button, TabItem }
+
 public static class Pressable
 {
     public static readonly BindableProperty CommandProperty = BindableProperty.CreateAttached(
@@ -429,6 +431,39 @@ public static class Pressable
     public static readonly BindableProperty EnabledProperty = BindableProperty.CreateAttached(
         "Enabled", typeof(bool), typeof(Pressable), false,
         propertyChanged: (b, _, n) => { if ((bool)n) Attach(b as View); });
+
+    // Keyboard and screen readers (review round 3, item 4): what the element
+    // is (Button, or TabItem for the nav and segmented cells) and, for tabs,
+    // whether it is the selected one.
+    public static readonly BindableProperty RoleProperty = BindableProperty.CreateAttached(
+        "Role", typeof(PressRole), typeof(Pressable), PressRole.Button,
+        propertyChanged: (b, _, _) => Keyboard.Sync(b as View));
+
+    public static readonly BindableProperty SelectedProperty = BindableProperty.CreateAttached(
+        "Selected", typeof(bool), typeof(Pressable), false,
+        propertyChanged: (b, _, _) => Keyboard.Sync(b as View));
+
+    public static PressRole GetRole(BindableObject b) => (PressRole)b.GetValue(RoleProperty);
+    public static void SetRole(BindableObject b, PressRole v) => b.SetValue(RoleProperty, v);
+    public static bool GetSelected(BindableObject b) => (bool)b.GetValue(SelectedProperty);
+    public static void SetSelected(BindableObject b, bool v) => b.SetValue(SelectedProperty, v);
+
+    // Arrow keys (Left / Right) inside a group of tabs: the group gets the key
+    // and moves the selection. Set by NavCapsule / SegmentedControl.
+    public static readonly BindableProperty ArrowsProperty = BindableProperty.CreateAttached(
+        "Arrows", typeof(Action<int>), typeof(Pressable), null);
+
+    public static Action<int>? GetArrows(BindableObject b) => (Action<int>?)b.GetValue(ArrowsProperty);
+    public static void SetArrows(BindableObject b, Action<int>? v) => b.SetValue(ArrowsProperty, v);
+
+    // Moves keyboard focus to a pressable (arrow-key navigation).
+    public static void Focus(View view)
+    {
+#if WINDOWS
+        ((view.Handler?.ContainerView ?? view.Handler?.PlatformView) as Microsoft.UI.Xaml.UIElement)?
+            .Focus(Microsoft.UI.Xaml.FocusState.Keyboard);
+#endif
+    }
 
     public static System.Windows.Input.ICommand? GetCommand(BindableObject b) =>
         (System.Windows.Input.ICommand?)b.GetValue(CommandProperty);
@@ -496,6 +531,16 @@ public static class Pressable
         };
         view.GestureRecognizers.Add(pointer);
 
+        void Invoke()
+        {
+            var command = GetCommand(view);
+            var parameter = GetCommandParameter(view);
+            if (command?.CanExecute(parameter) == true)
+            {
+                command.Execute(parameter);
+            }
+        }
+
         var tap = new TapGestureRecognizer();
         tap.Tapped += (_, _) =>
         {
@@ -504,14 +549,112 @@ public static class Pressable
             {
                 return;
             }
-            var command = GetCommand(view);
-            var parameter = GetCommandParameter(view);
-            if (command?.CanExecute(parameter) == true)
-            {
-                command.Execute(parameter);
-            }
+            Invoke();
         };
         view.GestureRecognizers.Add(tap);
+        Keyboard.Attach(view, Press, Release, Invoke);
+    }
+
+    // Windows: a pressable is a keyboard stop like a button — Tab reaches it
+    // (in visual order), Enter / Space press and invoke it, the system focus
+    // visual shows on keyboard focus only, and UI Automation sees a named
+    // Button (or a TabItem with its selected state). Elsewhere a no-op
+    // (Android / iOS keyboard access not built here).
+    private static class Keyboard
+    {
+        public static void Attach(View view, Action press, Action release, Action invoke)
+        {
+#if WINDOWS
+            void Hook()
+            {
+                if ((view.Handler?.ContainerView ?? view.Handler?.PlatformView) is not Microsoft.UI.Xaml.UIElement el ||
+                    el is Microsoft.UI.Xaml.Controls.Control)
+                {
+                    return;
+                }
+                if (Hooked.TryGetValue(el, out _))
+                {
+                    return;
+                }
+                Hooked.Add(el, new object());
+                el.IsTabStop = true;
+                el.UseSystemFocusVisuals = true;
+                var down = false;
+                el.KeyDown += (_, e) =>
+                {
+                    if (e.Key is global::Windows.System.VirtualKey.Enter or global::Windows.System.VirtualKey.Space)
+                    {
+                        e.Handled = true;
+                        if (!down)
+                        {
+                            down = true;
+                            press();
+                        }
+                    }
+                    else if (e.Key is global::Windows.System.VirtualKey.Left or global::Windows.System.VirtualKey.Right &&
+                             FindArrows(view) is { } arrows)
+                    {
+                        e.Handled = true;
+                        arrows(e.Key == global::Windows.System.VirtualKey.Left ? -1 : 1);
+                    }
+                };
+                el.KeyUp += (_, e) =>
+                {
+                    if (down && e.Key is global::Windows.System.VirtualKey.Enter or global::Windows.System.VirtualKey.Space)
+                    {
+                        e.Handled = true;
+                        down = false;
+                        release();
+                        invoke();
+                    }
+                };
+                el.LostFocus += (_, _) =>
+                {
+                    if (down)
+                    {
+                        down = false;
+                        release();
+                    }
+                };
+                Sync(view);
+            }
+            view.HandlerChanged += (_, _) => Hook();
+            Hook();
+#endif
+        }
+
+        public static void Sync(View? view)
+        {
+#if WINDOWS
+            if ((view?.Handler?.ContainerView ?? view?.Handler?.PlatformView) is not Microsoft.UI.Xaml.UIElement el ||
+                el is Microsoft.UI.Xaml.Controls.Control)
+            {
+                return;
+            }
+            var tab = GetRole(view!) == PressRole.TabItem;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationControlType(el,
+                tab ? Microsoft.UI.Xaml.Automation.Peers.AutomationControlType.TabItem
+                    : Microsoft.UI.Xaml.Automation.Peers.AutomationControlType.Button);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(el,
+                tab && GetSelected(view!) ? "Selected" : "");
+#endif
+        }
+
+        private static Action<int>? FindArrows(Element? e)
+        {
+            for (; e is not null; e = e.Parent)
+            {
+                if (GetArrows(e) is { } a)
+                {
+                    return a;
+                }
+            }
+            return null;
+        }
+
+#if WINDOWS
+        private static readonly ConditionalWeakTable<Microsoft.UI.Xaml.UIElement, object> Hooked = new();
+#endif
     }
 
     // Buttons have native press/release events; use those. Called for

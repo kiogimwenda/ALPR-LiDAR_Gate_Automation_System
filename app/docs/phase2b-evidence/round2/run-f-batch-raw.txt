@@ -1,0 +1,87 @@
+True
+Fri Oct 30 09:30:44 AM EAT 2026
+tab 0: 266 UIA elements, 0 outside the window (right edge 1540)
+tab 1: 82 UIA elements, 0 outside the window (right edge 1540)
+tab 2: 266 UIA elements, 0 outside the window (right edge 1540)
+tab 3: 44 UIA elements, 0 outside the window (right edge 1540)
+tab 4: 43 UIA elements, 0 outside the window (right edge 1540)
+  tabstops (tab 2): 80 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 1): 17 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 2): 80 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 3): 18 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 4): 17 reachable outside parked tabs, 0 inside parked tabs 
+== start
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+== retap mid-wipe (to light, then to dark 250 ms in)
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+== tab switch mid-wipe (to light, Reports 250 ms in)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== resize mid-wipe (to dark, 1100x800 250 ms in)
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+== press held 1.4 s, then tap (to light)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== press without a tap (cancelled press)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== press, drag away, release (cancel on drag: theme and saved preference unchanged)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== press, Alt-Tab / Esc to another window (cancel on deactivation)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== Reduce Motion (to dark)
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+=== settle
+SR-interrupt: gen2 12->12 gen0 18->18 frames>25ms [] settle-starts-in-trace 0
+SR1-maxrestore: gen2 10->10 gen0 14->14 frames>25ms [] settle-starts-in-trace 0
+SR1-resize: gen2 9->9 gen0 13->13 frames>25ms [] settle-starts-in-trace 0
+SR1-theme: gen2 10->10 gen0 14->14 frames>25ms [] settle-starts-in-trace 0
+SR2-maxrestore: gen2 11->11 gen0 16->16 frames>25ms [] settle-starts-in-trace 0
+SR2-resize: gen2 10->10 gen0 15->15 frames>25ms [] settle-starts-in-trace 0
+SR2-theme: gen2 11->11 gen0 16->16 frames>25ms [] settle-starts-in-trace 0
+SR3-maxrestore: gen2 12->12 gen0 18->18 frames>25ms [] settle-starts-in-trace 0
+SR3-resize: gen2 11->11 gen0 16->16 frames>25ms [] settle-starts-in-trace 0
+SR3-theme: gen2 12->12 gen0 18->18 frames>25ms [] settle-starts-in-trace 0
+=== acceptance F
+True
+vmwp
+\\eng-kiogi\memory\% committed bytes in use 88
+\\eng-kiogi\processor(_total)\% processor time 14
+Fri Oct 30 09:36:09 AM EAT 2026
+run 5 done
+Fri Oct 30 09:43:36 AM EAT 2026
+| Entrance | runs | median dropped | worst dropped | per run | longest frame in reveal window (ms) | reveal window (ms, median) | result |
+|---|---|---|---|---|---|---|---|
+| Dashboard, first visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 19.6 | 1182 | pass |
+| Reports, first visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 23.3 | 941 | pass |
+| Vehicles, first visit | 5 | 0 | 1 | 1, 0, 0, 0, 0 | 19.3 | 844 | pass |
+| Alerts, first visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 11.6 | 940 | pass |
+| Live, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 20.5 | 823 | pass |
+| Dashboard, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 17.9 | 1182 | pass |
+| Reports, later visit | 5 | 0 | 1 | 0, 0, 1, 0, 0 | 28.0 | 942 | pass |
+| Vehicles, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 20.9 | 841 | pass |
+| Alerts, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 8.3 | 942 | pass |
+| Dashboard, Reduce Motion | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 10.9 | 0 | pass |
+| Vehicles, Reduce Motion | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 11.2 | 0 | pass |
+| Tap → first pill-motion frame (ms) | 45 | 3.9 | 10.5 | (all 45 entrances) | — | — | pass |
+| Entrance | frames > 25 ms | compositor | gc | ui | data | other |
+|---|---|---|---|---|---|---|
+| F-1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| F-2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| F-3 | 1 | 1 | 0 | 0 | 0 | 0 |
+| F-4 | 0 | 0 | 0 | 0 | 0 | 0 |
+| L-0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| L-1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| L-2 | 1 | 1 | 0 | 0 | 0 | 0 |
+| L-3 | 0 | 0 | 0 | 0 | 0 | 0 |
+| L-4 | 0 | 0 | 0 | 0 | 0 | 0 |
+| all | 2 | 2 | 0 | 0 | 0 | 0 |
+=== theme
+| Direction | runs | tap → first wipe frame, median / worst (ms) | coverage: area 1 % → 98.5 % (ms, median, range) | whole window inside the disc (ms after first wipe frame) | wipe to overlay removed (ms) | dropped during the wipe, median / worst | longest wipe frame (ms) | longest frame under the static snapshot before the wipe (ms) | wipe frames | wave phase φ | origin (dip) | snapshot | result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dark → light | 5 | 35.2 / 64.4 | 492 (487–492) | 596 | 622 | 0 / 0 | 8.7 | 110 | 149 | 0.00→2.51 | 933,48 in 985×601 | prepared | pass |
+| light → dark | 5 | 40.6 / 112.2 | 492 (487–492) | 596 | 621 | 0 / 0 | 8.5 | 169 | 150 | 0.00→2.51 | 933,48 in 985×601 | prepared | FAIL |
+| Direction | runs | tap → first wipe frame, median / worst (ms) | coverage: area 1 % → 98.5 % (ms, median, range) | whole window inside the disc (ms after first wipe frame) | wipe to overlay removed (ms) | dropped during the wipe, median / worst | longest wipe frame (ms) | longest frame under the static snapshot before the wipe (ms) | wipe frames | wave phase φ | origin (dip) | snapshot | result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dark → light | 5 | 31.2 / 62.0 | 521 (521–521) | 594 | 623 | 0 / 0 | 7.4 | 107 | 150 | 0.00→2.51 | 367,28 in 399×627 | prepared | pass |
+| light → dark | 5 | 29.7 / 49.6 | 521 (521–521) | 596 | 622 | 0 / 0 | 6.8 | 106 | 150 | 0.00→2.51 | 367,28 in 399×627 | prepared | pass |
+True
+Fri Oct 30 09:46:29 AM EAT 2026
+done

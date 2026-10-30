@@ -42,6 +42,18 @@ public sealed class NavCapsule : ContentView
 
     public NavCapsule()
     {
+        // Left / Right on a focused item select the neighbour, as a tab strip.
+        Pressable.SetArrows(this, step =>
+        {
+            if (_cells.Count == 0)
+            {
+                return;
+            }
+            var next = ((SelectedIndex < 0 ? 0 : SelectedIndex) + step + _cells.Count) % _cells.Count;
+            ItemTapped?.Invoke(this, next);
+            SelectedIndex = next;
+            Pressable.Focus(_cells[next].Cell);
+        });
         _left = Cap();
         _right = Cap();
         _middle = new BoxView
@@ -94,6 +106,7 @@ public sealed class NavCapsule : ContentView
                 Children = { ink, onInk },
             };
             SemanticProperties.SetDescription(cell, title);
+            Pressable.SetRole(cell, PressRole.TabItem);
             Pressable.SetCommand(cell, new Command(() =>
             {
                 ItemTapped?.Invoke(this, index);
@@ -161,6 +174,7 @@ public sealed class NavCapsule : ContentView
         for (var i = 0; i < _cells.Count; i++)
         {
             var on = i == index;
+            Pressable.SetSelected(_cells[i].Cell, on);
             if (animated && !reduce)
             {
                 Spr.To(_cells[i].OnInk, Prop.Opacity, on ? 1 : 0, SpringSpec.Default);

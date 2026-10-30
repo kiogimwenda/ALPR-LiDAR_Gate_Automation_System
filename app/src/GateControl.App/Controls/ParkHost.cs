@@ -76,9 +76,9 @@ public sealed class ParkPanel : Microsoft.Maui.Platform.ContentPanel
 
     private static class DependencyObjectHelpers
     {
-        public static void Drop(Microsoft.UI.Xaml.DependencyObject? e, List<Microsoft.UI.Xaml.Controls.Control> into)
+        public static void Drop(Microsoft.UI.Xaml.DependencyObject? e, List<Microsoft.UI.Xaml.UIElement> into)
         {
-            if (e is Microsoft.UI.Xaml.Controls.Control { IsTabStop: true } c)
+            if (e is Microsoft.UI.Xaml.UIElement { IsTabStop: true } c)
             {
                 c.IsTabStop = false;
                 into.Add(c);
@@ -99,7 +99,7 @@ public sealed class ParkPanel : Microsoft.Maui.Platform.ContentPanel
     public bool IsParked => _parked;
 
     // Controls whose IsTabStop this panel turned off while parked.
-    private readonly List<Microsoft.UI.Xaml.Controls.Control> _stops = [];
+    private readonly List<Microsoft.UI.Xaml.UIElement> _stops = [];
 
     private int _version;
 
@@ -163,10 +163,18 @@ public sealed class ParkPanel : Microsoft.Maui.Platform.ContentPanel
 
     private void Collect(IVisualTreeElement e)
     {
-        if (e is IView { Handler.PlatformView: Microsoft.UI.Xaml.Controls.Control { IsTabStop: true } c })
+        // Native controls, and the pressables made keyboard stops (Pressable,
+        // on the container view when there is one).
+        if (e is IView { Handler: { } h })
         {
-            c.IsTabStop = false;
-            _stops.Add(c);
+            foreach (var native in new[] { h.ContainerView as Microsoft.UI.Xaml.UIElement, h.PlatformView as Microsoft.UI.Xaml.UIElement })
+            {
+                if (native is { IsTabStop: true } c && !_stops.Contains(c))
+                {
+                    c.IsTabStop = false;
+                    _stops.Add(c);
+                }
+            }
         }
         foreach (var child in e.GetVisualChildren())
         {

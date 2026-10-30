@@ -1,12 +1,17 @@
 #!/bin/bash
-# commit_groups_stage_build.sh [worktree dir] — replay the six commit groups, in order, onto a
+# commit_groups_stage_build.sh [worktree dir] [groups 1–6 snapshot] — replay the commit groups, in
+# order, onto a
 # detached worktree of HEAD and build after each one (Windows Debug, with its own build root so
-# the working tree's outputs are untouched); Core tests after groups 2 and 5; Android Debug after
-# group 6. Copies files from this working tree; deletions listed with a leading "-".
+# the working tree's outputs are untouched); Core tests after groups 2, 5 and 7; Android Debug at
+# the end. Groups 1–6 are copied from a snapshot of app/ taken when they were approved (second
+# argument; default: this working tree); group 7 (theme press fixes + keyboard accessibility) is
+# every file that differs between that snapshot and this working tree.
+# Deletions are listed with a leading "-".
 # Never commits. Prints one line per group.
 set -u
 REPO=$(git -C "$(dirname "$(readlink -f "$0")")" rev-parse --show-toplevel)
 WT=${1:-/tmp/gc-stage-worktree}
+SNAP=${2:-$REPO}
 DOTNET="/mnt/c/Program Files/dotnet/dotnet.exe"
 STAGE_ROOT='C:\Users\User\AppData\Local\GateControl\stage\'
 A=src/GateControl.App; C=src/GateControl.Core; T=tests/GateControl.Core.Tests
@@ -31,7 +36,7 @@ for G in "$G1" "$G2" "$G3" "$G4" "$G5" "$G6"; do
   n=$((n+1))
   for p in $G; do
     if [ "${p:0:1}" = "-" ]; then git -C "$WT" rm -q -r "app/${p:1}" 2>/dev/null || rm -rf "$WT/app/${p:1}"
-    else mkdir -p "$(dirname "$WT/app/$p")"; cp -r "$REPO/app/$p" "$(dirname "$WT/app/$p")/"; fi
+    else mkdir -p "$(dirname "$WT/app/$p")"; cp -r "$SNAP/app/$p" "$(dirname "$WT/app/$p")/"; fi
   done
   # never the per-user files, nor the large evidence bursts (not committed)
   find "${WT:?}/app" -name '*.csproj.user' -delete
@@ -39,8 +44,18 @@ for G in "$G1" "$G2" "$G3" "$G4" "$G5" "$G6"; do
   build "group$n"
   { [ $n = 2 ] || [ $n = 5 ]; } && tests "group$n"
 done
+# group 7: everything that changed after the snapshot
+if [ "$SNAP" != "$REPO" ]; then
+  G7=$(cd "$REPO" && diff -rq "$SNAP/app" app -x obj -x bin -x .idea -x '*.user' -x smoothness -x theme 2>/dev/null |
+       sed -E "s#^Files $SNAP/app/([^ ]+) and .*#\1#; s#^Only in app/?([^:]*): (.*)#\1/\2#; s#^/##" | grep -v "^Only in" | sort)
+  echo "group7 files:"; echo "$G7" | sed 's/^/  /'
+  for p in $G7; do mkdir -p "$(dirname "$WT/app/$p")"; cp -r "$REPO/app/$p" "$(dirname "$WT/app/$p")/"; done
+  find "${WT:?}/app" -name '*.csproj.user' -delete
+  build group7
+  tests group7
+fi
 w=$(wslpath -w "$WT/app/src/GateControl.App")
 (cd /mnt/c && timeout 2400 "$DOTNET" build "$w" -f net10.0-android -c Debug -v q -nologo -p:GateBuildRoot="$STAGE_ROOT" 2>&1) > "$WT/../stage-android.log"
-echo "group6 android: exit $?, $(grep -E 'Warning\(s\)|Error\(s\)' "$WT/../stage-android.log" | tr -s ' ' | tr '\n' ' ')"
+echo "final android: exit $?, $(grep -E 'Warning\(s\)|Error\(s\)' "$WT/../stage-android.log" | tr -s ' ' | tr '\n' ' ')"
 echo "diff vs working tree (app/, excluding evidence bursts):"
 diff -rq "$REPO/app" "$WT/app" -x smoothness -x theme -x '*.user' 2>/dev/null | head

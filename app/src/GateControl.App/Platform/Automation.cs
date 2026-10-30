@@ -270,7 +270,8 @@ public static class Automation
                     {
                         if (e is Controls.ParkPanel pp) { panel = pp; }
                         if (e is Microsoft.UI.Xaml.UIElement { Visibility: Microsoft.UI.Xaml.Visibility.Collapsed }) { return; }
-                        if (e is Microsoft.UI.Xaml.Controls.Control { IsTabStop: true, IsEnabled: true } c)
+                        if (e is Microsoft.UI.Xaml.UIElement { IsTabStop: true } c &&
+                            (e is not Microsoft.UI.Xaml.Controls.Control ctl || ctl.IsEnabled))
                         {
                             if (panel?.IsParked == true) { parked++; names.Add(c.GetType().Name); } else { active++; }
                         }
@@ -335,9 +336,14 @@ public static class Automation
                     var overlays = host?.Children.OfType<Image>().Count(i => i.InputTransparent) ?? -1;
                     File.AppendAllText(Environment.GetEnvironmentVariable("GC_AUTOMATION_FILE")! + ".log",
                         $"  themeinfo requested {Application.Current?.RequestedTheme} user {Application.Current?.UserAppTheme} " +
-                        $"busy {ThemeReveal.Busy} overlays {overlays} caption {(window.TitleBar as TitleBar)?.BackgroundColor?.ToHex()}\n");
+                        $"busy {ThemeReveal.Busy} overlays {overlays} caption {(window.TitleBar as TitleBar)?.BackgroundColor?.ToHex()} " +
+                        $"saved {(GateControl.Core.ViewModels.Appearance)Preferences.Default.Get("appearance", (int)GateControl.Core.ViewModels.Appearance.System)}\n");
                     break;
                 }
+            case "themecancel":
+                // The pointer events / window deactivation a cancelled press raises.
+                root?.CancelThemePress(cmd.Length > 1 ? cmd[1] : "test");
+                break;
             case "themepress":
                 root?.PrepareTheme();
                 break;

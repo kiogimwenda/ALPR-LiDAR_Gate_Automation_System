@@ -438,6 +438,15 @@ public static class ThemeReveal
     }
 #endif
 
+    // Undoes a press that will not become a tap (no-op otherwise).
+    public static void CancelPress(Grid host, string why)
+    {
+        if (_pending is { } p)
+        {
+            _ = CancelAsync(host, p, why);
+        }
+    }
+
     // Ends a running wipe at once (the new theme stays) and undoes a press.
     public static void Finish(Grid host)
     {

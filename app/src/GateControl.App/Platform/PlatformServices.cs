@@ -181,6 +181,10 @@ public sealed class AppearanceService : IAppearanceService
         }
     }
 
+    // The theme on screen only: no saved preference, no change seen by the
+    // appearance setting (a theme press that may still be cancelled).
+    public void Preview(Appearance a) => Apply(a);
+
     public static void Apply(Appearance a)
     {
         if (Application.Current is { } app)

@@ -1,12 +1,32 @@
 group1 windows: exit 0,  0 Warning(s)  0 Error(s) 
 group2 windows: exit 0,  0 Warning(s)  0 Error(s) 
-group2 tests: Passed!  - Failed:     0, Passed:    95, Skipped:     0, Total:    95, Duration: 264 ms - GateControl.Core.Tests.dll (net10.0)
+group2 tests: Passed!  - Failed:     0, Passed:    95, Skipped:     0, Total:    95, Duration: 111 ms - GateControl.Core.Tests.dll (net10.0)
 group3 windows: exit 0,  4 Warning(s)  0 Error(s) 
 group4 windows: exit 0,  0 Warning(s)  0 Error(s) 
 group5 windows: exit 0,  0 Warning(s)  0 Error(s) 
-group5 tests: Passed!  - Failed:     0, Passed:   105, Skipped:     0, Total:   105, Duration: 122 ms - GateControl.Core.Tests.dll (net10.0)
+group5 tests: Passed!  - Failed:     0, Passed:   105, Skipped:     0, Total:   105, Duration: 119 ms - GateControl.Core.Tests.dll (net10.0)
 group6 windows: exit 0,  0 Warning(s)  0 Error(s) 
-group6 android: exit 0,  0 Warning(s)  0 Error(s) 
+group7 files:
+  docs/design-video-spec.md
+  docs/phase2b-evidence/round2/a11y-after
+  docs/phase2b-evidence/round2/acceptance-table.md
+  docs/phase2b-evidence/round2/round3-review-items.md
+  docs/phase2b-evidence/round2/run-f-batch-raw.txt
+  docs/phase2b-evidence/round2/theme-reveal.md
+  README.md
+  src/GateControl.App/Controls/NavCapsule.cs
+  src/GateControl.App/Controls/ParkHost.cs
+  src/GateControl.App/Controls/SegmentedControl.cs
+  src/GateControl.App/Motion/Motion.cs
+  src/GateControl.App/Motion/ThemeReveal.cs
+  src/GateControl.App/Pages/RootPage.cs
+  src/GateControl.App/Platform/Automation.cs
+  src/GateControl.App/Platform/PlatformServices.cs
+  tools/commit_groups_stage_build.sh
+  tools/motion-capture/theme_edge.sh
+group7 windows: exit 0,  0 Warning(s)  0 Error(s) 
+group7 tests: Passed!  - Failed:     0, Passed:   105, Skipped:     0, Total:   105, Duration: 93 ms - GateControl.Core.Tests.dll (net10.0)
+final android: exit 0,  0 Warning(s)  0 Error(s) 
 diff vs working tree (app/, excluding evidence bursts):
 Files /home/deby/projects/gate-automation/app/GateControl.slnx and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/GateControl.slnx differ
 Only in /home/deby/projects/gate-automation/app: .idea

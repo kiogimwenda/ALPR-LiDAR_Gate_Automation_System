@@ -20,9 +20,50 @@ trace samples every frame and records spans, and the harness keeps the frame tic
 the trace. The shipped Release binary has none of that (`builds/release-harness-check.txt`) and
 does less work per frame; it was not traced separately.
 
-## Run E — 2026-10-30 00:29–00:36, on mains power (PowerOnline: True) — final code: ALL ROWS PASS
+## Run F — 2026-10-30 09:36–09:43, on mains power (PowerOnline: True) — final code with group 7: ALL ROWS PASS
 
-Final code of this round: parked tabs wrapped in `ParkHost` (keyboard focus and UI Automation
+Group 7 = theme press fixes + keyboard accessibility. Host: `vmwp` (the WSL VM) running, 88 % committed
+memory, 14 % CPU before the run. Long frames (> 25 ms): 2 in 45 entrances (both compositor, 28 ms
+and 26 ms, each 1 dropped frame in one run; median 0, worst 1).
+
+| Entrance | runs | median dropped | worst dropped | per run | longest frame in reveal window (ms) | reveal window (ms, median) | result |
+|---|---|---|---|---|---|---|---|
+| Dashboard, first visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 19.6 | 1182 | pass |
+| Reports, first visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 23.3 | 941 | pass |
+| Vehicles, first visit | 5 | 0 | 1 | 1, 0, 0, 0, 0 | 19.3 | 844 | pass |
+| Alerts, first visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 11.6 | 940 | pass |
+| Live, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 20.5 | 823 | pass |
+| Dashboard, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 17.9 | 1182 | pass |
+| Reports, later visit | 5 | 0 | 1 | 0, 0, 1, 0, 0 | 28.0 | 942 | pass |
+| Vehicles, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 20.9 | 841 | pass |
+| Alerts, later visit | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 8.3 | 942 | pass |
+| Dashboard, Reduce Motion | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 10.9 | 0 | pass |
+| Vehicles, Reduce Motion | 5 | 0 | 0 | 0, 0, 0, 0, 0 | 11.2 | 0 | pass |
+| Tap → first pill-motion frame (ms) | 45 | 3.9 | 10.5 | (all 45 entrances) | — | — | pass |
+
+### Appendix — SettleXamlCleanup with the final code (review round 3 / final, item 3)
+
+`tools/motion-capture/settle_check.sh`, 3 rounds: resize → enter a tab, maximise / restore →
+enter, theme change → enter; plus a tab switch 0.75 s after a resize (during the nudge).
+gen-2 counts before → after each traced entrance, and every frame over 25 ms:
+
+```
+SR-interrupt: gen2 12->12 gen0 18->18 frames>25ms [] settle-starts-in-trace 0
+SR1-maxrestore: gen2 10->10 gen0 14->14 frames>25ms [] settle-starts-in-trace 0
+SR1-resize: gen2 9->9 gen0 13->13 frames>25ms [] settle-starts-in-trace 0
+SR1-theme: gen2 10->10 gen0 14->14 frames>25ms [] settle-starts-in-trace 0
+SR2-maxrestore: gen2 11->11 gen0 16->16 frames>25ms [] settle-starts-in-trace 0
+SR2-resize: gen2 10->10 gen0 15->15 frames>25ms [] settle-starts-in-trace 0
+SR2-theme: gen2 11->11 gen0 16->16 frames>25ms [] settle-starts-in-trace 0
+SR3-maxrestore: gen2 12->12 gen0 18->18 frames>25ms [] settle-starts-in-trace 0
+SR3-resize: gen2 11->11 gen0 16->16 frames>25ms [] settle-starts-in-trace 0
+SR3-theme: gen2 12->12 gen0 18->18 frames>25ms [] settle-starts-in-trace 0
+```
+0 gen-2 collections and no frame over 25 ms in any of these entrances.
+
+## Run E — 2026-10-30 00:29–00:36, on mains power (PowerOnline: True) — groups 1–6 code: ALL ROWS PASS (superseded by run F)
+
+Code of groups 1–6: parked tabs wrapped in `ParkHost` (keyboard focus and UI Automation
 kept out of them), tab-stop changes at idle via the MAUI tree, the host clipped only during a
 theme reveal, the theme switch run during the press, settle re-armed on resize. Host: `vmwp`
 (the WSL VM) running, 79 % committed memory, 13 % CPU before the run. Long frames (> 25 ms): 0 in

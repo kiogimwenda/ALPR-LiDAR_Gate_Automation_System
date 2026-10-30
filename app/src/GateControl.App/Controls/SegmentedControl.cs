@@ -26,6 +26,19 @@ public sealed class SegmentedControl : ContentView
 
     public SegmentedControl()
     {
+        Pressable.SetArrows(this, step =>
+        {
+            var count = Items?.Count ?? 0;
+            if (count == 0)
+            {
+                return;
+            }
+            SelectedIndex = (SelectedIndex + step + count) % count;
+            if (_labels[SelectedIndex].Parent is View cell)
+            {
+                Pressable.Focus(cell);
+            }
+        });
         var res = Application.Current!.Resources;
         var track = new Border
         {
@@ -81,6 +94,8 @@ public sealed class SegmentedControl : ContentView
             };
             var index = i;
             var cell = new Grid { BackgroundColor = Colors.Transparent, Children = { label } };
+            SemanticProperties.SetDescription(cell, items[i]);
+            Pressable.SetRole(cell, PressRole.TabItem);
             Pressable.SetCommand(cell, new Command(() => SelectedIndex = index));
             Grid.SetColumn(cell, i);
             _grid.Children.Add(cell);
@@ -110,6 +125,10 @@ public sealed class SegmentedControl : ContentView
         for (var i = 0; i < _labels.Count; i++)
         {
             _labels[i].Opacity = i == SelectedIndex ? 1 : 0.75;
+            if (_labels[i].Parent is View cellView)
+            {
+                Pressable.SetSelected(cellView, i == SelectedIndex);
+            }
         }
     }
 }

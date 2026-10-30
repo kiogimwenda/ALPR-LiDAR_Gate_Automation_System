@@ -1,4 +1,4 @@
 Test run for C:\Users\User\AppData\Local\GateControl\build\bin\GateControl.Core.Tests\Debug\net10.0\GateControl.Core.Tests.dll (.NETCoreApp,Version=v10.0)
 A total of 1 test files matched the specified pattern.
 
-Passed!  - Failed:     0, Passed:   105, Skipped:     0, Total:   105, Duration: 276 ms - GateControl.Core.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   105, Skipped:     0, Total:   105, Duration: 83 ms - GateControl.Core.Tests.dll (net10.0)

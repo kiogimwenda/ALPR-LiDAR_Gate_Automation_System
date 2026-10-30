@@ -1,5 +1,6 @@
   Determining projects to restore...
-  All projects are up-to-date for restore.
+  Restored W:\home\deby\projects\gate-automation\app\src\GateControl.App\GateControl.App.csproj (in 3.4 sec).
+  1 of 2 projects are up-to-date for restore.
   GateControl.Core -> C:\Users\User\AppData\Local\GateControl\build\bin\GateControl.Core\Debug\net10.0\GateControl.Core.dll
   XAML source generation is enabled (MauiXamlInflator=SourceGen). This generates C# code from XAML at compile time for better performance. To disable, remove the MauiXamlInflator line from your .csproj file (reverts to configuration-based defaults: Runtime in Debug, XamlC in Release).
   GateControl.App -> C:\Users\User\AppData\Local\GateControl\build\bin\GateControl.App\Debug\net10.0-windows10.0.19041.0\win-x64\GateControl.dll
@@ -8,4 +9,4 @@ Build succeeded.
     0 Warning(s)
     0 Error(s)
 
-Time Elapsed 00:00:08.57
+Time Elapsed 00:00:12.53

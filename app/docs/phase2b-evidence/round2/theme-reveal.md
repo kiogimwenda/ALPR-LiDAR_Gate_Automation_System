@@ -62,3 +62,58 @@ rendering during it. The new theme is never visible before the wipe except in th
 caption: the caption is outside the snapshot, and switches on the wipe's first frame (it used to
 switch the moment the theme was applied). After the wipe, the pill, cards, glow, chart and
 caption are all in the new theme.
+
+## Final code with group 7 (2026-10-30 09:44–09:46): theme press fixes
+
+- **Press handling:**
+  - A press now changes only the in-memory theme. The saved preference ("appearance") is
+    written when the tap's wipe completes.
+  - A press that won't become a tap is undone at once: pointer leaves the button, a drag past
+    `Gesture.DragThreshold`, or window deactivation (Alt-Tab, or Esc to another window).
+    Traced: `theme.cancel.drag` and `theme.cancel.deactivated` 130 ms after the press, i.e. as
+    soon as the event arrives. The 1 s timeout remains only as the backstop for a held press.
+- **Test method:** the drag-away and deactivation cases were driven through the harness's
+  `themecancel`, which calls the same handler the pointer and deactivation events call.
+- **Not covered by the button handlers:** keyboard Esc while holding the mouse (the 1 s
+  backstop applies).
+
+### Wide
+| Direction | runs | tap → first wipe frame, median / worst (ms) | coverage: area 1 % → 98.5 % (ms, median, range) | whole window inside the disc (ms after first wipe frame) | wipe to overlay removed (ms) | dropped during the wipe, median / worst | longest wipe frame (ms) | longest frame under the static snapshot before the wipe (ms) | wipe frames | wave phase φ | origin (dip) | snapshot | result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dark → light | 5 | 35.2 / 64.4 | 492 (487–492) | 596 | 622 | 0 / 0 | 8.7 | 110 | 149 | 0.00→2.51 | 933,48 in 985×601 | prepared | pass |
+| light → dark | 5 | 40.6 / 112.2 | 492 (487–492) | 596 | 621 | 0 / 0 | 8.5 | 169 | 150 | 0.00→2.51 | 933,48 in 985×601 | prepared | FAIL |
+
+One light → dark run (run 4) took 112 ms from tap to first wipe. A gen-2 collection
+(gc2 8 → 9) landed in the press-time restyle (applied at 146 ms instead of about 60 ms), under
+the static snapshot. The wipe itself had 0 dropped frames. Machine memory load was 88 %. The
+other 19 wide and all 10 phone wipes were ≤ 64 ms.
+
+### Phone layout
+| Direction | runs | tap → first wipe frame, median / worst (ms) | coverage: area 1 % → 98.5 % (ms, median, range) | whole window inside the disc (ms after first wipe frame) | wipe to overlay removed (ms) | dropped during the wipe, median / worst | longest wipe frame (ms) | longest frame under the static snapshot before the wipe (ms) | wipe frames | wave phase φ | origin (dip) | snapshot | result |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| dark → light | 5 | 31.2 / 62.0 | 521 (521–521) | 594 | 623 | 0 / 0 | 7.4 | 107 | 150 | 0.00→2.51 | 367,28 in 399×627 | prepared | pass |
+| light → dark | 5 | 29.7 / 49.6 | 521 (521–521) | 596 | 622 | 0 / 0 | 6.8 | 106 | 150 | 0.00→2.51 | 367,28 in 399×627 | prepared | pass |
+
+### Edge cases with the saved preference read back ("saved")
+```
+== start
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+== retap mid-wipe (to light, then to dark 250 ms in)
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+== tab switch mid-wipe (to light, Reports 250 ms in)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== resize mid-wipe (to dark, 1100x800 250 ms in)
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+== press held 1.4 s, then tap (to light)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== press without a tap (cancelled press)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== press, drag away, release (cancel on drag: theme and saved preference unchanged)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== press, Alt-Tab / Esc to another window (cancel on deactivation)
+  themeinfo requested Light user Light busy False overlays 0 caption #E8E6E9 saved Light
+== Reduce Motion (to dark)
+  themeinfo requested Dark user Dark busy False overlays 0 caption #060409 saved Dark
+```
+After every cancelled press (no tap, drag away, deactivation), the theme, the caption and the
+saved preference are unchanged and no overlay is left.
