@@ -105,4 +105,36 @@ cv::Rect expand_box_with_margin(const cv::Rect2f& box, const cv::Size& frame_siz
     return cv::Rect{xi, yi, wi, hi};
 }
 
+int preprocess_ctc_keep_aspect(const cv::Mat& bgr, int dst_h, int dst_w,
+                               const std::array<float, 3>& mean, const std::array<float, 3>& stddev,
+                               float* dst_chw) {
+    const double aspect = static_cast<double>(bgr.cols) / static_cast<double>(bgr.rows);
+    const int new_w = std::clamp(static_cast<int>(std::round(dst_h * aspect)), 1, dst_w);
+
+    cv::Mat resized;
+    cv::resize(bgr, resized, cv::Size(new_w, dst_h), 0, 0, cv::INTER_LINEAR);
+
+    const std::size_t plane = static_cast<std::size_t>(dst_h) * static_cast<std::size_t>(dst_w);
+    std::fill(dst_chw, dst_chw + 3 * plane, 0.0f);
+    for (int y = 0; y < dst_h; ++y) {
+        const auto* row = resized.ptr<cv::Vec3b>(y);
+        for (int x = 0; x < new_w; ++x) {
+            for (int c = 0; c < 3; ++c) {
+                const float v = static_cast<float>(row[x][c]) / 255.0f;
+                dst_chw[static_cast<std::size_t>(c) * plane +
+                        static_cast<std::size_t>(y) * static_cast<std::size_t>(dst_w) +
+                        static_cast<std::size_t>(x)] = (v - mean[c]) / stddev[c];
+            }
+        }
+    }
+    return new_w;
+}
+
+void preprocess_stretch_rgb_u8(const cv::Mat& bgr, int dst_h, int dst_w, std::uint8_t* dst_hwc) {
+    cv::Mat resized;
+    cv::resize(bgr, resized, cv::Size(dst_w, dst_h), 0, 0, cv::INTER_LINEAR);
+    cv::Mat rgb(dst_h, dst_w, CV_8UC3, dst_hwc);  // writes straight into the caller's buffer
+    cv::cvtColor(resized, rgb, cv::COLOR_BGR2RGB);
+}
+
 }  // namespace gate::inference::detail

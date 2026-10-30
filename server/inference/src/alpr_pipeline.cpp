@@ -6,15 +6,16 @@
 #include <spdlog/spdlog.h>
 
 #include "inference/detail/cpu_algorithms.hpp"
+#include "inference/plate_text.hpp"
 
 namespace gate::inference {
 
-AlprPipeline::AlprPipeline(YoloPlateDetector&& det, PaddleOcrRecognizer&& rec, Config cfg)
+AlprPipeline::AlprPipeline(YoloPlateDetector&& det, PlateRecognizer&& rec, Config cfg)
     : detector_(std::move(det)), recognizer_(std::move(rec)), cfg_(std::move(cfg)) {}
 
 AlprPipeline AlprPipeline::load(Config cfg, nvinfer1::ILogger& logger) {
     auto det = YoloPlateDetector::load(cfg.detector, logger);
-    auto rec = PaddleOcrRecognizer::load(cfg.recognizer, logger);
+    auto rec = PlateRecognizer::load(cfg.recognizer, logger);
 
     spdlog::info("AlprPipeline ready: max_plates={}, crop_margin={:.3f}, ocr_floor={:.2f}",
                  cfg.max_plates_per_frame, cfg.crop_margin, cfg.ocr_confidence_floor);
@@ -22,7 +23,7 @@ AlprPipeline AlprPipeline::load(Config cfg, nvinfer1::ILogger& logger) {
     return AlprPipeline{std::move(det), std::move(rec), std::move(cfg)};
 }
 
-cv::Rect AlprPipeline::expand_and_clamp_(const cv::Rect2f& box, const cv::Size& frame_size) const {
+cv::Rect AlprPipeline::expand_and_clamp(const cv::Rect2f& box, const cv::Size& frame_size) const {
     return detail::expand_box_with_margin(box, frame_size, cfg_.crop_margin, /*min_extent=*/1);
 }
 
@@ -47,7 +48,7 @@ std::vector<PlateReading> AlprPipeline::process(const cv::Mat& frame_bgr) {
     kept.reserve(n_keep);
 
     for (const auto& d : detections) {
-        const cv::Rect roi = expand_and_clamp_(d.box, frame_bgr.size());
+        const cv::Rect roi = expand_and_clamp(d.box, frame_bgr.size());
         if (roi.width < 4 || roi.height < 4) {
             continue;  // not enough pixels for OCR to do anything useful
         }
@@ -67,7 +68,14 @@ std::vector<PlateReading> AlprPipeline::process(const cv::Mat& frame_bgr) {
         PlateReading r;
         r.box = kept[i]->box;
         r.detection_score = kept[i]->confidence;
-        r.text = std::move(ocr_results[i].text);
+        r.raw_text = std::move(ocr_results[i].text);
+        if (cfg_.normalize_kenya) {
+            auto n = normalize_kenya_plate(r.raw_text);
+            r.text = std::move(n.text);
+            r.kenya_format = n.kenya_format;
+        } else {
+            r.text = r.raw_text;
+        }
         r.ocr_score = ocr_results[i].confidence;
         readings.push_back(std::move(r));
     }

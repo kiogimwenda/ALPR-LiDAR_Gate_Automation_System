@@ -2,13 +2,15 @@
 //
 // Pure-CPU inference algorithms — letterbox geometry, CTC greedy decode, crop
 // expansion. These are the host-side bits of the YoloPlateDetector,
-// PaddleOcrRecognizer, and AlprPipeline classes lifted out of their methods so
+// PlateRecognizer, and AlprPipeline classes lifted out of their methods so
 // they can be unit-tested directly without booting TensorRT.
 //
 // Nothing here depends on libnvinfer; only OpenCV. Tests link against an
 // inference-cpu-only static lib so they run wherever OpenCV does.
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <opencv2/core.hpp>
 #include <span>
 #include <string>
@@ -58,5 +60,21 @@ CtcResult ctc_greedy_decode(std::span<const float> logits, int seq_len, int num_
 // produces a degenerate ROI (e.g. width or height < `min_extent`).
 cv::Rect expand_box_with_margin(const cv::Rect2f& box, const cv::Size& frame_size, float margin,
                                 int min_extent = 4);
+
+// CTC recognizer preprocessing (PP-OCR rec). Resize `bgr` to `dst_h` rows
+// keeping its aspect ratio (width rounded half away from zero, clamped to
+// [1, dst_w]), normalise each BGR channel as (pixel/255 - mean[c]) / stddev[c]
+// and write planar CHW floats into `dst_chw` (3 * dst_h * dst_w). Columns to
+// the right of the resized image are 0 in *normalised* space, as PaddleOCR's
+// own resize_norm_img pads — black (-1) padding makes PP-OCRv5 hallucinate
+// characters across the padded columns. Returns the resized content width.
+int preprocess_ctc_keep_aspect(const cv::Mat& bgr, int dst_h, int dst_w,
+                               const std::array<float, 3>& mean, const std::array<float, 3>& stddev,
+                               float* dst_chw);
+
+// Fixed-slot recognizer preprocessing (fast-plate-ocr). Stretch `bgr` to
+// dst_w x dst_h (bilinear, no aspect keep), swap to RGB, and write
+// interleaved HWC uint8 into `dst_hwc` (dst_h * dst_w * 3).
+void preprocess_stretch_rgb_u8(const cv::Mat& bgr, int dst_h, int dst_w, std::uint8_t* dst_hwc);
 
 }  // namespace gate::inference::detail

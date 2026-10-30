@@ -67,7 +67,7 @@ set_target_properties(TensorRT::nvinfer PROPERTIES
 add_library(gate_inference STATIC
     src/trt_engine.cpp
     src/yolo_plate_detector.cpp
-    src/paddle_ocr_recognizer.cpp
+    src/plate_recognizer.cpp
     src/alpr_pipeline.cpp
     src/detail/cpu_algorithms.cpp
 )
@@ -84,6 +84,7 @@ target_link_libraries(gate_inference
         ${CMAKE_DL_LIBS}
         opencv_core
         opencv_imgproc
+        gate_plate_text
     PRIVATE
         spdlog::spdlog
 )

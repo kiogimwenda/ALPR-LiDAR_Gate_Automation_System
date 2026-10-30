@@ -8,6 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <cstdint>
 #include <opencv2/core.hpp>
 #include <vector>
 
@@ -27,10 +28,10 @@ namespace {
 // unambiguous.
 std::vector<float> make_argmax_logits(const std::vector<int>& class_seq, int num_classes,
                                       float peak) {
-    const int T = static_cast<int>(class_seq.size());
-    std::vector<float> logits(static_cast<std::size_t>(T) * num_classes, 0.0f);
-    const float low = (1.0f - peak) / (num_classes - 1);
-    for (int t = 0; t < T; ++t) {
+    const int steps = static_cast<int>(class_seq.size());
+    std::vector<float> logits(static_cast<std::size_t>(steps) * num_classes, 0.0f);
+    const float low = (1.0f - peak) / static_cast<float>(num_classes - 1);
+    for (int t = 0; t < steps; ++t) {
         for (int c = 0; c < num_classes; ++c) {
             logits[t * num_classes + c] = low;
         }
@@ -103,12 +104,12 @@ TEST_CASE("unmap_letterbox_box: clamps to source extents and drops degenerate", 
 TEST_CASE("ctc_greedy_decode: skips blanks and collapses repeats", "[ctc]") {
     // Dictionary: A B C → indices 1 2 3 (0 is blank).
     std::vector<std::string> dict = {"A", "B", "C"};
-    const int C = 4;  // 3 chars + blank
+    const int classes = 4;  // 3 chars + blank
 
     // Sequence: blank, A, A, blank, B, B, C, blank → "ABC"
-    auto logits = make_argmax_logits({0, 1, 1, 0, 2, 2, 3, 0}, C, 0.9f);
+    auto logits = make_argmax_logits({0, 1, 1, 0, 2, 2, 3, 0}, classes, 0.9f);
 
-    const auto r = ctc_greedy_decode(std::span<const float>{logits}, 8, C, dict);
+    const auto r = ctc_greedy_decode(std::span<const float>{logits}, 8, classes, dict);
     REQUIRE(r.text == "ABC");
     // 3 non-blank, non-repeat steps were kept; each had probability 0.9.
     REQUIRE_THAT(r.mean_confidence, WithinAbs(0.9f, 1e-5f));
@@ -137,8 +138,8 @@ TEST_CASE("ctc_greedy_decode: out-of-range class indices are silently dropped", 
     // Dictionary has only 2 entries but we feed a class index beyond it.
     std::vector<std::string> dict = {"A", "B"};
     // Manually craft a logits row whose argmax is class 5 (no dictionary slot).
-    std::vector<float> logits(1 * 6, 0.0f);
-    logits[5] = 0.99f;  // class 5
+    std::vector<float> logits(6, 0.0f);  // [T=1, C=6]
+    logits[5] = 0.99f;                   // class 5
     const auto r = ctc_greedy_decode(std::span<const float>{logits}, 1, 6, dict);
     // The kept-count still increments (the algorithm doesn't know the
     // dictionary is short) but the text doesn't grow.
@@ -172,4 +173,76 @@ TEST_CASE("expand_box_with_margin: degenerate result is reported as empty", "[cr
     const auto out = expand_box_with_margin(tiny, cv::Size{640, 480}, 0.0f, /*min_extent=*/4);
     REQUIRE(out.width == 0);
     REQUIRE(out.height == 0);
+}
+
+// ---- Recognizer preprocessing -----------------------------------------------
+
+using gate::inference::detail::preprocess_ctc_keep_aspect;
+using gate::inference::detail::preprocess_stretch_rgb_u8;
+
+TEST_CASE("preprocess_stretch_rgb_u8: stretches to WxH and swaps BGR to RGB",
+          "[recognizer_preprocess]") {
+    // 40x100 crop (aspect 2.5) stretched to 128x64 — no aspect keep, no padding.
+    cv::Mat src(40, 100, CV_8UC3, cv::Scalar(10, 20, 30));  // B=10 G=20 R=30
+    std::vector<std::uint8_t> dst(std::size_t{64} * 128 * 3, 0);
+    preprocess_stretch_rgb_u8(src, 64, 128, dst.data());
+    // Every pixel, including the corners, carries image content as R, G, B.
+    for (const std::size_t px : {std::size_t{0}, std::size_t{64} * 128 - 1, std::size_t{4000}}) {
+        REQUIRE(dst[px * 3 + 0] == 30);
+        REQUIRE(dst[px * 3 + 1] == 20);
+        REQUIRE(dst[px * 3 + 2] == 10);
+    }
+}
+
+TEST_CASE("preprocess_stretch_rgb_u8: keeps left/right orientation", "[recognizer_preprocess]") {
+    cv::Mat src(10, 20, CV_8UC3, cv::Scalar(0, 0, 0));
+    src(cv::Rect(0, 0, 10, 10)).setTo(cv::Scalar(0, 0, 255));  // left half red (BGR)
+    std::vector<std::uint8_t> dst(std::size_t{64} * 128 * 3, 0);
+    preprocess_stretch_rgb_u8(src, 64, 128, dst.data());
+    const auto at = [&](int y, int x, int c) {
+        return dst[(static_cast<std::size_t>(y) * 128 + static_cast<std::size_t>(x)) * 3 +
+                   static_cast<std::size_t>(c)];
+    };
+    REQUIRE(at(32, 5, 0) == 255);  // left: R
+    REQUIRE(at(32, 122, 0) == 0);  // right: not red
+}
+
+TEST_CASE("preprocess_ctc_keep_aspect: pads with 0 after normalisation",
+          "[recognizer_preprocess]") {
+    // 24x60 crop (aspect 2.5) -> 48 rows x 120 content columns of a 320 canvas.
+    cv::Mat src(24, 60, CV_8UC3, cv::Scalar(255, 255, 255));
+    std::vector<float> dst(std::size_t{3} * 48 * 320, -9.0f);
+    const int w = preprocess_ctc_keep_aspect(src, 48, 320, {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                             dst.data());
+    REQUIRE(w == 120);
+    const std::size_t plane = std::size_t{48} * 320;
+    for (std::size_t c = 0; c < 3; ++c) {
+        REQUIRE_THAT(dst[c * plane + std::size_t{10} * 320 + 50],
+                     WithinAbs(1.0f, 1e-6f));  // white content
+        REQUIRE_THAT(dst[c * plane + std::size_t{10} * 320 + 200],
+                     WithinAbs(0.0f, 1e-6f));  // padding = 0
+        REQUIRE_THAT(dst[c * plane + std::size_t{47} * 320 + 319], WithinAbs(0.0f, 1e-6f));
+    }
+}
+
+TEST_CASE("preprocess_ctc_keep_aspect: very wide crops clamp to the canvas width",
+          "[recognizer_preprocess]") {
+    cv::Mat src(10, 1000, CV_8UC3, cv::Scalar(0, 0, 0));
+    std::vector<float> dst(std::size_t{3} * 48 * 320, 7.0f);
+    const int w = preprocess_ctc_keep_aspect(src, 48, 320, {0.5f, 0.5f, 0.5f}, {0.5f, 0.5f, 0.5f},
+                                             dst.data());
+    REQUIRE(w == 320);
+    REQUIRE_THAT(dst[0], WithinAbs(-1.0f, 1e-6f));  // black content, normalised
+    REQUIRE_THAT(dst[std::size_t{48} * 320 - 1], WithinAbs(-1.0f, 1e-6f));  // no padding at all
+}
+
+TEST_CASE("preprocess_ctc_keep_aspect: per-channel mean/std in BGR order",
+          "[recognizer_preprocess]") {
+    cv::Mat src(48, 48, CV_8UC3, cv::Scalar(0, 255, 0));  // pure green
+    std::vector<float> dst(std::size_t{3} * 48 * 320, 0.0f);
+    preprocess_ctc_keep_aspect(src, 48, 320, {0.0f, 0.5f, 1.0f}, {1.0f, 0.25f, 2.0f}, dst.data());
+    const std::size_t plane = std::size_t{48} * 320;
+    REQUIRE_THAT(dst[0 * plane], WithinAbs(0.0f, 1e-6f));   // B: (0 - 0) / 1
+    REQUIRE_THAT(dst[1 * plane], WithinAbs(2.0f, 1e-6f));   // G: (1 - 0.5) / 0.25
+    REQUIRE_THAT(dst[2 * plane], WithinAbs(-0.5f, 1e-6f));  // R: (0 - 1) / 2
 }

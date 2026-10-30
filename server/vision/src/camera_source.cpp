@@ -113,7 +113,11 @@ std::optional<ObservationSet> CameraSource::next() {
             continue;
         }
         PlateObservation p;
-        p.text = reading.text;
+        p.text = reading.text;  // Kenya-normalised (AlprPipeline::Config::normalize_kenya)
+        p.raw_ocr = reading.raw_text;
+        if (reading.kenya_format) {
+            p.country_hint = "KE";
+        }
         p.detection_conf = reading.detection_score;
         p.ocr_conf = reading.ocr_score;
         p.box = to_pixel_box(reading.box);

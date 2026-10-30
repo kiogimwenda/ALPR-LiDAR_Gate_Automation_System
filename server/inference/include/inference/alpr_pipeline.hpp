@@ -2,7 +2,8 @@
 //
 // End-to-end ALPR pipeline: full camera frame → license-plate readings.
 //
-//   YoloPlateDetector ──► (crop each box w/ margin) ──► PaddleOcrRecognizer
+//   YoloPlateDetector ──► (crop each box w/ margin) ──► PlateRecognizer
+//                                                        ──► Kenya format normalisation
 //
 // The pipeline owns both backends and exposes a single `process(frame)` call
 // that returns the per-plate detection geometry alongside the OCR text. It is
@@ -14,24 +15,31 @@
 #include <string>
 #include <vector>
 
-#include "inference/paddle_ocr_recognizer.hpp"
+#include "inference/plate_recognizer.hpp"
 #include "inference/yolo_plate_detector.hpp"
 
 namespace gate::inference {
 
 // One read plate, with both detection geometry and OCR result attached.
 struct PlateReading {
-    cv::Rect2f box;         // detector box in original-frame pixels
-    std::string text;       // OCR-decoded plate string ("" if recognizer rejected)
-    float detection_score;  // YOLO confidence, [0, 1]
-    float ocr_score;        // recognizer mean per-char confidence, [0, 1]
+    cv::Rect2f box;             // detector box in original-frame pixels
+    std::string text;           // plate string after Kenya normalisation ("" if rejected)
+    std::string raw_text;       // recognizer output before normalisation (audit)
+    bool kenya_format = false;  // text matches a Kenyan template
+    float detection_score = 0;  // YOLO confidence, [0, 1]
+    float ocr_score = 0;        // recognizer mean per-char confidence, [0, 1]
 };
 
 class AlprPipeline {
 public:
     struct Config {
         YoloPlateDetector::Config detector;
-        PaddleOcrRecognizer::Config recognizer;
+        PlateRecognizer::Config recognizer;
+
+        // Repair look-alike characters against the Kenyan plate templates
+        // (normalize_kenya_plate). Foreign, CD and old-format plates pass
+        // through cleaned but unchanged; raw_text always keeps the OCR output.
+        bool normalize_kenya = true;
 
         // Pad each detector box outward by this fraction of its width/height
         // before cropping for OCR. CRNN models expect a small border around
@@ -67,18 +75,18 @@ public:
     [[nodiscard]] std::vector<PlateReading> process(const cv::Mat& frame_bgr);
 
     [[nodiscard]] YoloPlateDetector& detector() noexcept { return detector_; }
-    [[nodiscard]] PaddleOcrRecognizer& recognizer() noexcept { return recognizer_; }
+    [[nodiscard]] PlateRecognizer& recognizer() noexcept { return recognizer_; }
     [[nodiscard]] const Config& config() const noexcept { return cfg_; }
 
 private:
-    AlprPipeline(YoloPlateDetector&& det, PaddleOcrRecognizer&& rec, Config cfg);
+    AlprPipeline(YoloPlateDetector&& det, PlateRecognizer&& rec, Config cfg);
 
     // Expand `box` by `crop_margin` on each side and clamp to the frame.
     // Returns the safe ROI in pixel coordinates.
-    cv::Rect expand_and_clamp_(const cv::Rect2f& box, const cv::Size& frame_size) const;
+    cv::Rect expand_and_clamp(const cv::Rect2f& box, const cv::Size& frame_size) const;
 
     YoloPlateDetector detector_;
-    PaddleOcrRecognizer recognizer_;
+    PlateRecognizer recognizer_;
     Config cfg_;
 };
 
