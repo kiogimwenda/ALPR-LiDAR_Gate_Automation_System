@@ -18,6 +18,8 @@ public enum ChartKind
     Lines,
     Donut,
     HorizontalBars,
+    // Points = base (ink), Secondary = cap (brand) stacked on it (spec A7).
+    StackedBars,
 }
 
 public sealed class ChartView : GraphicsView, IDrawable
@@ -34,13 +36,14 @@ public sealed class ChartView : GraphicsView, IDrawable
         nameof(Kind), typeof(ChartKind), typeof(ChartView), ChartKind.Bars,
         propertyChanged: (b, _, _) => ((ChartView)b).Invalidate());
 
-    private readonly Spring _progress = new(1, SpringSpec.Move);
-    private IDispatcherTimer? _timer;
+    // Seconds since the data last changed; every bar's progress is a pure
+    // function of it (ChartGrow), so staggered bars share one clock.
+    private double _t = 1e6;
+    private bool _ticking;
     private double[] _from = [];
     private double[] _to = [];
     private double[] _from2 = [];
     private double[] _to2 = [];
-    private long _last;
 
     public ChartView()
     {
@@ -91,52 +94,89 @@ public sealed class ChartView : GraphicsView, IDrawable
     // Start from what is on screen now, head for the new values.
     private void Retarget()
     {
-        var p = Math.Clamp(_progress.Value, 0, 1);
-        _from = Blend(_from, _to, p);
-        _from2 = Blend(_from2, _to2, p);
+        _from = Displayed(_from, _to, cap: false);
+        _from2 = Displayed(_from2, _to2, cap: Kind == ChartKind.StackedBars);
         _to = Primary.Select(x => x.Value).ToArray();
         _to2 = Second.Select(x => x.Value).ToArray();
+        Restart();
+    }
+
+    private void Restart()
+    {
         if (MotionSettings.ReduceMotion)
         {
-            _progress.Snap(1);
+            _t = 1e6;
             Invalidate();
             return;
         }
-        _progress.Snap(0);
-        _progress.Retarget(1);
-        _last = Environment.TickCount64;
-        if (_timer is null)
+        _t = 0;
+        if (_ticking)
         {
-            _timer = Dispatcher.CreateTimer();
-            _timer.Interval = TimeSpan.FromMilliseconds(1000.0 / 120);
-            _timer.Tick += (_, _) =>
-            {
-                var now = Environment.TickCount64;
-                _progress.Step(Math.Min((now - _last) / 1000.0, 0.1));
-                _last = now;
-                Invalidate();
-                if (_progress.IsSettled)
-                {
-                    _timer!.Stop();
-                }
-            };
+            return;
         }
-        _timer.Start();
+        _ticking = true;
+        // On the motion ticker (one step per displayed frame).
+        Spr.OnFrame(dt =>
+        {
+            _t += dt;
+            Invalidate();
+            _ticking = _t <= ChartGrow.Duration(Math.Max(_to.Length, _to2.Length));
+            return _ticking;
+        }, Dispatcher);
     }
 
-    private static double[] Blend(double[] from, double[] to, double p)
+    // Grow the bars again from the baseline (verification of A7, and a
+    // re-entrance once the page shows data it already had).
+    public void Replay()
     {
-        var n = Math.Max(from.Length, to.Length);
+        _from = new double[_to.Length];
+        _from2 = new double[_to2.Length];
+        Restart();
+    }
+
+    private bool Staggered => Kind is ChartKind.Bars or ChartKind.StackedBars;
+
+    // Progress of item i: bars grow one after another (A7), caps after
+    // their base; other charts morph together.
+    // Bars stagger by their rank among the bars that have something to
+    // show: empty hours would otherwise make the first real bar wait (with
+    // data only at 19:00 it started 1.2 s late).
+    private double Progress(int i, bool cap)
+    {
+        if (!Staggered)
+        {
+            return Spring.StepResponse(SpringSpec.Move, _t);
+        }
+        var rank = Rank(i);
+        return cap ? ChartGrow.Cap(rank, _t) : ChartGrow.Base(rank, _t);
+    }
+
+    private int Rank(int i)
+    {
+        var rank = 0;
+        for (var k = 0; k < i; k++)
+        {
+            var v = (k < _to.Length ? _to[k] : 0) + (k < _to2.Length ? _to2[k] : 0);
+            if (v > 0)
+            {
+                rank++;
+            }
+        }
+        return rank;
+    }
+
+    private double[] Displayed(double[] from, double[] to, bool cap)
+    {
         var r = new double[to.Length];
-        for (var i = 0; i < to.Length && i < n; i++)
+        for (var i = 0; i < to.Length; i++)
         {
             var f = i < from.Length ? from[i] : 0;
-            r[i] = f + (to[i] - f) * p;
+            r[i] = f + (to[i] - f) * Progress(i, cap);
         }
         return r;
     }
 
-    private double[] Current(double[] from, double[] to) => Blend(from, to, Math.Max(0, _progress.Value));
+    private double[] Current(double[] from, double[] to) => Displayed(from, to, cap: false);
 
     // ---- palette ---------------------------------------------------------------
 
@@ -151,12 +191,15 @@ public sealed class ChartView : GraphicsView, IDrawable
         Tone.Negative => Res("Negative"),
         Tone.Caution => Res("Caution"),
         Tone.Neutral => Res("Neutral"),
-        _ => Res("Accent"),
+        // Data in the accent tone uses the brand orange: "Accent" is now
+        // ink, which inverts with the theme, and converter results are not
+        // re-evaluated on a theme switch (ink text would vanish in dark).
+        _ => Res("Brand"),
     };
 
     // Distinct, legible series colours for categorical data (donut slices).
-    private static readonly string[] CategoryLight = ["#007AFF", "#34C759", "#FF9500", "#AF52DE", "#30B0C7", "#FF2D55", "#5856D6", "#8E8E93"];
-    private static readonly string[] CategoryDark = ["#0A84FF", "#30D158", "#FF9F0A", "#BF5AF2", "#40C8E0", "#FF375F", "#5E5CE6", "#98989D"];
+    private static readonly string[] CategoryLight = ["#151316", "#E15A41", "#1E9E5A", "#F5A524", "#8B888F", "#F2947F", "#6E6A73", "#C9C6CD"];
+    private static readonly string[] CategoryDark = ["#F4F2F7", "#E15B43", "#3CCB7F", "#F5A524", "#8F8C94", "#F2947F", "#5C5961", "#3A363F"];
 
     public static Color CategoryColor(int i) =>
         Color.FromArgb((Dark ? CategoryDark : CategoryLight)[i % CategoryLight.Length]);
@@ -165,12 +208,18 @@ public sealed class ChartView : GraphicsView, IDrawable
 
     public void Draw(ICanvas canvas, RectF rect)
     {
+        var t0 = FrameTrace.Now();
+        DrawCore(canvas, rect);
+        FrameTrace.Span("chart.draw", t0);
+    }
+
+    private void DrawCore(ICanvas canvas, RectF rect)
+    {
         var points = Primary;
-        if (points.Count == 0 || points.All(p => p.Value <= 0))
+        if (points.Count == 0 || (points.All(p => p.Value <= 0) && Second.All(p => p.Value <= 0)))
         {
-            canvas.FontColor = Res("TertiaryLabel");
-            canvas.FontSize = 15;
-            canvas.DrawString("No data for this period", rect, HorizontalAlignment.Center, VerticalAlignment.Center);
+            Text(canvas, "No data for this period", rect.X, rect.Y, rect.Width, rect.Height, HorizontalAlignment.Center,
+                 VerticalAlignment.Center, Res("TertiaryLabel"), 15);
             return;
         }
         switch (Kind)
@@ -184,6 +233,9 @@ public sealed class ChartView : GraphicsView, IDrawable
             case ChartKind.HorizontalBars:
                 DrawHorizontalBars(canvas, rect, points);
                 break;
+            case ChartKind.StackedBars:
+                DrawStacked(canvas, rect, points);
+                break;
             default:
                 DrawBars(canvas, rect, points);
                 break;
@@ -194,14 +246,12 @@ public sealed class ChartView : GraphicsView, IDrawable
     {
         canvas.StrokeColor = Res("Separator");
         canvas.StrokeSize = 0.5f;
-        canvas.FontColor = Res("SecondaryLabel");
-        canvas.FontSize = 11;
         for (var i = 0; i <= 2; i++)
         {
             var y = plot.Bottom - plot.Height * i / 2f;
             canvas.DrawLine(plot.Left, y, plot.Right, y);
             var label = Display.Count((long)Math.Round(max * i / 2));
-            canvas.DrawString(label, plot.Right + 4, y - 7, 40, 14, HorizontalAlignment.Left, VerticalAlignment.Center);
+            Text(canvas, label, plot.Right + 4, y - 7, 40, 14, HorizontalAlignment.Left, VerticalAlignment.Center, Res("SecondaryLabel"), 11);
         }
     }
 
@@ -224,15 +274,13 @@ public sealed class ChartView : GraphicsView, IDrawable
 
     private void XLabels(ICanvas canvas, RectF plot, List<ChartPoint> points, float slot)
     {
-        canvas.FontColor = Res("SecondaryLabel");
-        canvas.FontSize = 11;
         // Show at most ~6 labels so they never collide.
         var every = Math.Max(1, (int)Math.Ceiling(points.Count / 6.0));
         for (var i = 0; i < points.Count; i += every)
         {
             var cx = plot.Left + slot * (i + 0.5f);
-            canvas.DrawString(points[i].Label, cx - 40, plot.Bottom + 4, 80, 16, HorizontalAlignment.Center,
-                              VerticalAlignment.Top);
+            Text(canvas, points[i].Label, cx - 40, plot.Bottom + 4, 80, 16, HorizontalAlignment.Center,
+                 VerticalAlignment.Top, Res("SecondaryLabel"), 11);
         }
     }
 
@@ -255,6 +303,41 @@ public sealed class ChartView : GraphicsView, IDrawable
             var x = plot.Left + slot * i + (slot - bar) / 2;
             canvas.FillColor = ToneColor(points[i].Tone);
             canvas.FillRoundedRectangle(x, plot.Bottom - h, bar, h, Math.Min(bar / 2, 5), Math.Min(bar / 2, 5), 0, 0);
+        }
+        XLabels(canvas, plot, points, slot);
+    }
+
+    // Base (allowed, ink) with the cap (refused, brand) stacked on top; only
+    // the top segment has rounded corners, as in the reference chart.
+    private void DrawStacked(ICanvas canvas, RectF rect, List<ChartPoint> points)
+    {
+        var plot = new RectF(rect.Left, rect.Top + 6, rect.Width - 44, rect.Height - 30);
+        var baseV = Displayed(_from, _to, cap: false);
+        var capV = Displayed(_from2, _to2, cap: true);
+        double total(int i) => (i < _to.Length ? _to[i] : 0) + (i < _to2.Length ? _to2[i] : 0);
+        var max = NiceMax(Enumerable.Range(0, points.Count).Select(total).DefaultIfEmpty(0).Max());
+        Grid(canvas, plot, max);
+        var slot = plot.Width / points.Count;
+        var bar = Math.Max(2, Math.Min(28, slot * 0.6f));
+        var r = Math.Min(bar / 2, 6);
+        var ink = Res("Label");
+        var brand = Res("Brand");
+        for (var i = 0; i < points.Count; i++)
+        {
+            var hb = (float)(plot.Height * Math.Max(0, i < baseV.Length ? baseV[i] : 0) / max);
+            var hc = (float)(plot.Height * Math.Max(0, i < capV.Length ? capV[i] : 0) / max);
+            var x = plot.Left + slot * i + (slot - bar) / 2;
+            if (hb > 0.5f)
+            {
+                canvas.FillColor = ink;
+                var top = hc > 0.5f ? 0 : r;
+                canvas.FillRoundedRectangle(x, plot.Bottom - hb, bar, hb, top, top, 0, 0);
+            }
+            if (hc > 0.5f)
+            {
+                canvas.FillColor = brand;
+                canvas.FillRoundedRectangle(x, plot.Bottom - hb - hc, bar, hc, r, r, 0, 0);
+            }
         }
         XLabels(canvas, plot, points, slot);
     }
@@ -308,18 +391,15 @@ public sealed class ChartView : GraphicsView, IDrawable
         var max = Math.Max(1, _to.DefaultIfEmpty(0).Max());
         var row = Math.Min(30, rect.Height / Math.Max(1, points.Count));
         var labelW = Math.Min(140, rect.Width * 0.4f);
-        canvas.FontSize = 13;
         for (var i = 0; i < points.Count; i++)
         {
             var y = rect.Top + row * i;
-            canvas.FontColor = Res("Label");
-            canvas.DrawString(points[i].Label, rect.Left, y, labelW - 8, row, HorizontalAlignment.Left, VerticalAlignment.Center);
+            Text(canvas, points[i].Label, rect.Left, y, labelW - 8, row, HorizontalAlignment.Left, VerticalAlignment.Center, Res("Label"), 13);
             var w = (float)((rect.Width - labelW - 48) * Math.Max(0, i < values.Length ? values[i] : 0) / max);
             canvas.FillColor = ToneColor(points[i].Tone);
             canvas.FillRoundedRectangle(rect.Left + labelW, y + row * 0.25f, Math.Max(w, 2), row * 0.5f, 4);
-            canvas.FontColor = Res("SecondaryLabel");
-            canvas.DrawString(Display.Count((long)Math.Round(points[i].Value)), rect.Left + labelW + w + 6, y, 48, row,
-                              HorizontalAlignment.Left, VerticalAlignment.Center);
+            Text(canvas, Display.Count((long)Math.Round(points[i].Value)), rect.Left + labelW + w + 6, y, 48, row,
+                 HorizontalAlignment.Left, VerticalAlignment.Center, Res("SecondaryLabel"), 13);
         }
     }
 
@@ -353,14 +433,75 @@ public sealed class ChartView : GraphicsView, IDrawable
                            clockwise: true, closed: false);
             start -= sweep;
         }
-        canvas.FontColor = Res("Label");
-        canvas.FontSize = 22;
-        canvas.Font = Microsoft.Maui.Graphics.Font.DefaultBold;
-        canvas.DrawString(Display.Count((long)Math.Round(points.Sum(p => p.Value))), cx - 60, cy - 16, 120, 26,
-                          HorizontalAlignment.Center, VerticalAlignment.Center);
-        canvas.Font = Microsoft.Maui.Graphics.Font.Default;
-        canvas.FontSize = 11;
-        canvas.FontColor = Res("SecondaryLabel");
-        canvas.DrawString("total", cx - 60, cy + 8, 120, 16, HorizontalAlignment.Center, VerticalAlignment.Center);
+        Text(canvas, Display.Count((long)Math.Round(points.Sum(p => p.Value))), cx - 60, cy - 16, 120, 26,
+             HorizontalAlignment.Center, VerticalAlignment.Center, Res("Label"), 22, bold: true);
+        Text(canvas, "total", cx - 60, cy + 8, 120, 16, HorizontalAlignment.Center, VerticalAlignment.Center, Res("SecondaryLabel"), 11);
     }
+
+    // All chart text. On Windows it is drawn straight onto the Win2D session
+    // with a text format made once per size: MAUI's DrawString builds a new
+    // WinUI FontFamily for every call, i.e. per label per frame while the
+    // bars grow, and those objects drove the GC (EventPipe: GCTriggered
+    // InducedNotForced from W2DCanvas.DrawString → FontFamily, and XAML's
+    // reference tracker inducing a blocking gen-2 1 s into the first
+    // Dashboard entrance).
+    private static void Text(ICanvas canvas, string text, float x, float y, float w, float h,
+                             HorizontalAlignment ha, VerticalAlignment va, Color color, float size, bool bold = false)
+    {
+#if WINDOWS
+        if (canvas is Microsoft.Maui.Graphics.Win2D.W2DCanvas { Session: { } session })
+        {
+            session.DrawText(text, new global::Windows.Foundation.Rect(x, y, w, h),
+                global::Windows.UI.Color.FromArgb((byte)(color.Alpha * 255), (byte)(color.Red * 255),
+                                                  (byte)(color.Green * 255), (byte)(color.Blue * 255)),
+                TextFormats.Get(size, bold, ha, va));
+            return;
+        }
+#endif
+        canvas.FontColor = color;
+        canvas.FontSize = size;
+        canvas.Font = bold ? Microsoft.Maui.Graphics.Font.DefaultBold : Microsoft.Maui.Graphics.Font.Default;
+        canvas.DrawString(text, x, y, w, h, ha, va);
+    }
+
+#if WINDOWS
+    private static class TextFormats
+    {
+        private static readonly Dictionary<(float, bool, HorizontalAlignment, VerticalAlignment), Microsoft.Graphics.Canvas.Text.CanvasTextFormat> Cache = [];
+        private static string? _family;
+
+        public static Microsoft.Graphics.Canvas.Text.CanvasTextFormat Get(float size, bool bold, HorizontalAlignment ha, VerticalAlignment va)
+        {
+            if (Cache.TryGetValue((size, bold, ha, va), out var f))
+            {
+                return f;
+            }
+            // The family MAUI's DrawString uses for Font.Default (WinUI's
+            // XamlAutoFontFamily), read once.
+            _family ??= Microsoft.UI.Xaml.Media.FontFamily.XamlAutoFontFamily.Source;
+            f = new Microsoft.Graphics.Canvas.Text.CanvasTextFormat
+            {
+                FontFamily = _family,
+                FontSize = size,
+                FontWeight = bold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
+            };
+            f.HorizontalAlignment = ha switch
+            {
+                HorizontalAlignment.Center => Microsoft.Graphics.Canvas.Text.CanvasHorizontalAlignment.Center,
+                HorizontalAlignment.Right => Microsoft.Graphics.Canvas.Text.CanvasHorizontalAlignment.Right,
+                _ => Microsoft.Graphics.Canvas.Text.CanvasHorizontalAlignment.Left,
+            };
+            f.VerticalAlignment = va switch
+            {
+                VerticalAlignment.Center => Microsoft.Graphics.Canvas.Text.CanvasVerticalAlignment.Center,
+                VerticalAlignment.Bottom => Microsoft.Graphics.Canvas.Text.CanvasVerticalAlignment.Bottom,
+                _ => Microsoft.Graphics.Canvas.Text.CanvasVerticalAlignment.Top,
+            };
+            f.WordWrapping = Microsoft.Graphics.Canvas.Text.CanvasWordWrapping.NoWrap;
+            f.Options = Microsoft.Graphics.Canvas.Text.CanvasDrawTextOptions.Clip;
+            Cache[(size, bold, ha, va)] = f;
+            return f;
+        }
+    }
+#endif
 }

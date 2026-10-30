@@ -30,6 +30,7 @@ public enum Prop
     TranslationX,
     TranslationY,
     Rotation,
+    ScaleX,
 }
 
 public static class MotionSettings
@@ -37,7 +38,15 @@ public static class MotionSettings
     private static bool? _reduce;
 
     // The OS "Reduce Motion" / "Remove animations" setting, re-read on resume.
+#if DEBUG || GC_HARNESS
+    public static bool ReduceMotion => Override ?? (_reduce ??= Detect());
+
+    // Verification only (Platform/Automation.cs): force the setting. Not
+    // compiled into Release builds.
+    public static bool? Override { get; set; }
+#else
     public static bool ReduceMotion => _reduce ??= Detect();
+#endif
 
     public static void Refresh() => _reduce = Detect();
 
@@ -65,6 +74,8 @@ public static class Spr
         public required Spring Spring { get; init; }
         public required Prop Prop { get; init; }
         public Action? OnSettled { get; set; }
+        // Clock time before which the spring holds still (stagger).
+        public double StartAt { get; set; }
     }
 
     private sealed class Driven
@@ -75,7 +86,7 @@ public static class Spr
     private static readonly ConditionalWeakTable<VisualElement, Driven> State = new();
     private static readonly List<WeakReference<VisualElement>> Active = [];
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
-    private static IDispatcherTimer? _timer;
+    private static FrameDriver? _timer;
     private static double _lastTick;
 
     private static double Read(VisualElement v, Prop p) => p switch
@@ -84,10 +95,25 @@ public static class Spr
         Prop.Opacity => v.Opacity,
         Prop.TranslationX => v.TranslationX,
         Prop.TranslationY => v.TranslationY,
+        Prop.ScaleX => v.ScaleX,
         _ => v.Rotation,
     };
 
     private static void Write(VisualElement v, Prop p, double value)
+    {
+#if DEBUG || GC_HARNESS
+        var t0 = FrameTrace.Now();
+        WriteCore(v, p, value);
+        if (FrameTrace.On && (FrameTrace.Now() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency > 1)
+        {
+            FrameTrace.Span($"write.{p}.{v.GetType().Name}.{(v as Element)?.AutomationId ?? ""}", t0);
+        }
+#else
+        WriteCore(v, p, value);
+#endif
+    }
+
+    private static void WriteCore(VisualElement v, Prop p, double value)
     {
         switch (p)
         {
@@ -95,6 +121,7 @@ public static class Spr
             case Prop.Opacity: v.Opacity = Math.Clamp(value, 0, 1); break;
             case Prop.TranslationX: v.TranslationX = value; break;
             case Prop.TranslationY: v.TranslationY = value; break;
+            case Prop.ScaleX: v.ScaleX = value; break;
             default: v.Rotation = value; break;
         }
     }
@@ -102,18 +129,25 @@ public static class Spr
     // Animate `prop` of `view` to `target`. If that property is already in
     // flight, the running spring is retargeted (interruptible). `velocity`
     // hands a gesture's speed (units per second) into the motion.
+    // `delay` (seconds) holds the motion still before it starts (stagger);
+    // a retarget during the delay keeps the original start time.
     public static void To(VisualElement view, Prop prop, double target, SpringSpec? spec = null,
-                          double? velocity = null, Action? settled = null)
+                          double? velocity = null, Action? settled = null, double delay = 0)
     {
         var driven = State.GetOrCreateValue(view);
         if (!driven.Tracks.TryGetValue(prop, out var track))
         {
             track = new Track { Spring = new Spring(Read(view, prop), spec ?? SpringSpec.Default), Prop = prop };
             driven.Tracks[prop] = track;
+            track.StartAt = Now + Math.Max(0, delay);
+        }
+        else if (delay > 0)
+        {
+            track.StartAt = Math.Max(track.StartAt, Now + delay);
         }
         track.OnSettled = settled;
         track.Spring.Retarget(target, spec ?? track.Spring.Spec, velocity);
-        if (track.Spring.IsSettled)
+        if (track.Spring.IsSettled && track.StartAt <= Now)
         {
             Write(view, prop, target);
             settled?.Invoke();
@@ -133,8 +167,22 @@ public static class Spr
         Write(view, prop, value);
     }
 
+    // Seconds on the motion clock (shared by springs and frame callbacks).
+    public static double Now => Clock.Elapsed.TotalSeconds;
+
+    // A per-frame callback on the motion ticker, for motion that isn't a
+    // spring on a view property (count-ups, blur, clips, paired springs).
+    // `step` gets dt in seconds and returns false when it is finished.
+    public static void OnFrame(Func<double, bool> step, IDispatcher? dispatcher = null)
+    {
+        Frames.Add(step);
+        EnsureTimer(dispatcher);
+    }
+
     public static bool IsMoving(VisualElement view, Prop prop) =>
         State.TryGetValue(view, out var d) && d.Tracks.ContainsKey(prop);
+
+    private static readonly List<Func<double, bool>> Frames = [];
 
     private static void Enlist(VisualElement view)
     {
@@ -142,16 +190,19 @@ public static class Spr
         {
             Active.Add(new WeakReference<VisualElement>(view));
         }
+        EnsureTimer(view.Dispatcher);
+    }
+
+    private static void EnsureTimer(IDispatcher? preferred)
+    {
         if (_timer is null)
         {
-            var dispatcher = view.Dispatcher ?? Application.Current?.Dispatcher;
+            var dispatcher = preferred ?? Application.Current?.Dispatcher;
             if (dispatcher is null)
             {
                 return;
             }
-            _timer = dispatcher.CreateTimer();
-            _timer.Interval = TimeSpan.FromMilliseconds(1000.0 / 120);
-            _timer.Tick += (_, _) => Tick();
+            _timer = new FrameDriver(dispatcher, Tick);
             _lastTick = Clock.Elapsed.TotalSeconds;
         }
         if (!_timer.IsRunning)
@@ -161,7 +212,124 @@ public static class Spr
         }
     }
 
+    // Ticks once per displayed frame: WinUI CompositionTarget.Rendering,
+    // Android Choreographer. (A DispatcherTimer only ticks every ~15.6 ms on
+    // Windows, so on a 120–240 Hz display motion advanced in 16 ms steps and
+    // looked steppy; review "page-load smoothness".) Elsewhere: a timer.
+    private sealed class FrameDriver(IDispatcher dispatcher, Action tick)
+    {
+#if !WINDOWS && !ANDROID
+        private IDispatcherTimer? _fallback;
+#endif
+
+        public bool IsRunning { get; private set; }
+
+        public void Start()
+        {
+            if (dispatcher.IsDispatchRequired)
+            {
+                dispatcher.Dispatch(Start);
+                return;
+            }
+            if (IsRunning)
+            {
+                return;
+            }
+            IsRunning = true;
+#if WINDOWS
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering += OnRendering;
+#elif ANDROID
+            // One callback chain only: after a quick Stop/Start the previous
+            // callback is still pending and carries on; posting another
+            // would tick twice per frame.
+            if (!_posted)
+            {
+                _posted = true;
+                Android.Views.Choreographer.Instance!.PostFrameCallback(Callback);
+            }
+#else
+            _fallback ??= CreateFallback();
+            _fallback.Start();
+#endif
+        }
+
+        public void Stop()
+        {
+            if (!IsRunning)
+            {
+                return;
+            }
+            IsRunning = false;
+#if WINDOWS
+            Microsoft.UI.Xaml.Media.CompositionTarget.Rendering -= OnRendering;
+#elif !ANDROID
+            _fallback?.Stop();
+#endif
+        }
+
+#if !WINDOWS && !ANDROID
+        private IDispatcherTimer CreateFallback()
+        {
+            var timer = dispatcher.CreateTimer();
+            timer.Interval = TimeSpan.FromMilliseconds(1000.0 / 120);
+            timer.Tick += (_, _) => tick();
+            return timer;
+        }
+#endif
+
+#if WINDOWS
+        private void OnRendering(object? sender, object e) => tick();
+#elif ANDROID
+        private FrameCallback? _callback;
+        private bool _posted;
+
+        private FrameCallback Callback => _callback ??= new FrameCallback(() =>
+        {
+            _posted = false;
+            if (!IsRunning)
+            {
+                return;
+            }
+            tick();
+            if (IsRunning && !_posted)
+            {
+                _posted = true;
+                Android.Views.Choreographer.Instance!.PostFrameCallback(Callback);
+            }
+        });
+
+        private sealed class FrameCallback(Action onFrame) : Java.Lang.Object, Android.Views.Choreographer.IFrameCallback
+        {
+            public void DoFrame(long frameTimeNanos) => onFrame();
+        }
+#endif
+    }
+
+#if DEBUG || GC_HARNESS
+    // Verification: how long each motion tick takes and how much it moved.
+    internal static Action<double, int, int>? TickTrace;
+    internal static double SlowestCallbackMs;
+    internal static string SlowestCallback = "";
+#endif
+
     private static void Tick()
+    {
+#if DEBUG || GC_HARNESS
+        SlowestCallbackMs = 0;
+        SlowestCallback = "";
+        var tickStart = Clock.Elapsed.TotalMilliseconds;
+        var tickTicks = FrameTrace.Now();
+        var springCount = Active.Count;
+        var frameCount = Frames.Count;
+#endif
+        TickCore();
+#if DEBUG || GC_HARNESS
+        TickTrace?.Invoke(Clock.Elapsed.TotalMilliseconds - tickStart, springCount, frameCount);
+        FrameTrace.Span("motion.tick", tickTicks);
+#endif
+    }
+
+    private static void TickCore()
     {
         var now = Clock.Elapsed.TotalSeconds;
         // Real elapsed time (capped): the closed-form spring is exact for
@@ -177,7 +345,12 @@ public static class Spr
             }
             foreach (var track in driven.Tracks.Values.ToList())
             {
-                track.Spring.Step(dt);
+                if (track.StartAt > now)
+                {
+                    continue;  // staggered: not its turn yet
+                }
+                // First frame after the delay: step only the time since it began.
+                track.Spring.Step(Math.Min(dt, now - track.StartAt));
                 Write(view, track.Prop, track.Spring.Value);
                 if (track.Spring.IsSettled)
                 {
@@ -190,7 +363,34 @@ public static class Spr
                 Active.RemoveAt(i);
             }
         }
-        if (Active.Count == 0)
+        for (var i = Frames.Count - 1; i >= 0; i--)
+        {
+            bool more;
+            try
+            {
+#if DEBUG || GC_HARNESS
+                var cbStart = Clock.Elapsed.TotalMilliseconds;
+                more = Frames[i](dt);
+                var cbMs = Clock.Elapsed.TotalMilliseconds - cbStart;
+                if (cbMs > SlowestCallbackMs)
+                {
+                    SlowestCallbackMs = cbMs;
+                    SlowestCallback = Frames[i].Method.DeclaringType?.FullName + "." + Frames[i].Method.Name;
+                }
+#else
+                more = Frames[i](dt);
+#endif
+            }
+            catch (Exception)
+            {
+                more = false;  // a broken callback must not stop all motion
+            }
+            if (!more)
+            {
+                Frames.RemoveAt(i);
+            }
+        }
+        if (Active.Count == 0 && Frames.Count == 0)
         {
             _timer?.Stop();
         }
