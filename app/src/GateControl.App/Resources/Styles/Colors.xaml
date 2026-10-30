@@ -2,50 +2,85 @@
 <!--
   Colors.xaml — semantic colour tokens, light and dark.
 
-  Apple's system palette: grouped backgrounds, one accent, and four
-  meanings (positive / negative / caution / neutral). Views never use a
-  raw hue; they ask for a meaning (Display.Tone in GateControl.Core),
-  and the pair below decides how it looks in each appearance.
+  Sampled from the reference design (app/docs/design-video-spec.md §5):
+  violet-tinted neutrals, flat white cards on a tinted canvas, INK for
+  selection and primary actions, one orange BRAND colour used sparingly
+  (brand mark, accent tile / hero card, toggles, send buttons, unread and
+  notification dots, selected-tile tint). Views ask for a meaning, never
+  a hue.
+
+  Key names kept from the previous palette where the meaning is the same:
+  "Accent" is the interactive/selection colour, which is now ink (it
+  inverts in dark), not blue. "Background" is the canvas.
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
-    <!-- Backgrounds (systemGroupedBackground family) -->
-    <Color x:Key="BackgroundLight">#F2F2F7</Color>
-    <Color x:Key="BackgroundDark">#000000</Color>
+    <!-- Window behind the canvas panel -->
+    <Color x:Key="OuterLight">#E8E6E9</Color>
+    <Color x:Key="OuterDark">#060409</Color>
+
+    <!-- Canvas (the page panel) -->
+    <Color x:Key="BackgroundLight">#F3F1F5</Color>
+    <Color x:Key="BackgroundDark">#110E15</Color>
+
+    <!-- Cards, capsules -->
     <Color x:Key="SurfaceLight">#FFFFFF</Color>
-    <Color x:Key="SurfaceDark">#1C1C1E</Color>
+    <Color x:Key="SurfaceDark">#17151A</Color>
     <Color x:Key="SurfaceRaisedLight">#FFFFFF</Color>
-    <Color x:Key="SurfaceRaisedDark">#2C2C2E</Color>
-    <Color x:Key="FillLight">#1F787880</Color>
-    <Color x:Key="FillDark">#3D787880</Color>
+    <Color x:Key="SurfaceRaisedDark">#1F1C22</Color>
+
+    <!-- Recessed area inside a card (wells, fields, secondary buttons) -->
+    <Color x:Key="WellLight">#F3F1F5</Color>
+    <Color x:Key="WellDark">#1F1C22</Color>
+    <Color x:Key="FillLight">#F3F1F5</Color>
+    <Color x:Key="FillDark">#26232A</Color>
+
+    <!-- Ink: text, selection pill, primary buttons. Inverts in dark. -->
+    <Color x:Key="InkLight">#151316</Color>
+    <Color x:Key="InkDark">#F4F2F7</Color>
+    <Color x:Key="OnInkLight">#FFFFFF</Color>
+    <Color x:Key="OnInkDark">#151316</Color>
 
     <!-- Labels -->
-    <Color x:Key="LabelLight">#000000</Color>
-    <Color x:Key="LabelDark">#FFFFFF</Color>
-    <Color x:Key="SecondaryLabelLight">#993C3C43</Color>
-    <Color x:Key="SecondaryLabelDark">#99EBEBF5</Color>
-    <Color x:Key="TertiaryLabelLight">#4D3C3C43</Color>
-    <Color x:Key="TertiaryLabelDark">#4DEBEBF5</Color>
-    <Color x:Key="SeparatorLight">#4A3C3C43</Color>
-    <Color x:Key="SeparatorDark">#99545458</Color>
+    <Color x:Key="LabelLight">#151316</Color>
+    <Color x:Key="LabelDark">#F4F2F7</Color>
+    <Color x:Key="SecondaryLabelLight">#8B888F</Color>
+    <Color x:Key="SecondaryLabelDark">#8F8C94</Color>
+    <Color x:Key="TertiaryLabelLight">#B9B6BD</Color>
+    <Color x:Key="TertiaryLabelDark">#5C5961</Color>
+    <Color x:Key="SeparatorLight">#ECEAEE</Color>
+    <Color x:Key="SeparatorDark">#26232A</Color>
+    <Color x:Key="HairlineLight">#ECEAEE</Color>
+    <Color x:Key="HairlineDark">#26232A</Color>
+
+    <!-- Interactive / selection = ink (no blue anywhere) -->
+    <Color x:Key="AccentLight">#151316</Color>
+    <Color x:Key="AccentDark">#F4F2F7</Color>
+
+    <!-- Brand orange: same in both themes -->
+    <Color x:Key="BrandLight">#E15A41</Color>
+    <Color x:Key="BrandDark">#E15B43</Color>
+    <Color x:Key="BrandHighlight">#F2947F</Color>
+    <Color x:Key="BrandDeep">#D2432A</Color>
+    <Color x:Key="BrandTintLight">#FBE3DC</Color>
+    <Color x:Key="BrandTintDark">#3A1F1A</Color>
 
     <!-- Meanings -->
-    <Color x:Key="AccentLight">#007AFF</Color>
-    <Color x:Key="AccentDark">#0A84FF</Color>
-    <Color x:Key="PositiveLight">#34C759</Color>
-    <Color x:Key="PositiveDark">#30D158</Color>
-    <Color x:Key="NegativeLight">#FF3B30</Color>
-    <Color x:Key="NegativeDark">#FF453A</Color>
-    <Color x:Key="CautionLight">#FF9500</Color>
-    <Color x:Key="CautionDark">#FF9F0A</Color>
-    <Color x:Key="NeutralLight">#8E8E93</Color>
-    <Color x:Key="NeutralDark">#8E8E93</Color>
+    <Color x:Key="PositiveLight">#1E9E5A</Color>
+    <Color x:Key="PositiveDark">#3CCB7F</Color>
+    <Color x:Key="PositiveTintLight">#E3F4EA</Color>
+    <Color x:Key="PositiveTintDark">#173326</Color>
+    <Color x:Key="NegativeLight">#E5484D</Color>
+    <Color x:Key="NegativeDark">#F2555A</Color>
+    <Color x:Key="CautionLight">#F5A524</Color>
+    <Color x:Key="CautionDark">#F5A524</Color>
+    <Color x:Key="NeutralLight">#8B888F</Color>
+    <Color x:Key="NeutralDark">#8F8C94</Color>
 
-    <!-- The one translucent layer (tab bar / sheet backdrop). Glass is
-         never stacked on glass; content shows through a single layer. -->
-    <Color x:Key="ChromeLight">#E6F9F9F9</Color>
-    <Color x:Key="ChromeDark">#E61C1C1E</Color>
+    <!-- The one translucent layer (sheet backdrop). -->
+    <Color x:Key="ChromeLight">#F2FFFFFF</Color>
+    <Color x:Key="ChromeDark">#F217151A</Color>
     <Color x:Key="ScrimLight">#66000000</Color>
     <Color x:Key="ScrimDark">#99000000</Color>
 

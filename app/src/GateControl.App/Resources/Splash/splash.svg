@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- A sliding gate: two posts, a barred leaf, a direction chevron. -->
 <svg width="456" height="456" viewBox="0 0 456 456" xmlns="http://www.w3.org/2000/svg">
-  <g fill="none" stroke="#0A84FF" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#E15A41" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
     <line x1="120" y1="150" x2="120" y2="318"/>
     <line x1="336" y1="150" x2="336" y2="318"/>
     <line x1="120" y1="176" x2="336" y2="176"/>
