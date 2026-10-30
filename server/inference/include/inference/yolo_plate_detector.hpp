@@ -10,12 +10,17 @@
 //   det_scores  : float  [N, max_det]
 //   det_classes : int32  [N, max_det]
 //
+// The deployed model is the open-image-models YOLOv9-s-608 plate detector
+// with EfficientNMS_TRT grafted on by scripts/export-models/graft_efficientnms.py
+// (input 1x3x608x608); the input size is read from the engine.
+//
 // The class is single-image (batch == 1). Multi-image batching is a Phase
 // 4.3 concern; the current pipeline runs one camera frame at a time.
 #pragma once
 
 #include <filesystem>
 #include <opencv2/core.hpp>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -34,12 +39,15 @@ class YoloPlateDetector {
 public:
     struct Config {
         std::filesystem::path engine_path;
-        int input_width = 640;
-        int input_height = 640;
-        // EfficientNMS_TRT applies its own confidence/IoU thresholds at
-        // export time; this is a defense-in-depth filter on the way back out
-        // for engines exported with looser settings than the deployment wants.
-        float confidence_floor = 0.25f;
+        // Letterbox canvas size. 0 = take it from the engine's input tensor
+        // ([1, 3, H, W]); set explicitly only to override a dynamic engine.
+        int input_width = 0;
+        int input_height = 0;
+        // EfficientNMS_TRT applies its own (looser, 0.10) score threshold at
+        // export time; this floor is the operating point. 0.15 is where the
+        // Kenya test set's recall/precision knee sits for YOLOv9-s-608
+        // (models/downloads/eval/RESULTS.md).
+        float confidence_floor = 0.15f;
         // Tensor names — defaults match the official yolov9 export script.
         std::string input_name = "images";
         std::string num_dets_name = "num_dets";
@@ -67,6 +75,10 @@ public:
 
     [[nodiscard]] const Config& config() const noexcept { return cfg_; }
 
+    // The preprocessed 1x3xHxW tensor of the most recent detect() call
+    // (letterboxed, RGB, /255, CHW). For offline parity checks (alpr_bench).
+    [[nodiscard]] std::span<const float> last_input() const noexcept { return input_chw_; }
+
 private:
     YoloPlateDetector(TrtEngine&& engine, Config cfg);
 
@@ -78,7 +90,7 @@ private:
         float pad_x;  // pixels of padding on left side of input canvas
         float pad_y;  // pixels of padding on top side of input canvas
     };
-    LetterboxParams letterbox_(const cv::Mat& src, cv::Mat& dst) const;
+    LetterboxParams letterbox_canvas(const cv::Mat& src, cv::Mat& dst) const;
 
     TrtEngine engine_;
     Config cfg_;

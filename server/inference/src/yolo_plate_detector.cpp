@@ -33,6 +33,23 @@ YoloPlateDetector YoloPlateDetector::load(Config cfg, nvinfer1::ILogger& logger)
 
     YoloPlateDetector self{std::move(engine), std::move(cfg)};
 
+    // Canvas size from the engine unless configured: [1, 3, H, W].
+    const auto& in = self.engine_.tensor(self.cfg_.input_name);
+    if (in.shape.nbDims != 4) {
+        throw TrtException("YoloPlateDetector: input '" + self.cfg_.input_name +
+                           "' must be [1, 3, H, W], is " + shape_to_string(in.shape));
+    }
+    if (self.cfg_.input_height <= 0) {
+        self.cfg_.input_height = static_cast<int>(in.shape.d[2]);
+    }
+    if (self.cfg_.input_width <= 0) {
+        self.cfg_.input_width = static_cast<int>(in.shape.d[3]);
+    }
+    if (self.cfg_.input_height <= 0 || self.cfg_.input_width <= 0) {
+        throw TrtException(
+            "YoloPlateDetector: engine input size is dynamic; set input_width/height");
+    }
+
     // Pin the input shape now. EfficientNMS_TRT engines are typically
     // exported with a fixed batch=1; calling setInputShape with the
     // configured H×W is a no-op for static engines and a binding for
@@ -59,8 +76,9 @@ YoloPlateDetector YoloPlateDetector::load(Config cfg, nvinfer1::ILogger& logger)
     }
 
     // Allocate host-side scratch buffers, sized once.
-    self.input_chw_.assign(
-        static_cast<std::size_t>(3 * self.cfg_.input_height * self.cfg_.input_width), 0.0f);
+    self.input_chw_.assign(std::size_t{3} * static_cast<std::size_t>(self.cfg_.input_height) *
+                               static_cast<std::size_t>(self.cfg_.input_width),
+                           0.0f);
     self.num_dets_host_.assign(1, 0);
     self.boxes_host_.assign(static_cast<std::size_t>(self.max_detections_) * 4, 0.0f);
     self.scores_host_.assign(static_cast<std::size_t>(self.max_detections_), 0.0f);
@@ -73,8 +91,8 @@ YoloPlateDetector YoloPlateDetector::load(Config cfg, nvinfer1::ILogger& logger)
     return self;
 }
 
-YoloPlateDetector::LetterboxParams YoloPlateDetector::letterbox_(const cv::Mat& src,
-                                                                 cv::Mat& dst) const {
+YoloPlateDetector::LetterboxParams YoloPlateDetector::letterbox_canvas(const cv::Mat& src,
+                                                                       cv::Mat& dst) const {
     const auto p = detail::letterbox(src, cfg_.input_width, cfg_.input_height, dst);
     return {p.scale, p.pad_x, p.pad_y};
 }
@@ -89,7 +107,7 @@ std::vector<PlateDetection> YoloPlateDetector::detect(const cv::Mat& bgr) {
 
     // ---- Preprocess ----
     cv::Mat letterboxed;
-    const auto lb = letterbox_(bgr, letterboxed);
+    const auto lb = letterbox_canvas(bgr, letterboxed);
 
     // BGR → RGB, uint8 → float32 normalized [0, 1], HWC → CHW.
     cv::Mat rgb;
@@ -98,10 +116,10 @@ std::vector<PlateDetection> YoloPlateDetector::detect(const cv::Mat& bgr) {
     rgb.convertTo(rgb_f32, CV_32FC3, 1.0 / 255.0);
 
     // Split channels directly into the contiguous CHW host buffer.
-    const int plane = cfg_.input_height * cfg_.input_width;
+    const auto plane = static_cast<std::ptrdiff_t>(cfg_.input_height) * cfg_.input_width;
     std::vector<cv::Mat> channels{
-        cv::Mat(cfg_.input_height, cfg_.input_width, CV_32FC1, input_chw_.data() + 0 * plane),
-        cv::Mat(cfg_.input_height, cfg_.input_width, CV_32FC1, input_chw_.data() + 1 * plane),
+        cv::Mat(cfg_.input_height, cfg_.input_width, CV_32FC1, input_chw_.data()),
+        cv::Mat(cfg_.input_height, cfg_.input_width, CV_32FC1, input_chw_.data() + plane),
         cv::Mat(cfg_.input_height, cfg_.input_width, CV_32FC1, input_chw_.data() + 2 * plane),
     };
     cv::split(rgb_f32, channels);

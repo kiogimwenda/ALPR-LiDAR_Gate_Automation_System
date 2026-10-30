@@ -95,3 +95,18 @@ target_compile_features(gate_inference PUBLIC cxx_std_20)
 # our own code at -Werror but mark the third-party include path as SYSTEM so
 # it's exempt.
 target_include_directories(gate_inference SYSTEM PUBLIC ${TENSORRT_INCLUDE_DIR})
+
+# --- alpr_bench -------------------------------------------------------------
+# Offline harness: runs AlprPipeline over an image list and writes JSON lines
+# (scripts/export-models/eval/cpp_parity.py scores them). Needs imgcodecs to
+# read the images; the library itself stays on core + imgproc.
+find_package(OpenCV QUIET COMPONENTS imgcodecs)
+find_package(CLI11 CONFIG QUIET)
+if(OpenCV_FOUND AND CLI11_FOUND)
+    add_executable(alpr_bench tools/alpr_bench.cpp)
+    target_link_libraries(alpr_bench PRIVATE gate_inference opencv_imgcodecs CLI11::CLI11
+                                             spdlog::spdlog)
+    target_compile_features(alpr_bench PRIVATE cxx_std_20)
+else()
+    message(STATUS "Skipping alpr_bench: OpenCV imgcodecs or CLI11 not found")
+endif()
