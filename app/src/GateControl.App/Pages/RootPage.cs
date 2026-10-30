@@ -293,6 +293,7 @@ public sealed class RootPage : ContentPage
         Themed(_canvas, VisualElement.BackgroundColorProperty, "Background");
         Themed(this, VisualElement.BackgroundColorProperty, "Outer");
         Content = _window;
+        _header.SizeChanged += (_, _) => FitTabs();
         SizeChanged += (_, _) => Arrange();
         // Hosted tabs get the host's exact size: as plain stretched
         // children, WinUI kept the width they were first measured at (wider
@@ -300,14 +301,7 @@ public sealed class RootPage : ContentPage
         // right edge.
         _host.SizeChanged += (_, _) =>
         {
-            foreach (var tab in _tabs)
-            {
-                if (Math.Abs(tab.View.WidthRequest - _host.Width) > 0.5 || Math.Abs(tab.View.HeightRequest - _host.Height) > 0.5)
-                {
-                    tab.View.WidthRequest = _host.Width;
-                    tab.View.HeightRequest = _host.Height;
-                }
-            }
+            FitTabs();
             // A resize (or maximise / restore) re-lays out every parked tab:
             // run WinUI's memory check at idle again once it has settled
             // (review round 3, item 5).
@@ -654,6 +648,26 @@ public sealed class RootPage : ContentPage
         Dispatcher.Dispatch(action);
     }
 
+    // Tabs get an exact size, capped on phones to what is visible above the
+    // floating nav bar.
+    private void FitTabs()
+    {
+        var height = _host.Height;
+        if (_wide == false && _header.Height > 0)
+        {
+            var visible = _canvasGrid.HeightRequest - _header.Height - _canvasGrid.RowSpacing - _host.Margin.Bottom;
+            height = Math.Min(height, Math.Max(0, visible));
+        }
+        foreach (var tab in _tabs)
+        {
+            if (Math.Abs(tab.View.WidthRequest - _host.Width) > 0.5 || Math.Abs(tab.View.HeightRequest - height) > 0.5)
+            {
+                tab.View.WidthRequest = _host.Width;
+                tab.View.HeightRequest = height;
+            }
+        }
+    }
+
     private void Arrange()
     {
         if (Width <= 0)
@@ -672,6 +686,7 @@ public sealed class RootPage : ContentPage
         _canvasGrid.HeightRequest = Math.Max(0, Height - inset.VerticalThickness);
         if (_wide == wide)
         {
+            FitTabs();
             return;
         }
         _wide = wide;
@@ -709,8 +724,10 @@ public sealed class RootPage : ContentPage
             _nav.HorizontalOptions = LayoutOptions.Center;
             _nav.VerticalOptions = LayoutOptions.End;
             _nav.Margin = new Thickness(0, 0, 0, 12);
-            _canvasGrid.Add(_nav, 0, 1);
-            Grid.SetColumnSpan(_nav, 2);
+            // A sibling of the shell grid, not a child: on Android the grid's
+            // star row overflowed the window and took a bottom-aligned bar
+            // off screen.
+            _window.Children.Add(_nav);
         }
     }
 

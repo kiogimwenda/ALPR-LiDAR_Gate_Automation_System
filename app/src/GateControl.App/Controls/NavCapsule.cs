@@ -39,6 +39,8 @@ public sealed class NavCapsule : ContentView
     private readonly Spring _w = new(0, SpringSpec.Default);
     private bool _ticking;
     private bool _placed;
+    private bool _compact;
+    private readonly Border _capsule;
 
     public NavCapsule()
     {
@@ -71,8 +73,8 @@ public sealed class NavCapsule : ContentView
         _pill.Opacity = 0;
 
         var layer = new Grid { Children = { _pill, _items } };
-        var capsule = new Border { Style = (Style)Application.Current!.Resources["Capsule"], Padding = 4, Content = layer };
-        Content = capsule;
+        _capsule = new Border { Style = (Style)Application.Current!.Resources["Capsule"], Padding = 4, Content = layer };
+        Content = _capsule;
         _items.SizeChanged += (_, _) => Update(animated: _placed);
     }
 
@@ -85,7 +87,20 @@ public sealed class NavCapsule : ContentView
     }
 
     // Compact (phone, bottom): smaller type and padding.
-    public bool Compact { get; set; }
+    public bool Compact
+    {
+        get => _compact;
+        set
+        {
+            _compact = value;
+            // Floating over cards of the same fill: an outline keeps it legible.
+            _capsule.StrokeThickness = value ? 1 : 0;
+            if (value)
+            {
+                _capsule.SetAppThemeColor(Border.StrokeProperty, Color.FromRgba(0, 0, 0, 40), Color.FromRgba(255, 255, 255, 48));
+            }
+        }
+    }
 
     public void SetItems(IEnumerable<string> titles)
     {
