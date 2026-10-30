@@ -8,6 +8,15 @@
 # Subsequent Phase 4 milestones will add `rpc/` (gRPC service host) and `app/`
 # (the daemon entry point) alongside `inference/`.
 
+# The text half of the ALPR layer (recognizer output decoders, plate model
+# config, Kenya plate-format normalisation) is plain C++ — no TensorRT, CUDA
+# or OpenCV — so it is built in every configuration and its unit tests run in
+# the CPU-only CI build. gate_inference links it.
+add_library(gate_plate_text STATIC inference/src/plate_text.cpp)
+target_include_directories(gate_plate_text
+    PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inference/include>)
+target_compile_features(gate_plate_text PUBLIC cxx_std_20)
+
 # inference/ is the only CUDA/TensorRT consumer in the tree; every
 # other library here is deliberately CPU-only (see each CMakeLists'
 # header note). Skipping it under ENABLE_GPU=OFF yields a fully

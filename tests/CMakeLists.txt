@@ -15,7 +15,10 @@ endif()
 # BUILD_SERVER=ON pulled in server/inference). We gate by target presence so
 # CI's GPU-OFF builds skip the inference tests cleanly without having to
 # guess at flags.
-if(TARGET gate_inference)
+# The OpenCV/TensorRT-free half (gate_plate_text) exists in every server
+# build, so tests/inference is entered whenever either library exists and
+# gates its GPU-only binary itself.
+if(TARGET gate_plate_text OR TARGET gate_inference)
     add_subdirectory(inference)
 endif()
 
