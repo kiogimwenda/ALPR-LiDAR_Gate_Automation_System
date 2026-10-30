@@ -2,9 +2,10 @@
 
 A production-grade automated vehicle gate controller that fuses **Automatic
 License Plate Recognition (ALPR)** with **3D LiDAR** vehicle classification
-to authorize or deny entry. ALPR runs YOLOv9 for plate detection and
-PaddleOCR for character recognition, both accelerated via TensorRT on
-NVIDIA GPUs. A 3D LiDAR pipeline classifies the vehicle independently. A
+to authorize or deny entry. ALPR runs a YOLOv9 plate detector and a
+fixed-slot plate-OCR recognizer (fast-plate-ocr; PaddleOCR CTC models
+remain supported), both accelerated via TensorRT on NVIDIA GPUs — model
+choice and licences in ADR-014. A 3D LiDAR pipeline classifies the vehicle independently. A
 custom 4-layer ESP32-S3 field PCB drives the gate motor and senses
 limit/safety inputs. A Drogon API and the native Gate Control app (.NET MAUI: Android, iOS, macOS, Windows) provide real-time
 monitoring, manual override, and audit logs.
@@ -102,6 +103,7 @@ release on GitHub.
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.4 | ALPR pipeline orchestrator | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.5 | Python ONNX → TensorRT conversion tooling | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.2.6 | Catch2 inference unit tests | ✅ Complete |
+| &nbsp;&nbsp;&nbsp;&nbsp;4.2.7 | Trained ALPR models: selection, export, C++ integration (ADR-014) | ✅ Complete |
 | **4.3** | **Server RPC + fusion engine** | ✅ **Complete** |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.1 | Allowlist + blocklist store (SQLite) | ✅ Complete |
 | &nbsp;&nbsp;&nbsp;&nbsp;4.3.2 | Fusion engine (verdict ladder) | ✅ Complete |
@@ -194,9 +196,9 @@ The dev box happens to carry a hand-built OpenCV 4.14 with CUDA modules
 in `/usr/local/lib/` (see `docs/env-audit.md`), which CMake picks up,
 but nothing depends on its CUDA parts.
 
-The pip `opencv-python` wheel is used only by the `tools/export-models/`
-scripts (which convert ONNX → TensorRT engines with Python's `tensorrt`
-module), so the two coexist intentionally.
+The pip `opencv-python` wheel is used only by the `scripts/export-models/`
+Python tooling (model fetch, EfficientNMS graft, and the evaluation scripts
+in `scripts/export-models/eval/`), so the two coexist intentionally.
 
 #### Two CUDA architectures
 
@@ -341,6 +343,7 @@ first commit of real logic in Phase 4 already had `-Werror` and
 | `docs/diagrams/06-ota-update.mmd` | DeliverOta chunk stream → flash inactive partition → verify → mark-bootable → reboot. |
 | `docs/diagrams/07-simulation-mode.mmd` | Replay / synthetic / HIL paths and how each plugs into the same fusion + RPC code. |
 | `docs/decisions/ADR-000…ADR-010` | Eleven decision records — license, package manager, RPC, web framework, frontend, MCU, LiDAR, camera, actuator interface, OTA, model licensing. |
+| `docs/decisions/ADR-014-alpr-model-selection.md` | ALPR model selection: which detector / recognizer weights ship, their licences, provenance unknowns, mitigations and the site fine-tuning plan. |
 | `.github/workflows/{build,test,lint,proto,codeql,commitlint}.yml` | Six CI workflows — host build matrix, sanitizer tests, clang-format / clang-tidy / cppcheck, proto descriptor validator, GitHub CodeQL security scan, conventional-commit lint. |
 | `vcpkg.json` + `CMakePresets.json` | Locked dependency manifest + named build presets (`gcc-debug`, `gcc-release`, `clang-debug`, `clang-release`). |
 
@@ -925,9 +928,16 @@ source-build), GCC 14.2.0 with `-std=c++20 -Wall -Wextra -Wpedantic
 
 ## Phase 4.2.3 — PaddleOCR plate-text recognizer
 
-> **Completed 2026-04-25.** Code in
-> [`server/inference/include/inference/paddle_ocr_recognizer.hpp`](server/inference/include/inference/paddle_ocr_recognizer.hpp)
-> and [`server/inference/src/paddle_ocr_recognizer.cpp`](server/inference/src/paddle_ocr_recognizer.cpp).
+> **Superseded (2026-10, Phase 4.2.7):** `PaddleOcrRecognizer` became
+> `PlateRecognizer` (`plate_recognizer.{hpp,cpp}`), which keeps this CTC
+> path as `Mode::kCtc` (now padding with 0 *after* normalisation) and adds
+> the fixed-slot recognizer that ships. The text below is the historical
+> record of the original milestone.
+
+> **Completed 2026-04-25.** Original code in `paddle_ocr_recognizer.{hpp,cpp}`
+> (removed in 4.2.7); its successor is
+> [`server/inference/include/inference/plate_recognizer.hpp`](server/inference/include/inference/plate_recognizer.hpp)
+> and [`server/inference/src/plate_recognizer.cpp`](server/inference/src/plate_recognizer.cpp).
 > Dictionary asset at
 > [`server/models/dict_kenya_plates.txt`](server/models/dict_kenya_plates.txt).
 
@@ -943,8 +953,8 @@ ever reading the host CPU between models.
 
 | Artifact | Purpose |
 |---|---|
-| `server/inference/include/inference/paddle_ocr_recognizer.hpp` | Public API: `RecognizedPlate` struct, `PaddleOcrRecognizer::Config`, move-only recognizer class. |
-| `server/inference/src/paddle_ocr_recognizer.cpp` | Implementation: aspect-preserving resize + right-pad, per-channel mean/std normalization, async TRT inference, greedy CTC decode. |
+| `paddle_ocr_recognizer.hpp` (removed in 4.2.7 → `plate_recognizer.hpp`) | Public API: `RecognizedPlate` struct, `PaddleOcrRecognizer::Config`, move-only recognizer class. |
+| `paddle_ocr_recognizer.cpp` (removed in 4.2.7 → `plate_recognizer.cpp`) | Implementation: aspect-preserving resize + right-pad, per-channel mean/std normalization, async TRT inference, greedy CTC decode. |
 | `server/models/dict_kenya_plates.txt` | 36-character dictionary (0–9, A–Z) covering every character that can appear on a Kenyan civilian or government plate. |
 | `server/models/README.md` | Explains what model assets live in the tree (dictionaries) vs. what is built locally and gitignored (`.plan` engines, `.onnx` exports). |
 
@@ -1449,6 +1459,74 @@ Test project /tmp/gate-build-inference
 
 Total runtime under 0.3 s on the dev box. The tests are fast enough to be
 part of every local rebuild, not just CI gating.
+
+---
+
+## Phase 4.2.7 — Trained ALPR models (selection, export, C++ integration)
+
+> **Completed 2026-10-22.** Decision record:
+> [`docs/decisions/ADR-014-alpr-model-selection.md`](docs/decisions/ADR-014-alpr-model-selection.md).
+> Evaluation: `scripts/export-models/eval/` (test-set manifest committed in
+> `eval/testset/`; images, weights and results under the git-ignored
+> `models/downloads/`).
+
+Until this milestone the inference layer had no weights. It now ships:
+
+| Stage | Model | Engine contract |
+|---|---|---|
+| Detector | open-image-models YOLOv9-s-608 plate detector, with TensorRT's `EfficientNMS_TRT` grafted onto the pinned upstream ONNX (`scripts/export-models/graft_efficientnms.py`, score 0.10 / IoU 0.45 / top-100) | `images` 1×3×608×608 → `num_dets`, `det_boxes`, `det_scores`, `det_classes`; input size read from the engine; box decode + NMS pinned to FP32 inside the FP16 engine |
+| Recognizer | fast-plate-ocr `cct-s-v2-global` (MIT) | `input` uint8 NHWC 1×64×128×3 RGB (stretched crop) → `plate` [1, 10, 37] slot probabilities over `0-9A-Z_`; the `region` head is bound and ignored |
+
+**C++ changes**
+
+- `PlateRecognizer` replaces `PaddleOcrRecognizer`. `Mode::kSlots` handles the
+  fixed-slot recognizer: stretch to RGB uint8, then a per-slot argmax that drops
+  the pad character and keeps repeats. Its alphabet and input size come from the
+  model's `plate_config.yaml`, and the alphabet size must equal the output
+  classes. `Mode::kCtc` keeps PaddleOCR, with padding changed to 0 in
+  normalised space. Black padding had dropped PP-OCRv5 accuracy from 0.43 to
+  0.06.
+- `AlprPipeline` normalises every read against the Kenyan templates
+  (`normalize_kenya_plate`: `KLLDDDL`, `KLLLDDDL`, `GKLDDDL`, `GKDDDL`, with
+  positional look-alike repair). It keeps `raw_text` for audit, so gate-vision
+  sends both `plate_text` and `raw_ocr`. Foreign, diplomatic and old-format
+  plates pass through unchanged.
+- `TrtEngine::load` registers TensorRT's standard plugins. Without this, no
+  `EfficientNMS_TRT` engine could deserialise.
+  - It loads `libnvinfer_plugin.so.10` with `dlopen` and calls
+    `initLibNvInferPlugins` once per process.
+  - The library is not linked, so a host without it still runs plugin-free
+    engines. The detector then fails with an `apt install libnvinfer-plugin10`
+    hint.
+  - `install-server.sh` checks for the library up front.
+- `gate_plate_text` (decoders, plate config, Kenya normaliser) has no
+  TensorRT, CUDA or OpenCV dependency, so its unit tests run in the CPU-only CI
+  build.
+- New CLI options:
+  - `gate-vision`: `--recognizer-mode slots|ctc`, `--plate-config`,
+    `--detector-conf-floor` (default 0.15) and `--no-kenya-normalize`.
+  - `alpr_bench` runs the production pipeline over an image list for
+    evaluation.
+
+**Build:**
+`scripts/export-models/prepare_onnx.sh && scripts/export-models/build_engines.sh --onnx-dir models/weights --out-dir /opt/gate/models`.
+
+**Results** on the 166-image, 225-plate Kenya test set: Wikimedia Commons
+photos with every plate hand-read and every image swept by hand for missed
+plates.
+
+| | |
+|---|---|
+| Detector recall / precision (IoU ≥ 0.5, confidence 0.15) | 0.889 / 0.935 |
+| Recognizer exact match on hand-labelled crops (Kenya-normalised) | 0.756 |
+| End to end, C++ on RTX 5060 Laptop (raw / Kenya-normalised) | 0.711 / 0.729 |
+| End to end, Python reference (raw / Kenya-normalised) | 0.702 / 0.716 |
+| Two-line plates (end to end, C++) | 0.681 |
+| Latency per frame, C++ (median / p95) | 8.5 / 13.2 ms |
+| GPU time, detector + recognizer | 3.7 + 1.25 ms |
+
+These photos are not gate-camera footage. Site fine-tuning, especially for
+two-line `KMxx` motorcycle plates, is the documented follow-up in ADR-014.
 
 ---
 

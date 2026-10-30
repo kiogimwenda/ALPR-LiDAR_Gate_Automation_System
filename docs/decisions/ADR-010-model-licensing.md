@@ -1,7 +1,7 @@
 # ADR-010: Model Licensing — YOLOv9 GPL-3.0 Implications
 
 ## Status
-Accepted
+Accepted. Amended by [ADR-014](ADR-014-alpr-model-selection.md) (2026-10-22): the shipped detector is the open-image-models YOLOv9-s-608 (trained with a WongKinYiu/yolov9 fork, treated as GPL-3.0); the recognizer is fast-plate-ocr (MIT); Apache-2.0 RT-DETRv2 is the documented permissive fallback.
 
 ## Date
 2026-04-19
