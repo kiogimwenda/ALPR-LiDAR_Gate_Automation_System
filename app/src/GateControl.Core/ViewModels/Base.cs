@@ -180,8 +180,15 @@ public sealed partial class SessionHost : ObservableObject
 }
 
 // One decision as a list row (live feed, search results, plate history).
-public sealed class DecisionRow
+public sealed class DecisionRow : IEquatable<DecisionRow>
 {
+    // A decision is immutable once made: its id identifies it.
+    public bool Equals(DecisionRow? o) => o is not null && Id == o.Id && Id.Length > 0;
+
+    public override bool Equals(object? obj) => Equals(obj as DecisionRow);
+
+    public override int GetHashCode() => Id.GetHashCode(StringComparison.Ordinal);
+
     public DecisionRow(string id, string plate, string verdict, string reason, string vehicleClass,
                        string gate, double confidence, DateTimeOffset when, string actor)
     {
@@ -239,10 +246,19 @@ public static class CollectionExtensions
 {
     // Replace the contents without allocating a new collection, so bound
     // views keep their scroll position and only re-render what changed.
+    //
+    // Unchanged contents (by value, for records) are left alone: a refresh
+    // that brings the same data back must not rebuild every bound row (that
+    // re-inflated whole lists mid-animation and stalled frames).
     public static void ReplaceWith<T>(this ObservableCollection<T> target, IEnumerable<T> items)
     {
+        var list = items as IList<T> ?? items.ToList();
+        if (list.Count == target.Count && list.SequenceEqual(target))
+        {
+            return;
+        }
         target.Clear();
-        foreach (var item in items)
+        foreach (var item in list)
         {
             target.Add(item);
         }

@@ -2,33 +2,40 @@
 <p:PageBase xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
             xmlns:p="clr-namespace:GateControl.Pages"
+            xmlns:c="clr-namespace:GateControl.Controls"
+            xmlns:m="clr-namespace:GateControl.Motion"
             xmlns:vm="clr-namespace:GateControl.Core.ViewModels;assembly=GateControl.Core"
             x:Class="GateControl.Pages.DataPage"
             x:DataType="vm:DataSettingsViewModel"
-            Title="Data">
+            Title="">
     <ScrollView>
-        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
-            <Label Text="Keep history for" Style="{StaticResource SectionHeader}" />
-            <Border Style="{StaticResource Card}">
+        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}" Spacing="16" MaximumWidthRequest="760">
+            <VerticalStackLayout Spacing="4">
+                <c:TitleLabel Text="Data and retention" />
+                <Label Text="How long the site keeps vehicle history, and when a visit ends." Style="{StaticResource Subhead}"
+                       m:Reveal.Kind="Row" m:Reveal.Delay="0.1" />
+            </VerticalStackLayout>
+            <Border Style="{StaticResource Card}" m:Reveal.Kind="Card" m:Reveal.Order="0">
                 <VerticalStackLayout Spacing="6">
+                    <Label Text="Keep history for" Style="{StaticResource Headline}" />
                     <Label x:Name="RetentionLabel" Style="{StaticResource Title3}" />
                     <Slider Minimum="7" Maximum="365" Value="{Binding RetentionDays}" />
                     <Label Style="{StaticResource Footnote}"
                            Text="Older vehicle records, faults and cleared alerts are deleted automatically. Kenya's data protection rules favour keeping no more than you need; 90 days is the site default." />
                 </VerticalStackLayout>
             </Border>
-            <Label Text="A visit ends after" Style="{StaticResource SectionHeader}" />
-            <Border Style="{StaticResource Card}">
+            <Border Style="{StaticResource Card}" m:Reveal.Kind="Card" m:Reveal.Order="1">
                 <VerticalStackLayout Spacing="6">
+                    <Label Text="A visit ends after" Style="{StaticResource Headline}" />
                     <Label x:Name="TimeoutLabel" Style="{StaticResource Title3}" />
                     <Slider Minimum="1" Maximum="48" Value="{Binding SessionTimeoutHours}" />
                     <Label Style="{StaticResource Footnote}"
                            Text="A vehicle that entered and was never seen leaving stops counting as on site after this long." />
                 </VerticalStackLayout>
             </Border>
-            <Grid ColumnDefinitions="*,Auto" Margin="4,16,0,0">
+            <Grid ColumnDefinitions="*,Auto" Margin="4,0,0,0" m:Reveal.Kind="Row" m:Reveal.Order="5">
                 <Label Text="{Binding Saved}" Style="{StaticResource Footnote}" VerticalOptions="Center" />
-                <Button Grid.Column="1" Text="Save" Style="{StaticResource FilledButton}" HeightRequest="44" Command="{Binding SaveCommand}" />
+                <Button Grid.Column="1" Text="Save" Style="{StaticResource FilledButton}" HeightRequest="40" Command="{Binding SaveCommand}" />
             </Grid>
             <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}" Margin="4,8"
                    TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}" />

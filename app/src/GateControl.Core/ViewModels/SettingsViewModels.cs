@@ -192,7 +192,8 @@ public sealed partial class UserEditorViewModel : ViewModelBase
         _username = existing?.Username ?? "";
         _fullName = existing?.FullName ?? "";
         _email = existing?.Email ?? "";
-        _role = Roles.FirstOrDefault(r => r.Value == existing?.Role) ?? Roles[1];
+        // New accounts start with the least privilege: viewer.
+        _role = Roles.FirstOrDefault(r => r.Value == existing?.Role) ?? Roles[0];
         _active = existing?.Active ?? true;
     }
 

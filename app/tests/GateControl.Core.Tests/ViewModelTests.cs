@@ -109,7 +109,7 @@ public class ViewModelTests
     [Fact]
     public async Task AcksCompleteOnlyTheTileThatIssuedTheCommand()
     {
-        var (vm, _, _) = Live();
+        var (vm, haptics, _) = Live();
         vm.Apply(new LiveFrame { Type = "telemetry", Telemetry = new Telemetry { GateId = "gate-01" } });
         vm.Apply(new LiveFrame { Type = "telemetry", Telemetry = new Telemetry { GateId = "gate-02" } });
         await vm.Gates[0].OpenCommand.ExecuteAsync(null);
@@ -120,6 +120,8 @@ public class ViewModelTests
         vm.Apply(new LiveFrame { Type = "ack", Ack = new CommandAck { CommandId = "c1", Completed = true, Success = false, Error = "beam blocked" } });
         Assert.False(vm.Gates[0].CommandPending);
         Assert.Equal("beam blocked", vm.Gates[0].CommandStatus);
+        Assert.True(vm.Gates[0].CommandFailed);
+        Assert.Equal(HapticKind.Error, haptics.Played.Last());
     }
 
     [Fact]
@@ -151,6 +153,46 @@ public class ViewModelTests
         Assert.Equal(Tone.Caution, vm.Secondary[4].Tone);  // a gate is offline
         Assert.Equal("Car", vm.Classes[0].Label);
         Assert.Equal(20, vm.HourlyEntries[0].Value);
+    }
+
+    [Fact]
+    public void LiveTallyGivesTheAllowedShare()
+    {
+        var api = new GateApi(new Uri("http://x/"), "t", new FakeHandler(_ => FakeHandler.Json("{}")));
+        var session = new Session(api, new LiveFeed(api.BaseUri), new Me { Role = "viewer" });
+        var vm = new LiveViewModel(session, new InlineUi(), new RecordingHaptics(), new YesDialogs(), new NoNav(), new FixedClock(T0));
+        Assert.Equal(0, vm.AllowedShare);
+        vm.TodayAllowed = 3;
+        vm.TodayDenied = 1;
+        Assert.Equal(4, vm.TodayTotal);
+        Assert.Equal(0.75, vm.AllowedShare, 6);
+    }
+
+    [Theory]
+    [InlineData(3, "Ada", "Good evening, Ada")]
+    [InlineData(8, "Ada", "Good morning, Ada")]
+    [InlineData(13, "Ada", "Good afternoon, Ada")]
+    [InlineData(19, "Ada", "Good evening, Ada")]
+    [InlineData(9, "", "Good morning")]
+    public void GreetingUsesTheUsersNameAndLocalTime(int hour, string name, string expected)
+    {
+        Assert.Equal(expected, DashboardViewModel.GreetingFor(hour, name));
+    }
+
+    [Fact]
+    public void DashboardSplitsHourlyBarsIntoAllowedAndRefused()
+    {
+        var api = new GateApi(new Uri("http://x/"), "t", new FakeHandler(_ => FakeHandler.Json("{}")));
+        var session = new Session(api, new LiveFeed(api.BaseUri), new Me { Role = "viewer", FullName = "Ada Lovelace" });
+        var vm = new DashboardViewModel(session, new NoNav(), new FixedClock(T0));
+        vm.Apply(new Stats(), [new HourBucket { Hour = 8, Captures = 30, Authorized = 22, Denied = 8 }],
+                 [], new SessionsReport(), new VerdictBreakdown(), []);
+        Assert.Equal(22, vm.HourlyAllowed[0].Value);
+        Assert.Equal(vm.Headline[0], vm.Lead);
+        Assert.Equal(vm.Headline.Count - 1, vm.HeadlineRest.Count);
+        Assert.Equal(8, vm.HourlyRefused[0].Value);
+        Assert.StartsWith("Good ", vm.Greeting);
+        Assert.EndsWith("Ada Lovelace", vm.Greeting);
     }
 
     [Theory]
@@ -196,6 +238,13 @@ public class ViewModelTests
         edit.Password = "short";
         Assert.False(edit.SaveCommand.CanExecute(null));
     }
+
+    [Fact]
+    public void NewUsersDefaultToViewer()
+    {
+        var create = new UserEditorViewModel(null, (_, _) => Task.FromResult<string?>(null), () => { });
+        Assert.Equal("viewer", create.Role.Value);
+    }
 }
 
 public class DisplayTests
@@ -237,5 +286,41 @@ public class DisplayTests
     public void Durations(double? minutes, string text)
     {
         Assert.Equal(text, Display.Minutes(minutes));
+    }
+}
+
+// ViewModels/Base.cs: unchanged data is not rebuilt (moved here from TimingTests so the
+// Core motion/formatting commit stands on its own).
+public class ReplaceWithTests
+{
+    [Fact]
+    public void ReplaceWithLeavesEqualContentsAlone()
+    {
+        var c = new System.Collections.ObjectModel.ObservableCollection<GateControl.Core.ViewModels.ChartPoint>
+        {
+            new("a", 1), new("b", 2),
+        };
+        var changes = 0;
+        c.CollectionChanged += (_, _) => changes++;
+        c.ReplaceWith([new("a", 1), new("b", 2)]);
+        Assert.Equal(0, changes);
+        c.ReplaceWith([new("a", 1), new("b", 3)]);
+        Assert.True(changes > 0);
+        Assert.Equal(3, c[1].Value);
+    }
+
+    [Fact]
+    public void RowsCompareByWhatTheyShow()
+    {
+        var a = new DecisionRow("d1", "KDA123X", "AUTHORIZED", "", "SUV", "g1", 0.9, DateTimeOffset.UnixEpoch, "x");
+        var b = new DecisionRow("d1", "KDA123X", "AUTHORIZED", "", "SUV", "g1", 0.9, DateTimeOffset.UnixEpoch, "x");
+        var c = new DecisionRow("d2", "KDA123X", "AUTHORIZED", "", "SUV", "g1", 0.9, DateTimeOffset.UnixEpoch, "x");
+        Assert.Equal(a, b);
+        Assert.NotEqual(a, c);
+        var list = new System.Collections.ObjectModel.ObservableCollection<DecisionRow> { a };
+        var changes = 0;
+        list.CollectionChanged += (_, _) => changes++;
+        list.ReplaceWith([b]);
+        Assert.Equal(0, changes);
     }
 }

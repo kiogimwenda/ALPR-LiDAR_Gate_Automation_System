@@ -43,6 +43,8 @@ public sealed partial class GateTileViewModel : ObservableObject
     [ObservableProperty] private DateTimeOffset? _lastSeen;
     [ObservableProperty] private string _lastActivity = "No activity yet";
     [ObservableProperty] private string _commandStatus = "";
+    // The last command was refused or failed: the status shows as an error.
+    [ObservableProperty] private bool _commandFailed;
     [ObservableProperty] private bool _commandPending;
     public string PendingCommandId { get; set; } = "";
     [ObservableProperty] private bool _isStale;
@@ -129,8 +131,18 @@ public sealed partial class LiveViewModel : ViewModelBase
         _ => "Offline",
     };
 
-    [ObservableProperty] private int _todayAllowed;
-    [ObservableProperty] private int _todayDenied;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AllowedShare), nameof(TodayTotal))]
+    private int _todayAllowed;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AllowedShare), nameof(TodayTotal))]
+    private int _todayDenied;
+
+    public int TodayTotal => TodayAllowed + TodayDenied;
+
+    // Share of today's reads that were allowed (0–1): the hero's bar.
+    public double AllowedShare => TodayTotal == 0 ? 0 : (double)TodayAllowed / TodayTotal;
 
     [RelayCommand]
     public async Task LoadAsync()
@@ -231,6 +243,7 @@ public sealed partial class LiveViewModel : ViewModelBase
                 {
                     g.CommandPending = false;
                     g.CommandStatus = a.Success ? "Done" : a.Error;
+                    g.CommandFailed = !a.Success;
                     _haptics.Play(a.Success ? HapticKind.Success : HapticKind.Error);
                 }
                 break;
@@ -280,6 +293,7 @@ public sealed partial class LiveViewModel : ViewModelBase
         }
         _haptics.Play(HapticKind.Tap);
         tile.CommandPending = true;
+        tile.CommandFailed = false;
         tile.CommandStatus = "Sending…";
         var ok = await RunAsync(async () =>
         {
@@ -294,6 +308,7 @@ public sealed partial class LiveViewModel : ViewModelBase
         {
             tile.CommandPending = false;
             tile.CommandStatus = Error;
+            tile.CommandFailed = true;
             _haptics.Play(HapticKind.Error);
         }
     }

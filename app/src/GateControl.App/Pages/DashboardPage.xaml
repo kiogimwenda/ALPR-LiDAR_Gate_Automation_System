@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!-- Dashboard — the reference's "Overview" (spec §10): greeting, the lead
+     KPI as the accent tile (A6 blob reveal), the other KPIs as tiles in one
+     container, vehicles by hour as stacked bars (A7), and the most frequent
+     plates as the "Recent activities" table. Count-ups everywhere (A5). -->
 <p:PageBase xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
             xmlns:p="clr-namespace:GateControl.Pages"
@@ -10,13 +14,12 @@
             x:Name="Page"
             x:DataType="vm:DashboardViewModel">
     <ContentPage.Resources>
-        <!-- One metric tile. -->
+        <!-- One KPI tile inside a container card. -->
         <DataTemplate x:Key="MetricTile" x:DataType="vm:Metric">
-            <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="160" FlexLayout.Grow="1"
-                    Padding="14,12">
+            <Border Style="{StaticResource Well}" Padding="14,12" m:HoverLift.Enabled="True">
                 <VerticalStackLayout Spacing="2">
                     <Label Text="{Binding Title}" Style="{StaticResource Footnote}" />
-                    <Label Text="{Binding Value}" Style="{StaticResource BigNumber}"
+                    <Label m:CountUp.Key="{Binding Title}" m:CountUp.Text="{Binding Value}" Style="{StaticResource BigNumber}"
                            TextColor="{Binding Tone, Converter={StaticResource ToneColor}}">
                         <Label.Triggers>
                             <DataTrigger TargetType="Label" Binding="{Binding Tone}" Value="Neutral">
@@ -33,39 +36,87 @@
 
     <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
         <ScrollView>
-            <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
-                <c:SegmentedControl x:Name="PeriodPicker" Margin="0,4,0,14"
-                                    SelectedIndex="{Binding Period, Converter={StaticResource EnumIndex}}" />
+            <VerticalStackLayout Padding="{OnIdiom Phone='4,4,4,32', Default='8,4,8,32'}" Spacing="16">
+                <VerticalStackLayout Spacing="4">
+                    <c:TitleLabel Text="{Binding Greeting}" />
+                    <Label Text="{Binding PeriodCaption}" Style="{StaticResource Subhead}"
+                           m:Reveal.Kind="Row" m:Reveal.Delay="0.1" />
+                    <c:SegmentedControl x:Name="PeriodPicker" WidthRequest="300" HorizontalOptions="Start" Margin="0,8,0,0"
+                                        SelectedIndex="{Binding Period, Converter={StaticResource EnumIndex}}"
+                                        m:Reveal.Kind="Row" m:Reveal.Delay="0.15" />
+                </VerticalStackLayout>
 
                 <Label Text="{Binding Error}" IsVisible="{Binding HasError}" Style="{StaticResource Footnote}"
-                       TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}"
-                       Margin="2,0,2,10" />
+                       TextColor="{AppThemeBinding Light={StaticResource NegativeLight}, Dark={StaticResource NegativeDark}}" />
 
-                <FlexLayout BindableLayout.ItemsSource="{Binding Headline}" BindableLayout.ItemTemplate="{StaticResource MetricTile}"
-                            Wrap="Wrap" Direction="Row" AlignItems="Start" Margin="0,0,-12,0" />
-                <FlexLayout BindableLayout.ItemsSource="{Binding Secondary}" BindableLayout.ItemTemplate="{StaticResource MetricTile}"
-                            Wrap="Wrap" Direction="Row" AlignItems="Start" Margin="0,0,-12,0" />
-
-                <FlexLayout Wrap="Wrap" Direction="Row" AlignItems="Start" Margin="0,0,-12,0">
-                    <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="460" FlexLayout.Grow="1">
+                <c:TileGrid MinTileWidth="300" Spacing="16" MaxColumns="2">
+                    <!-- The accent tile: the lead KPI, with its glow (a pre-rendered
+                         image behind it, faded in after the blob reveal). -->
+                    <Grid>
+                    <Image x:Name="LeadGlow" Source="accent_glow.png" Aspect="Fill" WidthRequest="0" HeightRequest="0"
+                       HorizontalOptions="Center" VerticalOptions="Center" TranslationY="10" InputTransparent="True" />
+                    <Border Style="{StaticResource AccentCard}" m:Reveal.Kind="Accent" m:Reveal.Order="0" m:Reveal.Glow="{x:Reference LeadGlow}" x:Name="LeadCard" SizeChanged="OnAccentSized">
+                        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="6">
+                            <Label Text="{Binding Lead.Title, FallbackValue=''}" FontSize="13" TextColor="#E6FFFFFF" />
+                            <Label Grid.Row="1" m:CountUp.Key="lead" m:CountUp.Text="{Binding Lead.Value, FallbackValue=''}"
+                                   FontFamily="InterSemiBold" FontSize="44" CharacterSpacing="-1.3" TextColor="White" VerticalOptions="End" />
+                            <Border Grid.Row="2" Style="{StaticResource Chip}" BackgroundColor="#33FFFFFF" HorizontalOptions="Start">
+                                <Label Text="{Binding Lead.Caption, FallbackValue=''}" FontFamily="InterSemiBold" FontSize="12" TextColor="White" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                    </Grid>
+                    <!-- The other headline KPIs in one container -->
+                    <Border Style="{StaticResource Card}" Padding="8" m:Reveal.Kind="Card" m:Reveal.Order="1">
+                        <c:TileGrid m:Reveal.Items="True" BindableLayout.ItemsSource="{Binding HeadlineRest}" BindableLayout.ItemTemplate="{StaticResource MetricTile}"
+                                    MinTileWidth="150" Spacing="8" />
+                    </Border>
+                </c:TileGrid>
+                    <!-- Vehicles by hour: stacked bars, allowed + refused (A7) -->
+                    <Border Style="{StaticResource Card}" m:Reveal.Kind="Card" m:Reveal.Order="2">
                         <VerticalStackLayout Spacing="8">
-                            <Label Text="Vehicles by hour" Style="{StaticResource Headline}" />
-                            <c:ChartView Kind="Bars" Points="{Binding HourlyCaptures}" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <VerticalStackLayout>
+                                    <Label Text="Vehicles by hour" Style="{StaticResource Headline}" />
+                                    <Label Text="Allowed and refused reads" Style="{StaticResource Caption}" />
+                                </VerticalStackLayout>
+                                <HorizontalStackLayout Grid.Column="1" Spacing="12" VerticalOptions="Start">
+                                    <HorizontalStackLayout Spacing="5">
+                                        <Border StrokeThickness="0" StrokeShape="Ellipse" WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
+                                                 BackgroundColor="{AppThemeBinding Light={StaticResource InkLight}, Dark={StaticResource InkDark}}"/>
+                                        <Label Text="Allowed" Style="{StaticResource Caption}" />
+                                    </HorizontalStackLayout>
+                                    <HorizontalStackLayout Spacing="5">
+                                        <Border StrokeThickness="0" StrokeShape="Ellipse" WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
+                                                 BackgroundColor="{StaticResource BrandLight}"/>
+                                        <Label Text="Refused" Style="{StaticResource Caption}" />
+                                    </HorizontalStackLayout>
+                                </HorizontalStackLayout>
+                            </Grid>
+                            <c:ChartView x:Name="HourlyChart" Kind="StackedBars" Points="{Binding HourlyAllowed}"
+                                         Secondary="{Binding HourlyRefused}" HeightRequest="190" />
                         </VerticalStackLayout>
                     </Border>
-                    <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="460" FlexLayout.Grow="1">
+
+                <Border Style="{StaticResource Card}" Padding="8" m:Reveal.Kind="Card" m:Reveal.Order="3">
+                    <c:TileGrid m:Reveal.Items="True" BindableLayout.ItemsSource="{Binding Secondary}" BindableLayout.ItemTemplate="{StaticResource MetricTile}"
+                                MinTileWidth="150" Spacing="8" />
+                </Border>
+
+                <c:TileGrid MinTileWidth="300" Spacing="16" MaxColumns="2" m:Reveal.Kind="Card" m:Reveal.Order="4">
+                    <Border Style="{StaticResource Card}">
                         <VerticalStackLayout Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <Label Text="Entries and exits" Style="{StaticResource Headline}" />
                                 <HorizontalStackLayout Grid.Column="1" Spacing="12">
                                     <HorizontalStackLayout Spacing="5">
-                                        <Ellipse WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
-                                                 Fill="{AppThemeBinding Light={StaticResource PositiveLight}, Dark={StaticResource PositiveDark}}" />
+                                        <Border StrokeThickness="0" StrokeShape="Ellipse" WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
+                                                 BackgroundColor="{AppThemeBinding Light={StaticResource PositiveLight}, Dark={StaticResource PositiveDark}}"/>
                                         <Label Text="Entries" Style="{StaticResource Caption}" />
                                     </HorizontalStackLayout>
                                     <HorizontalStackLayout Spacing="5">
-                                        <Ellipse WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
-                                                 Fill="{AppThemeBinding Light={StaticResource CautionLight}, Dark={StaticResource CautionDark}}" />
+                                        <Border StrokeThickness="0" StrokeShape="Ellipse" WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
+                                                 BackgroundColor="{AppThemeBinding Light={StaticResource CautionLight}, Dark={StaticResource CautionDark}}"/>
                                         <Label Text="Exits" Style="{StaticResource Caption}" />
                                     </HorizontalStackLayout>
                                 </HorizontalStackLayout>
@@ -73,16 +124,16 @@
                             <c:ChartView Kind="Lines" Points="{Binding HourlyEntries}" Secondary="{Binding HourlyExits}" />
                         </VerticalStackLayout>
                     </Border>
-                    <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="300" FlexLayout.Grow="1">
+                    <Border Style="{StaticResource Card}">
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Results" Style="{StaticResource Headline}" />
-                            <c:ChartView Kind="Donut" Points="{Binding Verdicts}" HeightRequest="170" />
+                            <c:ChartView Kind="Donut" Points="{Binding Verdicts}" HeightRequest="160" />
                             <VerticalStackLayout BindableLayout.ItemsSource="{Binding Verdicts}" Spacing="4">
                                 <BindableLayout.ItemTemplate>
                                     <DataTemplate x:DataType="vm:ChartPoint">
                                         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
-                                            <Ellipse WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
-                                                     Fill="{Binding Tone, Converter={StaticResource ToneColor}}" />
+                                            <Border StrokeThickness="0" StrokeShape="Ellipse" WidthRequest="8" HeightRequest="8" VerticalOptions="Center"
+                                                     BackgroundColor="{Binding Tone, Converter={StaticResource ToneColor}}"/>
                                             <Label Grid.Column="1" Text="{Binding Label}" Style="{StaticResource Subhead}" />
                                             <Label Grid.Column="2" Text="{Binding Value}" Style="{StaticResource Subhead}" />
                                         </Grid>
@@ -91,49 +142,49 @@
                             </VerticalStackLayout>
                         </VerticalStackLayout>
                     </Border>
-                    <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="300" FlexLayout.Grow="1">
+                    <Border Style="{StaticResource Card}">
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Vehicle types" Style="{StaticResource Headline}" />
-                            <c:ChartView Kind="HorizontalBars" Points="{Binding Classes}" HeightRequest="200" />
+                            <c:ChartView Kind="HorizontalBars" Points="{Binding Classes}" HeightRequest="190" />
                         </VerticalStackLayout>
                     </Border>
-                    <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="300" FlexLayout.Grow="1">
+                    <Border Style="{StaticResource Card}">
                         <VerticalStackLayout Spacing="8">
                             <Label Text="Length of stay" Style="{StaticResource Headline}" />
-                            <c:ChartView Kind="Bars" Points="{Binding Dwell}" HeightRequest="200" />
+                            <c:ChartView Kind="Bars" Points="{Binding Dwell}" HeightRequest="190" />
                         </VerticalStackLayout>
                     </Border>
-                    <Border Style="{StaticResource Card}" Margin="0,0,12,12" FlexLayout.Basis="300" FlexLayout.Grow="1" Padding="0,14,0,4">
-                        <VerticalStackLayout>
-                            <Label Text="Most frequent" Style="{StaticResource Headline}" Margin="16,0,16,6" />
-                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding TopPlates}">
-                                <BindableLayout.ItemTemplate>
-                                    <DataTemplate x:DataType="models:TopPlate">
-                                        <Grid Padding="16,9" ColumnDefinitions="*,Auto"
-                                              m:Pressable.Command="{Binding Vm.ShowPlateCommand, Source={x:Reference Page}, x:DataType=p:DashboardPage}"
-                                              m:Pressable.CommandParameter="{Binding .}">
-                                            <VerticalStackLayout>
-                                                <Label Text="{Binding Plate, Converter={StaticResource PlateText}}" Style="{StaticResource Plate}" FontSize="17" />
-                                                <Label Text="{Binding LastSeen, Converter={StaticResource LocalTime}}" Style="{StaticResource Caption}" />
-                                            </VerticalStackLayout>
-                                            <Label Grid.Column="1" VerticalOptions="Center" Style="{StaticResource Subhead}">
-                                                <Label.FormattedText>
-                                                    <FormattedString>
-                                                        <Span Text="{Binding Visits}" FontAttributes="Bold" />
-                                                        <Span Text=" visits" />
-                                                    </FormattedString>
-                                                </Label.FormattedText>
-                                            </Label>
-                                        </Grid>
-                                    </DataTemplate>
-                                </BindableLayout.ItemTemplate>
-                                <BindableLayout.EmptyView>
-                                    <Label Text="No vehicles in this period." Style="{StaticResource Subhead}" Padding="16,6,16,12" />
-                                </BindableLayout.EmptyView>
-                            </VerticalStackLayout>
+                </c:TileGrid>
+
+                <!-- Most frequent plates as the "Recent activities" table -->
+                <Border Style="{StaticResource Card}" Padding="16,14,16,8" m:Reveal.Kind="Card" m:Reveal.Order="5">
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Most frequent" Style="{StaticResource Headline}" />
+                        <Border Style="{StaticResource Well}" Padding="12,8">
+                            <Grid ColumnDefinitions="2*,2*,*">
+                                <Label Text="Plate" Style="{StaticResource Caption}" />
+                                <Label Grid.Column="1" Text="Last seen" Style="{StaticResource Caption}" />
+                                <Label Grid.Column="2" Text="Visits" Style="{StaticResource Caption}" HorizontalTextAlignment="End" />
+                            </Grid>
+                        </Border>
+                        <VerticalStackLayout m:Reveal.Items="True" BindableLayout.ItemsSource="{Binding TopPlates}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:TopPlate">
+                                    <Grid Padding="12,9" ColumnDefinitions="2*,2*,*"
+                                          m:Pressable.Command="{Binding Vm.ShowPlateCommand, Source={x:Reference Page}, x:DataType=p:DashboardPage}"
+                                          m:Pressable.CommandParameter="{Binding .}">
+                                        <Label Text="{Binding Plate, Converter={StaticResource PlateText}}" Style="{StaticResource Plate}" FontSize="14" VerticalOptions="Center" />
+                                        <Label Grid.Column="1" Text="{Binding LastSeen, Converter={StaticResource LocalTime}}" Style="{StaticResource Subhead}" VerticalOptions="Center" />
+                                        <Label Grid.Column="2" Text="{Binding Visits}" FontFamily="InterSemiBold" HorizontalTextAlignment="End" VerticalOptions="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                            <BindableLayout.EmptyView>
+                                <Label Text="No vehicles in this period." Style="{StaticResource Subhead}" Padding="12,6,12,10" />
+                            </BindableLayout.EmptyView>
                         </VerticalStackLayout>
-                    </Border>
-                </FlexLayout>
+                    </VerticalStackLayout>
+                </Border>
             </VerticalStackLayout>
         </ScrollView>
     </RefreshView>

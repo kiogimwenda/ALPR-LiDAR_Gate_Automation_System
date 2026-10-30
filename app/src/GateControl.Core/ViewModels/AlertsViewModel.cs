@@ -9,8 +9,15 @@ using GateControl.Core.Services;
 
 namespace GateControl.Core.ViewModels;
 
-public sealed class AlertRow
+public sealed class AlertRow : IEquatable<AlertRow>
 {
+    public bool Equals(AlertRow? o) => o is not null && Id == o.Id && IsAcknowledged == o.IsAcknowledged &&
+        Message == o.Message && AcknowledgedText == o.AcknowledgedText;
+
+    public override bool Equals(object? obj) => Equals(obj as AlertRow);
+
+    public override int GetHashCode() => HashCode.Combine(Id, IsAcknowledged);
+
     public AlertRow(Alert a)
     {
         Id = a.Id;

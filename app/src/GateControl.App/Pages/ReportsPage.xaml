@@ -6,20 +6,27 @@
             xmlns:m="clr-namespace:GateControl.Motion"
             xmlns:vm="clr-namespace:GateControl.Core.ViewModels;assembly=GateControl.Core"
             xmlns:models="clr-namespace:GateControl.Core.Models;assembly=GateControl.Core"
+            xmlns:v="clr-namespace:GateControl.Views"
             x:Class="GateControl.Pages.ReportsPage"
             x:Name="Page"
             x:DataType="vm:ReportsViewModel">
     <ContentPage.Resources>
         <DataTemplate x:Key="DecisionRowTemplate" x:DataType="vm:DecisionRow">
-            <Grid Padding="16,11" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto"
+            <Grid Padding="12,9" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12"
                   m:Pressable.Command="{Binding Vm.ShowPlateCommand, Source={x:Reference Page}, x:DataType=p:ReportsPage}"
                   m:Pressable.CommandParameter="{Binding RawPlate}">
-                <Label Text="{Binding Plate}" Style="{StaticResource Plate}" FontSize="17" />
-                <Label Grid.Row="1" Text="{Binding Detail}" Style="{StaticResource Footnote}" LineBreakMode="TailTruncation" />
-                <VerticalStackLayout Grid.Column="1" Grid.RowSpan="2" Spacing="3">
-                    <Border StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="9,3" HorizontalOptions="End"
+                <Grid WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                    <Border StrokeThickness="0" StrokeShape="Ellipse" BackgroundColor="{Binding Tone, Converter={StaticResource ToneTint}}"/>
+                    <c:IconView Glyph="{x:Static c:IconsExtra.Vehicle}" Size="16" />
+                </Grid>
+                <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                    <Label Text="{Binding Plate}" Style="{StaticResource Plate}" FontSize="15" />
+                    <Label Text="{Binding Detail}" Style="{StaticResource Caption}" LineBreakMode="TailTruncation" />
+                </VerticalStackLayout>
+                <VerticalStackLayout Grid.Column="2" Spacing="3" VerticalOptions="Center">
+                    <Border Style="{StaticResource Chip}" HorizontalOptions="End"
                             BackgroundColor="{Binding Tone, Converter={StaticResource ToneTint}}">
-                        <Label Text="{Binding Verdict}" FontSize="13" FontAttributes="Bold"
+                        <Label Text="{Binding Verdict}" FontFamily="InterSemiBold" FontSize="12"
                                TextColor="{Binding Tone, Converter={StaticResource ToneColor}}" />
                     </Border>
                     <Label Text="{Binding When, Converter={StaticResource LocalTime}}" Style="{StaticResource Caption}" HorizontalOptions="End" />
@@ -27,26 +34,40 @@
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="SessionRowTemplate" x:DataType="models:SessionRow">
-            <Grid Padding="16,10" ColumnDefinitions="*,Auto"
+            <Grid Padding="12,9" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12"
                   m:Pressable.Command="{Binding Vm.ShowPlateCommand, Source={x:Reference Page}, x:DataType=p:ReportsPage}"
                   m:Pressable.CommandParameter="{Binding Plate}">
-                <VerticalStackLayout>
-                    <Label Text="{Binding Plate, Converter={StaticResource PlateText}}" Style="{StaticResource Plate}" FontSize="17" />
+                <Grid WidthRequest="36" HeightRequest="36" VerticalOptions="Center">
+                    <Border StrokeThickness="0" StrokeShape="Ellipse" BackgroundColor="{AppThemeBinding Light={StaticResource WellLight}, Dark={StaticResource WellDark}}"/>
+                    <c:IconView Glyph="{x:Static c:Icons.DoorOpen}" Size="16" />
+                </Grid>
+                <VerticalStackLayout Grid.Column="1">
+                    <Label Text="{Binding Plate, Converter={StaticResource PlateText}}" Style="{StaticResource Plate}" FontSize="15" />
                     <Label Text="{Binding Entered, Converter={StaticResource LocalTime}}" Style="{StaticResource Caption}" />
                 </VerticalStackLayout>
-                <Label Grid.Column="1" VerticalOptions="Center" Style="{StaticResource Subhead}"
-                       Text="{Binding DurationText}" FontAttributes="Bold" />
+                <Label Grid.Column="2" VerticalOptions="Center" Style="{StaticResource Subhead}"
+                       Text="{Binding DurationText}" FontFamily="InterSemiBold" />
             </Grid>
         </DataTemplate>
     </ContentPage.Resources>
 
-    <ScrollView>
-        <VerticalStackLayout Padding="{OnIdiom Phone='16,8,16,32', Default='28,12,28,32'}">
-            <c:SegmentedControl x:Name="KindPicker" Margin="0,4,0,12"
-                                SelectedIndex="{Binding Kind, Converter={StaticResource EnumIndex}}" />
-
+    <!-- Reports (spec §10): filters and results as the reference's tables,
+         and on wide windows the tapped plate's history in a detail pane
+         beside them (two-pane Messages layout). -->
+    <Grid x:Name="Panes" ColumnDefinitions="*" ColumnSpacing="16" RowDefinitions="Auto,*" RowSpacing="12"
+          Padding="{OnIdiom Phone='4,4,4,0', Default='8,4,8,0'}">
+        <VerticalStackLayout Grid.ColumnSpan="2" Spacing="4">
+            <c:TitleLabel Text="Reports" />
+            <Label Text="Every decision, visit and unclear read, searchable and exportable." Style="{StaticResource Subhead}"
+                   m:Reveal.Kind="Row" m:Reveal.Delay="0.1" />
+            <c:SegmentedControl x:Name="KindPicker" MaximumWidthRequest="420" HorizontalOptions="Fill" Margin="0,8,0,0"
+                                SelectedIndex="{Binding Kind, Converter={StaticResource EnumIndex}}"
+                                m:Reveal.Kind="Row" m:Reveal.Delay="0.15" />
+        </VerticalStackLayout>
+    <ScrollView Grid.Row="1">
+        <VerticalStackLayout Padding="0,0,0,32" Spacing="0">
             <!-- Date range, shared by every report -->
-            <Border Style="{StaticResource Card}" Padding="16,4">
+            <Border Style="{StaticResource Card}" Padding="16,4" m:Reveal.Kind="Card" m:Reveal.Order="0">
                 <Grid ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="8">
                     <Label Text="From" VerticalOptions="Center" Style="{StaticResource Subhead}" />
                     <DatePicker Grid.Column="1" Date="{Binding FromDate}" Format="d MMM yyyy" DateSelected="OnDateChanged" />
@@ -62,8 +83,8 @@
 
             <!-- ============ Search ============ -->
             <VerticalStackLayout IsVisible="{Binding Kind, Converter={StaticResource Is}, ConverterParameter=Search}">
-                <Label Text="Filters" Style="{StaticResource SectionHeader}" Margin="2,18,2,6" />
-                <Border Style="{StaticResource Card}" Padding="16,2">
+                <Label Text="Filters" Style="{StaticResource SectionHeader}" Margin="2,18,2,6" m:Reveal.Kind="Row" m:Reveal.Delay="0.12" />
+                <Border Style="{StaticResource Card}" Padding="16,2" m:Reveal.Kind="Card" m:Reveal.Order="1">
                     <VerticalStackLayout>
                         <Entry Text="{Binding Plate}" Placeholder="Plate (any part, e.g. KDA 12)" ReturnType="Search"
                                ReturnCommand="{Binding SearchCommand}" IsSpellCheckEnabled="False" />
@@ -87,16 +108,24 @@
                         </Grid>
                     </VerticalStackLayout>
                 </Border>
-                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,12,0,0">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="0,12,0,0" m:Reveal.Kind="Row" m:Reveal.Delay="0.3">
                     <Button Text="Search" Style="{StaticResource FilledButton}" HeightRequest="44" Command="{Binding SearchCommand}" />
                     <Button Grid.Column="1" Text="Clear" Style="{StaticResource TintedButton}" HeightRequest="44" Command="{Binding ClearFiltersCommand}" />
                     <Button Grid.Column="2" Text="Export CSV" Style="{StaticResource TintedButton}" HeightRequest="44" Command="{Binding ExportCommand}" />
                 </Grid>
 
-                <Label Text="{Binding ResultCaption}" Style="{StaticResource SectionHeader}" Margin="2,20,2,6" />
-                <Border Style="{StaticResource Card}" Padding="0">
-                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Results}"
-                                         BindableLayout.ItemTemplate="{StaticResource DecisionRowTemplate}" />
+                <Border Style="{StaticResource Card}" Padding="8,14,8,6" Margin="0,16,0,0" m:Reveal.Kind="Card" m:Reveal.Order="2">
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="{Binding ResultCaption}" Style="{StaticResource Headline}" Margin="8,0" />
+                        <Border Style="{StaticResource Well}" Padding="12,8">
+                            <Grid ColumnDefinitions="48,*,Auto">
+                                <Label Grid.Column="1" Text="Plate · vehicle · gate" Style="{StaticResource Caption}" />
+                                <Label Grid.Column="2" Text="Result · time" Style="{StaticResource Caption}" />
+                            </Grid>
+                        </Border>
+                        <VerticalStackLayout m:Reveal.Items="True" BindableLayout.ItemsSource="{Binding Results}"
+                                             BindableLayout.ItemTemplate="{StaticResource DecisionRowTemplate}" />
+                    </VerticalStackLayout>
                 </Border>
                 <Button Text="Show more" Style="{StaticResource PlainButton}" Command="{Binding LoadMoreCommand}"
                         IsVisible="{Binding CanLoadMore}" Margin="0,8,0,0" />
@@ -161,4 +190,16 @@
             </VerticalStackLayout>
         </VerticalStackLayout>
     </ScrollView>
+
+        <Grid x:Name="DetailPane" Grid.Row="1" Grid.Column="1" IsVisible="False" m:Reveal.Kind="Card" m:Reveal.Order="3">
+            <Border x:Name="DetailEmpty" Style="{StaticResource Card}" VerticalOptions="Start">
+                <VerticalStackLayout Spacing="6" Padding="4,8">
+                    <c:IconView Glyph="{x:Static c:IconsExtra.Vehicle}" Size="22" HorizontalOptions="Start" />
+                    <Label Text="Select a vehicle" Style="{StaticResource Headline}" />
+                    <Label Text="Its visits and every decision about it show here." Style="{StaticResource Subhead}" />
+                </VerticalStackLayout>
+            </Border>
+            <v:PlateHistoryView x:Name="Detail" IsVisible="False" />
+        </Grid>
+    </Grid>
 </p:PageBase>

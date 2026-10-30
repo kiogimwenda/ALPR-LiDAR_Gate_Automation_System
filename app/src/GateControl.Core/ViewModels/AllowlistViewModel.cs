@@ -9,8 +9,17 @@ using GateControl.Core.Services;
 
 namespace GateControl.Core.ViewModels;
 
-public sealed class AllowlistRow
+// Rows compare by what they show, so a refresh that brings the same
+// vehicles back leaves the bound list alone (ReplaceWith).
+public sealed class AllowlistRow : IEquatable<AllowlistRow>
 {
+    public bool Equals(AllowlistRow? o) => o is not null &&
+        (Plate, Owner, Classes, Restricted, Entry.Notes) == (o.Plate, o.Owner, o.Classes, o.Restricted, o.Entry.Notes);
+
+    public override bool Equals(object? obj) => Equals(obj as AllowlistRow);
+
+    public override int GetHashCode() => HashCode.Combine(Plate, Owner, Classes, Restricted);
+
     public AllowlistRow(AllowlistEntry e)
     {
         Entry = e;

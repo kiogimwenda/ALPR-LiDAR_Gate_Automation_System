@@ -3,7 +3,7 @@ using GateControl.Core.ViewModels;
 
 namespace GateControl.Pages;
 
-public partial class SettingsPage : ContentPage
+public partial class SettingsPage : PageBase
 {
     private readonly IServiceProvider _services;
 
@@ -22,6 +22,8 @@ public partial class SettingsPage : ContentPage
     public ICommand OpenUsersCommand { get; }
     public ICommand OpenGatesCommand { get; }
     public ICommand OpenDataCommand { get; }
+
+    protected override Task LoadAsync() => Task.CompletedTask;
 
     private Task Push<T>() where T : Page => Navigation.PushAsync(_services.GetRequiredService<T>());
 }

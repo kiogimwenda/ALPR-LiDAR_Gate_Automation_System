@@ -14,7 +14,7 @@ public partial class SignInPage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
-        Spr.Enter(Card, fromY: 18);
+        Reveal.Page(Card.Parent as VisualElement ?? Card);
         // Put the cursor where the work is.
         var vm = (SignInViewModel)BindingContext;
         (vm.Server.Length == 0 ? ServerEntry : vm.Username.Length == 0 ? UserEntry : PasswordEntry).Focus();

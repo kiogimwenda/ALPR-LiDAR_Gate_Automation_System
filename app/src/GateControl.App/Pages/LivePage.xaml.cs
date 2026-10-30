@@ -41,9 +41,8 @@ public partial class LivePage : PageBase
 
     private void PaintFeedState()
     {
-        var tone = _vm.IsLive ? Tone.Positive : Tone.Caution;
-        FeedDot.Fill = new SolidColorBrush(ChartView.ToneColor(tone));
-        FeedPill.BackgroundColor = ChartView.ToneColor(tone).WithAlpha(0.16f);
+        // On the accent card: a white dot when live, amber when not.
+        FeedDot.BackgroundColor = _vm.IsLive ? Colors.White : ChartView.ToneColor(Tone.Caution);
     }
 
     protected override Task LoadAsync() => _vm.LoadAsync();
@@ -66,7 +65,9 @@ public partial class LivePage : PageBase
         {
             return;
         }
-        var choice = await DisplayActionSheetAsync(tile.Name, "Cancel", null,
+        // Hosted in RootPage: ask through the window's page, not this one.
+        var presenter = Window?.Page ?? Application.Current?.Windows.FirstOrDefault()?.Page ?? this;
+        var choice = await presenter.DisplayActionSheetAsync(tile.Name, "Cancel", null,
             tile.IsLocked || tile.State == "OPEN" ? ["Release hold", "Hold open", "Lock down"] : ["Hold open", "Lock down"]);
         switch (choice)
         {
@@ -80,5 +81,22 @@ public partial class LivePage : PageBase
                 await tile.ReleaseCommand.ExecuteAsync(null);
                 break;
         }
+    }
+
+    // The glow image follows the card's size without taking part in layout
+    // (sized larger than the card, it stretched the card to its height).
+    private void OnAccentSized(object? sender, EventArgs e)
+    {
+        var (glow, card) = (HeroGlow, HeroCard);
+        if (card.Width <= 0 || card.Height <= 0)
+        {
+            return;
+        }
+        // Same size as the card (so it never grows the cell), enlarged by a
+        // transform to spill 40 dip past the sides and 32 above and below.
+        glow.WidthRequest = card.Width;
+        glow.HeightRequest = card.Height;
+        glow.ScaleX = (card.Width + 80) / card.Width;
+        glow.ScaleY = (card.Height + 64) / card.Height;
     }
 }

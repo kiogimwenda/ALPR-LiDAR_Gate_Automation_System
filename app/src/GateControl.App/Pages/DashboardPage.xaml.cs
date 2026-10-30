@@ -23,6 +23,8 @@ public partial class DashboardPage : PageBase
 
     protected override Task LoadAsync() => _vm.LoadAsync();
 
+    public void ReplayCharts() => HourlyChart.Replay();
+
     protected override void OnAppearing()
     {
         base.OnAppearing();
@@ -33,5 +35,22 @@ public partial class DashboardPage : PageBase
     {
         base.OnDisappearing();
         _refresh.Stop();
+    }
+
+    // The glow image follows the card's size without taking part in layout
+    // (sized larger than the card, it stretched the card to its height).
+    private void OnAccentSized(object? sender, EventArgs e)
+    {
+        var (glow, card) = (LeadGlow, LeadCard);
+        if (card.Width <= 0 || card.Height <= 0)
+        {
+            return;
+        }
+        // Same size as the card (so it never grows the cell), enlarged by a
+        // transform to spill 40 dip past the sides and 32 above and below.
+        glow.WidthRequest = card.Width;
+        glow.HeightRequest = card.Height;
+        glow.ScaleX = (card.Width + 80) / card.Width;
+        glow.ScaleY = (card.Height + 64) / card.Height;
     }
 }

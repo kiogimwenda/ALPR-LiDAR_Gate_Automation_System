@@ -39,13 +39,35 @@ public sealed partial class DashboardViewModel : ViewModelBase
 
     public ObservableCollection<Metric> Headline { get; } = [];
     public ObservableCollection<Metric> Secondary { get; } = [];
+    // The first headline metric is shown as the accent tile; the rest beside it.
+    [ObservableProperty] private Metric? _lead;
+    public ObservableCollection<Metric> HeadlineRest { get; } = [];
     public ObservableCollection<ChartPoint> HourlyCaptures { get; } = [];
+    // Stacked bars (spec A7): allowed (base) and refused (cap) per hour.
+    public ObservableCollection<ChartPoint> HourlyAllowed { get; } = [];
+    public ObservableCollection<ChartPoint> HourlyRefused { get; } = [];
     public ObservableCollection<ChartPoint> HourlyEntries { get; } = [];
     public ObservableCollection<ChartPoint> HourlyExits { get; } = [];
     public ObservableCollection<ChartPoint> Classes { get; } = [];
     public ObservableCollection<ChartPoint> Dwell { get; } = [];
     public ObservableCollection<ChartPoint> Verdicts { get; } = [];
     public ObservableCollection<TopPlate> TopPlates { get; } = [];
+
+    // "Good morning, Jane" — the signed-in user's name and the local time
+    // of day (spec §10: no demo names from the reference ship).
+    public string Greeting => GreetingFor(_clock.GetLocalNow().Hour, _session.DisplayName);
+
+    public static string GreetingFor(int hour, string name)
+    {
+        var part = hour switch
+        {
+            < 5 => "Good evening",
+            < 12 => "Good morning",
+            < 17 => "Good afternoon",
+            _ => "Good evening",
+        };
+        return string.IsNullOrWhiteSpace(name) ? part : $"{part}, {name}";
+    }
 
     public string PeriodCaption => Period switch
     {
@@ -117,6 +139,11 @@ public sealed partial class DashboardViewModel : ViewModelBase
                        s.UnreadAlerts > 0 ? Tone.Negative : Tone.Neutral),
         ]);
         HourlyCaptures.ReplaceWith(hourly.Select(h => new ChartPoint(Display.Hour(h.Hour), h.Captures)));
+        Lead = Headline.FirstOrDefault();
+        HeadlineRest.ReplaceWith(Headline.Skip(1));
+        HourlyAllowed.ReplaceWith(hourly.Select(h => new ChartPoint(Display.Hour(h.Hour), h.Authorized, Tone.Neutral)));
+        HourlyRefused.ReplaceWith(hourly.Select(h => new ChartPoint(Display.Hour(h.Hour), h.Denied, Tone.Negative)));
+        OnPropertyChanged(nameof(Greeting));
         HourlyEntries.ReplaceWith(hourly.Select(h => new ChartPoint(Display.Hour(h.Hour), h.Entries, Tone.Positive)));
         HourlyExits.ReplaceWith(hourly.Select(h => new ChartPoint(Display.Hour(h.Hour), h.Exits, Tone.Caution)));
         Classes.ReplaceWith(classes.Select(c => new ChartPoint(Display.VehicleClass(c.VehicleClass), c.Count)));
