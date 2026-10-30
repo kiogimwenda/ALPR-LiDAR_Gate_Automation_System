@@ -1,0 +1,75 @@
+# Phase-2 recall sweep, part 1: every unreviewed proposal at conf>=0.05 (any detector) in the 167 test images
+0#2 - ignore blur
+40#3 KDY781D ok 2line small hard sweep
+49#2 - ignore small
+52#4 - ignore small
+72#3 KMEN400A ok 2line moto sweep
+98#3 - ignore small
+103#4 - ignore partial
+108#1 KCS022Q ok sweep
+108#5 - ignore duplicate
+120#3 - ignore blur
+125#1 - ignore small
+126#4 - ignore small tilted
+126#9 - ignore small
+130#5 - ignore partial
+130#6 - ignore partial
+131#2 - ignore duplicate
+131#3 KDC716V ok small hard sweep
+142#2 - ignore small
+166#2 - ignore partial
+166#3 - ignore partial
+191#2 - ignore small
+191#3 - ignore small
+191#4 - ignore small
+206#4 KBB317P ok sweep
+208#1 - ignore small
+208#2 - ignore small
+211#2 - ignore occluded
+247#3 - ignore partial
+250#1 - ignore small
+251#2 - ignore duplicate
+251#4 - ignore small
+251#6 - ignore small
+255#2 - ignore partial
+258#2 - ignore partial
+262#2 - ignore partial
+267#3 - ignore blur
+269#2 - ignore blur
+275#2 KAV615S ok sweep
+298#3 - ignore partial
+311#1 - ignore partial
+315#1 - ignore occluded
+322#3 - ignore small
+338#2 KAR304A ok small hard sweep
+342#2 - ignore small
+343#5 - ignore small
+343#6 - ignore blur
+349#4 - ignore small
+354#2 KDJ371X ok small sweep
+354#6 - ignore small
+354#7 - ignore duplicate
+357#2 KTWB723X ok sweep
+357#3 - ignore duplicate
+374#1 - ignore occluded
+382#4 - ignore blur
+384#3 - ignore small
+387#2 - ignore partial
+396#3 - ignore partial
+398#1 - ignore partial
+413#2 - ignore small
+421#1 - ignore occluded
+422#1 - ignore duplicate
+422#3 KTWA232X ok sweep
+422#4 - ignore partial
+422#5 - ignore duplicate
+422#6 - ignore partial
+429#4 - ignore duplicate
+429#5 KTWB258B ok sweep
+431#1 - ignore small
+433#4 - ignore duplicate
+436#4 - ignore occluded
+436#5 KMDW456R ok 2line moto small hard sweep
+447#4 - ignore partial
+451#3 - ignore small
+451#4 - ignore small

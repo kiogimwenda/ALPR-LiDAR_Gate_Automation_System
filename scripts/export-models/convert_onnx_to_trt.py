@@ -15,7 +15,7 @@ TensorRT version, compatibility mode); the C++ loader checks it at startup
 and refuses a mismatched engine with a "rebuild on this host" message.
 
 The companion `inspect_engine.py` reads the resulting .plan and prints its
-I/O tensor signatures so the C++ side (yolo_plate_detector / paddle_ocr_recognizer)
+I/O tensor signatures so the C++ side (yolo_plate_detector / plate_recognizer)
 can verify the tensor names it binds against.
 
 Examples
@@ -141,6 +141,21 @@ def build_engine(args: argparse.Namespace) -> bytes:
         # Same compute capability as the build GPU, any card of that generation.
         config.hardware_compatibility_level = trt.HardwareCompatibilityLevel.SAME_COMPUTE_CAPABILITY
 
+    # Layers pinned to FP32 inside an FP16 engine (graft_efficientnms.py's
+    # .fp32_layers sidecar: the detector's box decode + NMS tail).
+    if args.fp32_layers_file:
+        wanted = {ln.strip() for ln in Path(args.fp32_layers_file).read_text().splitlines() if ln.strip()}
+        config.set_flag(trt.BuilderFlag.OBEY_PRECISION_CONSTRAINTS)
+        pinned = 0
+        for i in range(network.num_layers):
+            layer = network.get_layer(i)
+            if layer.name in wanted:
+                layer.precision = trt.float32
+                for o in range(layer.num_outputs):
+                    layer.set_output_type(o, trt.float32)
+                pinned += 1
+        LOG.info("pinned %d/%d layers to FP32", pinned, len(wanted))
+
     # Dynamic-shape profile, if any input was given a shape range.
     if args.min_shape or args.opt_shape or args.max_shape:
         if not (args.min_shape and args.opt_shape and args.max_shape):
@@ -194,6 +209,7 @@ def main() -> int:
         help="none = native to this GPU (works on every RTX generation); same_cc = any GPU "
         "with this compute capability; ampere_plus = one .plan for sm_80+ (not RTX 20).",
     )
+    p.add_argument("--fp32-layers-file", help="Layer names (one per line) to keep in FP32.")
     p.add_argument("--input-name", help="Tensor name for the dynamic-shape profile.")
     p.add_argument("--min-shape", type=parse_shape, help="e.g. 1x3x48x32")
     p.add_argument("--opt-shape", type=parse_shape, help="e.g. 1x3x48x160")

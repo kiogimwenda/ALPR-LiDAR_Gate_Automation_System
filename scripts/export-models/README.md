@@ -1,161 +1,133 @@
-# scripts/export-models — ONNX → TensorRT engine tooling
+# scripts/export-models: from ALPR models to TensorRT engines
 
 The C++ inference layer (`server/inference/`) consumes serialized TensorRT
-engines (`.plan` files). This directory has the Python tooling that turns an
-ONNX model into one of those .plan files and verifies its I/O surface.
+engines (`.plan` files). This directory has the tooling that:
 
-We **do not** mirror the upstream YOLOv9 / PaddleOCR export scripts here — both
-projects publish their own canonical exporters and re-implementing them locally
-would drift the moment they bump a version. Instead, this README documents
-which upstream commands to run, and the scripts pick up from the resulting
-`.onnx` file.
+- fetches the pinned upstream models;
+- adapts them to the C++ engine contract;
+- builds the engines on the deployment host;
+- evaluates the models on the Kenya test set.
+
+Model choice, licences and provenance are recorded in
+[`docs/decisions/ADR-014-alpr-model-selection.md`](../../docs/decisions/ADR-014-alpr-model-selection.md).
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `build_engines.sh` | **Deployment entry point.** Builds both ALPR engines on the host's own GPU (any RTX 20-series or newer), writes `.meta` sidecars, skips engines already built for this GPU + TensorRT. Uses the Python converter when TensorRT's Python bindings exist, else `trtexec`. Run by `install-server.sh --models`. |
-| `convert_onnx_to_trt.py` | ONNX → `.plan` builder. FP16 default, optional INT8, dynamic-shape profiles, native-to-this-GPU by default (`--hardware-compat same_cc` / `ampere_plus` optional), workspace sized to the GPU's VRAM, writes the `.meta` sidecar. |
-| `inspect_engine.py` | Print a `.plan`'s I/O tensor names, shapes, and dtypes. Use this to verify upstream didn't rename a tensor before the C++ side fails on `setTensorAddress`. |
+| `prepare_onnx.sh` | **Model entry point.** Fetches and SHA-256-verifies the two deployed upstream models, grafts EfficientNMS_TRT onto the detector, and stages `yolov9_plate.onnx`, `plate_ocr.onnx` and `plate_ocr_config.yaml` in `models/weights/` (git-ignored). |
+| `fetch_models.py` | Downloads every Phase-1 candidate (or `--only prod`) into `models/downloads/`, pinned by URL and SHA-256. |
+| `graft_efficientnms.py` | Replaces the ONNX NonMaxSuppression tail of the open-image-models end2end export with `EfficientNMS_TRT` (four outputs). Also writes `<onnx>.fp32_layers`: the box-decode and NMS layers that `build_engines.sh` keeps in FP32. |
+| `convert_paddle_rec.sh` | Converts PaddleOCR rec checkpoints to ONNX with paddle2onnx 2.x (Python 3.12 venv). Used for evaluation only. |
+| `build_engines.sh` | **Deployment entry point.** Builds both engines on this host's GPU (any RTX 20-series or newer). It writes `.meta` sidecars, honours `.fp32_layers`, copies the plate config, and skips engines already built for this GPU and TensorRT version. Uses the Python converter when TensorRT's Python bindings exist, else `trtexec`. Run by `install-server.sh --models`. |
+| `convert_onnx_to_trt.py` | ONNX → `.plan` builder. FP16 by default; also supports INT8, dynamic-shape profiles, `--fp32-layers-file`, and native or `--hardware-compat` builds. Writes the `.meta` sidecar. |
+| `inspect_engine.py` | Prints a `.plan`'s I/O tensors. Needs the TensorRT Python bindings; without them, `trtexec --loadEngine=<plan>` prints the same bindings. |
+| `eval/` | Phase-1/2 evaluation (see below). |
 
-## Prerequisites
-
-- An NVIDIA RTX 20-series or newer GPU (Turing sm_75 and up) with driver ≥ 580.
-- TensorRT 10.x — the same version the C++ side links. `build_engines.sh`
-  needs only the `trtexec` CLI (`libnvinfer-bin`); `convert_onnx_to_trt.py`
-  needs the Python bindings of the *same* version.
-- Engines are built **on the machine that runs them** (see the
-  hardware-compatibility note below).
-
-## Step 1 — get the ONNX models from upstream
-
-### YOLOv9 plate detector
-
-The C++ detector (`server/inference/src/yolo_plate_detector.cpp`) targets the
-**`--end2end` ONNX export** of [WongKinYiu/yolov9][yolov9]. That path embeds
-the `EfficientNMS_TRT` plugin in the model graph, so the engine emits already-
-NMSed detections via four output tensors (`num_dets`, `det_boxes`,
-`det_scores`, `det_classes`).
-
-Upstream export command (run inside the yolov9 repo with the Kenya-plate
-fine-tuned weights at `runs/train/.../weights/best.pt`):
+## Step 1: build the ONNX models
 
 ```bash
-python export.py \
-    --weights runs/train/.../weights/best.pt \
-    --include onnx_end2end \
-    --img 640 \
-    --simplify \
-    --topk-all 100 \
-    --iou-thres 0.45 \
-    --conf-thres 0.25 \
-    --device 0
+scripts/export-models/prepare_onnx.sh          # → models/weights/
 ```
 
-This writes `runs/train/.../weights/best-end2end.onnx`.
+| Output | Model | I/O |
+|---|---|---|
+| `yolov9_plate.onnx` | open-image-models YOLOv9-s-608 + EfficientNMS_TRT (score 0.10, IoU 0.45, top-100) | `images` float 1×3×608×608 (114-gray letterbox, RGB, /255) → `num_dets` int32 [1,1], `det_boxes` [1,100,4] x1y1x2y2 in canvas pixels, `det_scores` [1,100], `det_classes` int32 [1,100] |
+| `plate_ocr.onnx` | fast-plate-ocr `cct-s-v2-global` | `input` uint8 [N,64,128,3] RGB (plain stretch) → `plate` [N,10,37] slot probabilities over `0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_`, plus `region` [N,66] (ignored) |
+| `plate_ocr_config.yaml` | The recognizer's alphabet, pad character, slot count and input size | read by `PlateRecognizer` |
 
-### PaddleOCR PP-OCRv4 recognizer
+The graft is deterministic. Its output SHA-256 is pinned in `prepare_onnx.sh`
+(`55ac0d58…a5ac71`).
 
-The C++ recognizer (`server/inference/src/paddle_ocr_recognizer.cpp`) targets
-the **PP-OCRv4 recognition CRNN** ONNX export. PaddleOCR ships a PaddlePaddle
-checkpoint; convert it to ONNX with [paddle2onnx][p2o]:
+## Step 2: build the TensorRT engines (on the host that runs them)
 
 ```bash
-paddle2onnx \
-    --model_dir   ./inference/ch_PP-OCRv4_rec_infer \
-    --model_filename       inference.pdmodel \
-    --params_filename      inference.pdiparams \
-    --save_file            ppocrv4_rec.onnx \
-    --opset_version        16 \
-    --enable_dev_version   True
+scripts/export-models/build_engines.sh --onnx-dir models/weights --out-dir /opt/gate/models
 ```
 
-Output: `ppocrv4_rec.onnx`. The default tensor names are `x` (input) and
-`softmax_2.tmp_0` (output) — the C++ Config defaults match.
+The two engines are built as follows:
 
-[yolov9]: https://github.com/WongKinYiu/yolov9
-[p2o]: https://github.com/PaddlePaddle/Paddle2ONNX
+- **Detector:** fixed shape, FP16. The layers listed in
+  `yolov9_plate.onnx.fp32_layers` stay in FP32, because in FP16 the box
+  coordinates have 0.5-pixel resolution, which cost up to 16 IoU points on small
+  plates. Latency is unchanged at 3.7 ms on the RTX 5060 Laptop. EfficientNMS_TRT
+  comes from `libnvinfer_plugin`, which the C++ loader registers at startup.
+- **Recognizer:** FP16, batch pinned to 1 (`input` 1×64×128×3), 1.25 ms.
 
-## Step 2 — build the TensorRT engines
-
-### YOLOv9 (fixed shape — EfficientNMS_TRT requires it)
+## Step 3: verify
 
 ```bash
-python convert_onnx_to_trt.py \
-    --onnx best-end2end.onnx \
-    --plan ../../server/models/yolov9_plate.plan \
-    --fp16
+trtexec --loadEngine=/opt/gate/models/yolov9_plate.plan --iterations=1 | grep binding
+trtexec --loadEngine=/opt/gate/models/plate_ocr.plan    --iterations=1 | grep binding
 ```
 
-No `--min-shape/--opt-shape/--max-shape` because the export pinned
-`1×3×640×640`. The script will print the four output tensor names at the end —
-verify they match the defaults in `YoloPlateDetector::Config`.
+Expected:
 
-### PaddleOCR (dynamic width)
+```
+Input binding for images with dimensions 1x3x608x608 and type fp32
+Output binding for num_dets with dimensions 1x1 and type int32
+Output binding for det_boxes with dimensions 1x100x4 and type fp32
+Output binding for det_scores with dimensions 1x100 and type fp32
+Output binding for det_classes with dimensions 1x100 and type int32
+
+Input binding for input with dimensions 1x64x128x3 and type uint8
+Output binding for plate with dimensions 1x10x37 and type fp32
+Output binding for region with dimensions 1x66 and type fp32
+```
+
+gate-vision runs the deployed pair with:
+
+```
+--detector-engine yolov9_plate.plan --recognizer-mode slots \
+--recognizer-engine plate_ocr.plan --plate-config plate_ocr_config.yaml
+```
+
+## The PaddleOCR CTC path (`--recognizer-mode ctc`)
+
+`PlateRecognizer::Mode::kCtc` still accepts a PP-OCR-style CRNN with this
+contract:
+
+- input `x` 1×3×48×320, aspect-preserving resize, padding of 0 *after*
+  normalisation, BGR;
+- output [1, T, C] post-softmax, blank at index 0;
+- C must equal the dictionary size plus 1 (37 for `dict_kenya_plates.txt`).
+
+Stock PP-OCRv4/v5 rec models have 97, 438 or 838 classes, are rejected at load,
+and scored at most 0.46 on the test set (0% on two-line plates). They would need
+fine-tuning with the 36-character dictionary. After `convert_paddle_rec.sh`,
+their output tensor is named `fetch_name_0`.
+
+## Evaluation (`eval/`)
+
+| File | Purpose |
+|---|---|
+| `testset/manifest.csv` | **Committed** Kenya test set: 166 Wikimedia Commons images and 225 hand-read plates, with source page, author, licence and SHA-256 per image. |
+| `testset/gt_notes.txt`, `sweep_notes.txt`, `manual_boxes.txt` | The hand annotations the manifest is built from (`build_testset_manifest.py`). |
+| `fetch_testset.py` | Re-downloads the images into `models/downloads/kenya-testset/images/` and verifies each SHA-256. |
+| `collect_commons_candidates.py`, `propose_plates.py`, `build_testset_manifest.py` | How the test set was built: harvest, detector-seeded review sheets, manifest. |
+| `alpr_candidates.py`, `eval_candidates.py`, `render_eval.py` | ONNX Runtime runners for every candidate, metrics, and annotated images. |
+| `cpp_parity.py` | Scores `alpr_bench` (C++ / TensorRT) output: detector parity against ORT on the original ONNX, end-to-end accuracy against Python, and latency. |
 
 ```bash
-python convert_onnx_to_trt.py \
-    --onnx ppocrv4_rec.onnx \
-    --plan ../../server/models/ppocrv4_rec.plan \
-    --fp16 \
-    --input-name x \
-    --min-shape  1x3x48x32 \
-    --opt-shape  1x3x48x160 \
-    --max-shape  1x3x48x320
+python3 -I scripts/export-models/eval/fetch_testset.py
+python3 -I scripts/export-models/eval/eval_candidates.py          # → models/downloads/eval/
+build/debug/server/inference/alpr_bench --detector-engine … --recognizer-engine … \
+    --plate-config … --images list.txt --out cpp_e2e.jsonl
+python3 -I scripts/export-models/eval/cpp_parity.py --parity … --e2e cpp_e2e.jsonl
 ```
 
-The C++ side preprocesses every plate to width 320, so `--max-shape` of
-`1×3×48×320` matches the recognizer's worst case. `--opt-shape` is the
-common-case width — picking 160 gives the best kernel selection for the
-typical Kenya plate aspect (≈ 1:3.3).
-
-## Step 3 — verify
-
-```bash
-python inspect_engine.py ../../server/models/yolov9_plate.plan
-python inspect_engine.py ../../server/models/ppocrv4_rec.plan
-```
-
-Expected for YOLOv9:
-
-```
-[INPUT ] images       shape=(1, 3, 640, 640)  dtype=FLOAT
-[OUTPUT] num_dets     shape=(1, 1)            dtype=INT32
-[OUTPUT] det_boxes    shape=(1, 100, 4)       dtype=FLOAT
-[OUTPUT] det_scores   shape=(1, 100)          dtype=FLOAT
-[OUTPUT] det_classes  shape=(1, 100)          dtype=INT32
-```
-
-Expected for PP-OCRv4 (the `-1` on dim 3 is the dynamic width):
-
-```
-[INPUT ] x                  shape=(1, 3, 48, -1)
-[OUTPUT] softmax_2.tmp_0    shape=(1, -1, 6625)   # T variable, C = dict + 1
-```
-
-If a tensor name is different, fix it in the corresponding C++ Config field —
-do not rename it in the engine.
+All weights, engines, images and results stay in the git-ignored
+`models/downloads/` and `models/weights/`.
 
 ## Hardware-compatibility note
 
 The system supports every NVIDIA RTX generation from the 20 series: Turing
-(sm_75), Ampere (sm_86), Ada (sm_89) and Blackwell (sm_120). TensorRT's
-portable modes cannot cover that range — `AMPERE_PLUS` requires sm_80 or newer
-(it excludes every RTX 20 card) and `SAME_COMPUTE_CAPABILITY` covers one
-generation — so engines are built **native, on the host that runs them**
-(`--hardware-compat none`, the default). `build_engines.sh` does that at
-install time and again whenever the GPU or TensorRT version changes.
+(sm_75), Ampere (sm_86), Ada (sm_89) and Blackwell (sm_120).
 
-Each `.plan` gets a `<plan>.meta` sidecar (build GPU, compute capability,
-TensorRT version, compatibility mode). The C++ loader checks it before
-deserializing and refuses a mismatched engine with a "rebuild on this host"
-message, and rejects pre-Turing GPUs outright. `--hardware-compat ampere_plus`
-is still available for a fleet that is entirely sm_80 or newer.
-
-## Where the .plan files live
-
-Built engines are written to `server/models/*.plan` and **are not committed to
-git** — they're per-host artifacts that depend on the exact TRT version + GPU
-arch. `server/models/README.md` documents the exclusion. CI does not need
-them; the C++ unit tests (Phase 4.2.6) use a tiny fixture engine built on the
-fly inside the test harness.
+- **Why engines are built on the host:** TensorRT's portable modes cannot cover
+  that range. `AMPERE_PLUS` excludes RTX 20, and `SAME_COMPUTE_CAPABILITY`
+  covers one generation. Engines are therefore built native, on the host that
+  runs them.
+- **The `.meta` sidecar:** each `.plan` gets one (build GPU, compute capability,
+  TensorRT version, compatibility mode). The C++ loader checks it before
+  deserializing and refuses a mismatched engine.

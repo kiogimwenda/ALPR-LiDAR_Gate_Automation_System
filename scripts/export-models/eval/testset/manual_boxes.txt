@@ -1,0 +1,15 @@
+# Phase-2 recall sweep, part 2: plates found by eye that no detector proposed at conf>=0.05 (boxes hand-placed, ~±5 px).
+# <image-index> x1 y1 x2 y2 <TEXT|-> <ok|ignore> [tags]
+155 175 1135 237 1146 KCV931D ok small manual
+193 1248 908 1318 923 KBV413K ok small manual
+193 803 852 848 862 KBV403A ok small manual
+206 1407 745 1452 757 - ignore small manual
+242 850 683 902 713 KBJ266X ok 2line manual
+267 511 479 531 499 - ignore small manual
+268 157 842 184 867 - ignore small manual
+315 1067 211 1190 234 KTWA476W ok manual
+317 562 810 590 835 - ignore small manual
+334 908 768 1008 787 - ignore glare manual
+370 105 479 182 500 KCA054H ok manual
+384 673 881 771 906 KDQ937E ok manual
+395 337 729 365 749 - ignore occluded manual

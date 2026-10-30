@@ -10,12 +10,14 @@
 # Usage:
 #   scripts/export-models/build_engines.sh --onnx-dir <dir> [--out-dir /opt/gate/models] [--force]
 #
-# <dir> must contain the ONNX exports described in scripts/export-models/README.md:
-#   yolov9_plate.onnx   (end2end, EfficientNMS_TRT, 1x3x640x640)
-#   ppocrv4_rec.onnx    (input "x", 1x3x48xW, W in 32..320)
+# <dir> must contain the ONNX exports produced by prepare_onnx.sh
+# (scripts/export-models/README.md):
+#   yolov9_plate.onnx       YOLOv9-s-608 + EfficientNMS_TRT, 1x3x608x608
+#   plate_ocr.onnx          fast-plate-ocr fixed-slot recognizer, uint8 "input" 1x64x128x3
+#   plate_ocr_config.yaml   its alphabet / pad char / input size (copied alongside)
 #
-# Writes <out>/yolov9_plate.plan and <out>/ppocrv4_rec.plan, each with a
-# .meta sidecar the C++ loader checks at startup. Up-to-date engines (same
+# Writes <out>/yolov9_plate.plan and <out>/plate_ocr.plan, each with a
+# .meta sidecar the C++ loader checks at startup, plus plate_ocr_config.yaml. Up-to-date engines (same
 # GPU compute capability and TensorRT version) are skipped unless --force.
 # Uses scripts/export-models/convert_onnx_to_trt.py when TensorRT's Python
 # bindings are installed, otherwise the trtexec CLI from libnvinfer-bin.
@@ -28,7 +30,7 @@ while [[ $# -gt 0 ]]; do
         --onnx-dir) ONNX_DIR="$2"; shift 2 ;;
         --out-dir)  OUT_DIR="$2"; shift 2 ;;
         --force)    FORCE=1; shift ;;
-        -h|--help)  sed -n '2,23p' "$0"; exit 0 ;;
+        -h|--help)  sed -n '2,24p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -82,8 +84,11 @@ EOF
 }
 
 # build <onnx> <plan> [input-name min opt max]
+# An <onnx>.fp32_layers sidecar (one layer name per line, written by
+# graft_efficientnms.py) pins those layers to FP32 inside the FP16 engine.
 build() {
     local onnx="$1" plan="$2" name="${3:-}" min="${4:-}" opt="${5:-}" max="${6:-}"
+    local fp32_file="${onnx}.fp32_layers"
     [[ -f "${onnx}" ]] || { echo "error: missing ${onnx}" >&2; exit 1; }
     if (( ! FORCE )) && up_to_date "${plan}"; then
         echo "up to date: ${plan}"
@@ -91,21 +96,30 @@ build() {
     fi
     echo "building ${plan} from ${onnx} …"
     if [[ ${BUILDER} == python ]]; then
-        local profile=()
+        local profile=() pin=()
         [[ -n "${name}" ]] && profile=(--input-name "${name}" --min-shape "${min}" --opt-shape "${opt}" --max-shape "${max}")
+        [[ -f "${fp32_file}" ]] && pin=(--fp32-layers-file "${fp32_file}")
         python3 "${HERE}/convert_onnx_to_trt.py" --onnx "${onnx}" --plan "${plan}" --fp16 \
-            --workspace-mb "${WORKSPACE_MB}" --hardware-compat none "${profile[@]}"
+            --workspace-mb "${WORKSPACE_MB}" --hardware-compat none "${profile[@]}" "${pin[@]}"
     else
-        local profile=()
+        local profile=() pin=()
         [[ -n "${name}" ]] && profile=("--minShapes=${name}:${min}" "--optShapes=${name}:${opt}" "--maxShapes=${name}:${max}")
+        if [[ -f "${fp32_file}" ]]; then
+            pin=(--precisionConstraints=obey
+                 "--layerPrecisions=$(sed '/^$/d; s/$/:fp32/' "${fp32_file}" | paste -sd, -)")
+        fi
         trtexec --onnx="${onnx}" --saveEngine="${plan}" --fp16 \
-            --memPoolSize=workspace:"${WORKSPACE_MB}"M "${profile[@]}" --skipInference
+            --memPoolSize=workspace:"${WORKSPACE_MB}"M "${profile[@]}" "${pin[@]}" --skipInference
     fi
     write_meta "${plan}"
     echo "built ${plan}"
 }
 
 build "${ONNX_DIR}/yolov9_plate.onnx" "${OUT_DIR}/yolov9_plate.plan"
-build "${ONNX_DIR}/ppocrv4_rec.onnx"  "${OUT_DIR}/ppocrv4_rec.plan" x 1x3x48x32 1x3x48x160 1x3x48x320
+# The recognizer's batch dim is dynamic in the ONNX; the C++ runs batch 1.
+build "${ONNX_DIR}/plate_ocr.onnx" "${OUT_DIR}/plate_ocr.plan" input 1x64x128x3 1x64x128x3 1x64x128x3
+[[ -f "${ONNX_DIR}/plate_ocr_config.yaml" ]] || {
+    echo "error: missing ${ONNX_DIR}/plate_ocr_config.yaml (run prepare_onnx.sh)" >&2; exit 1; }
+install -m 0644 "${ONNX_DIR}/plate_ocr_config.yaml" "${OUT_DIR}/plate_ocr_config.yaml"
 
 echo "engines ready in ${OUT_DIR} for ${GPU} (sm_${CC_MAJOR}${CC_MINOR}, TensorRT ${TRT_VER})"

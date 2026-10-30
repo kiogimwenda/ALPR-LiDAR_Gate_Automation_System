@@ -1,0 +1,387 @@
+# Hand-read ground truth, Phase 1 ALPR eval. <img>#<proposal> <TEXT|-> <ok|ignore|no> [tags]. Read by eye from the Commons images.
+0#0 KAS917V ok
+0#1 KAZ024G ok hard
+1#0 - no
+4#0 - no
+5#0 - no
+6#0 - no
+8#0 KDU279M ok 2line small
+10#0 KCV846M ok
+10#1 - no
+10#2 - ignore partial
+11#0 - ignore partial
+16#0 KCD494E ok blur hard
+16#1 - no
+17#0 KMCA734C ok 2line moto
+19#0 KBZ399B ok
+20#0 - no
+22#0 KTWA751Z ok 2line
+23#0 KCE203C ok 2line
+24#0 KCE203C ok 2line
+28#0 - ignore partial
+28#1 KCE203C ok
+29#0 KCE203C ok
+31#0 - ignore partial
+32#0 KCE203C ok
+33#0 KCE203C ok 2line
+34#0 - ignore nonstandard
+35#0 - ignore blur
+36#0 KBY235X ok
+36#1 KCP366E ok 2line
+40#0 KDR690T ok 2line small hard
+40#1 - ignore
+41#0 KBH242V ok
+41#1 KAV303V ok
+43#1 UN plate ignore
+48#0 KBJ104H ok
+48#1 KBZ601H ok 2line
+48#2 KDU588? ignore partial
+49#0 UAY730S ok uganda
+52#1 KTWA403T ok 2line
+54#0 ? ignore blur
+59#0 ? ignore blur
+64#0 - no
+65#0 - ignore
+66#0 KCV262E ok
+70#0 - no
+71#0 - ignore
+72#0 KAX132J ok 2line
+72#1 - ignore partial
+72#2 - ignore partial
+73#0 - ignore blur
+75#0 - ignore faded
+75#1 KMFB579D ok 2line moto
+76#0 KMES963V ok 2line moto
+76#1 KCG301M ok 2line
+80#0 KCY728C ok 2line small
+80#1 KCU194C ok
+82#0 KCQ101P ok 2line
+84#0 KCJ903N ok
+85#0 KBU149L ok 2line
+85#1 - no
+87#0 - ignore occluded
+87#1 KMEM458G ok 2line moto
+88#0 KBY136R ok 2line
+90#0 KMEJ366F ok 2line moto
+90#1 - ignore
+92#0 - no
+94#0 KMEP914A ok 2line moto
+96#0 - no
+98#0 KAR645G ok 2line small
+99#0 - ignore
+101#0 - no
+102#0 - no
+103#0 KTWA698E ok
+103#1 KBB694A ok 2line
+103#2 - ignore partial
+107#0 KDQ047Z ok newstyle
+108#0 KCB609E ok
+110#0 KBL651D ok
+110#1 KBM568V ok
+112#0 - ignore partial
+113#0 KCL388F ok 2line
+113#1 KAX161Y ok 2line
+113#2 - ignore partial
+116#0 - ignore blur
+116#1 - ignore partial
+118#0 - ignore blur
+120#0 KMDY033C ok 2line moto
+123#0 KCG330F ok 2line
+125#0 KAW822G ok
+126#0 KAL750T ok 2line
+126#1 - no
+126#2 - no
+127#0 KDL653A ok
+128#0 - no
+128#1 - no
+129#0 - ignore historic
+130#0 KAW625U ok
+130#1 - no
+130#2 KDL246G ok newstyle
+130#3 - no
+131#1 KBS421L ok
+132#0 KDC716V ok hard
+132#1 KDS953D ok
+134#0 - ignore partial
+135#0 KDD527P ok
+135#1 KCS711R ok 2line
+136#0 KCD459J ok 2line
+137#0 KRX798 ok oldstyle
+138#0 KBP942 ok oldstyle
+141#0 KBU620K ok
+142#0 KCC863E ok 2line small
+142#1 - ignore
+143#0 KCJ309Z ok 2line small
+143#1 - ignore partial
+143#2 - ignore ambiguous
+144#0 - ignore blur
+145#0 T371AED ok tanzania 2line
+147#0 - ignore split
+147#1 - ignore split
+148#0 - no
+150#0 KAU530C ok 2line
+153#0 - no
+154#0 KBY731R ok
+154#1 KMGL106N ok 2line moto
+154#2 KDT872V ok small
+155#0 KBU304C ok
+155#1 KAR140G ok
+158#0 KDE334Y ok
+158#2 KCV722S ok
+166#0 KDH747S ok
+167#0 - no
+169#0 - ignore ambiguous
+169#1 KMEB580X ok 2line moto
+170#0 - ignore worn
+172#0 - no
+179#0 - no
+180#0 - ignore partial
+185#0 KBA606N ok
+189#0 - ignore blur
+191#0 KAM377T ok 2line
+193#0 KCG534D ok 2line small
+193#1 - no
+196#0 KDD859B ok
+198#0 KCM782U ok 2line small hard
+198#1 - no
+199#1 - no
+203#0 KAU406N ok
+204#0 KAY855F ok occluded
+205#0 - no
+205#1 - no
+206#0 KBK146G ok
+206#2 - ignore partial
+207#0 - ignore ambiguous
+208#0 KBB515Z ok 2line
+209#0 KBB515Z ok 2line
+209#1 KBF287A ok 2line
+211#0 KCX121B ok
+212#0 KBH904C ok 2line
+212#1 - ignore partial
+214#1 - no
+226#0 - no
+235#0 - no
+240#0 - no
+240#1 KAL914J ok tilted
+242#0 KAU196E ok blur
+242#1 - no
+243#0 - no
+244#0 - no
+245#0 KBZ452Y ok
+246#0 - no
+247#0 KCR493T ok
+247#2 KCG328K ok
+248#0 KDN267J ok
+249#0 KDN267J ok
+249#1 - ignore partial
+250#0 KBU465X ok 2line
+251#0 KAX842N ok
+252#0 - no
+252#1 - no
+252#2 - no
+252#3 - no
+254#0 KAU545H ok
+254#1 KBB942B ok
+254#2 - ignore partial
+255#0 KDL498N ok 2line
+255#1 KAT949T ok 2line
+256#0 KBE698R ok
+257#1 - no
+258#0 - ignore partial
+258#1 KAX485S ok
+260#0 KCH288B ok
+260#1 KCL107A ok
+261#0 KAN538J ok 2line
+262#0 KCH288B ok
+263#0 KCA119J ok
+264#0 - ignore blur
+265#0 KDR982W ok tilted hard
+265#1 - ignore partial
+267#0 KCD579Q ok 2line tilted
+267#1 KBX865X ok 2line
+267#2 - no
+268#0 KBU031X ok 2line small
+268#1 - no
+269#0 KDT226F ok
+269#1 - ignore partial
+270#1 - ignore occluded
+271#0 - ignore blur
+271#1 - ignore occluded
+274#0 KTWB936E ok
+275#0 KBK503Q ok 2line small
+279#0 KMDU027K ok 2line moto
+279#1 KMEB580X ok 2line moto
+282#0 KBW110L ok
+282#1 KCG683G ok
+282#2 KCY072Y ok
+283#0 KDE745E ok hard
+283#1 KAX902T ok blur
+284#0 - ignore partial
+289#0 - ignore
+290#0 KDS420E ok
+291#0 - ignore occluded
+293#0 KDC230J ok
+294#0 KAY017X ok
+295#0 - ignore small
+298#0 KAV865H ok 2line
+299#0 KAS223J ok 2line
+302#0 KCV077Z ok
+302#1 - no
+304#0 - ignore occluded
+305#0 UAZ995X ok uganda
+305#1 - no
+307#0 KBP981K ok
+308#0 - ignore small
+308#1 - no
+310#0 KDU621K ok newstyle
+311#0 KDS274Y ok newstyle
+313#0 - ignore small
+313#1 - ignore partial
+313#2 - ignore small
+315#0 KTWA387F ok 2line
+316#0 - no
+317#0 KCM073A ok
+318#0 KBB331T ok
+322#0 KDR476X ok newstyle
+325#0 - ignore partial
+326#0 - no
+327#0 KCB556K ok
+327#1 - ignore occluded
+328#0 - ignore pixelated
+328#1 - no
+329#0 - ignore pixelated
+330#0 KCC228L ok
+332#0 KBC008D ok 2line
+333#0 KBJ370Z ok tilted
+333#1 KBU305L ok tilted
+333#2 - no
+334#0 KBJ292G ok 2line
+338#1 KCS544K ok 2line small hard
+339#0 KMCQ402G ok 2line moto hard
+342#0 KBN159L ok 2line
+342#1 - no
+343#0 KDH379B ok 2line small hard
+346#1 - no
+347#0 KBP022K ok
+349#0 KCK099A ok 2line
+349#1 - ignore
+349#2 - no
+350#0 KCK099A ok 2line
+351#0 KBM414B ok
+352#0 - no
+353#0 - ignore occluded
+353#1 - ignore partial
+354#0 KCC600M ok
+355#1 - ignore blur
+355#2 - no
+355#3 - ignore small
+356#0 - ignore blur
+357#1 KTWA473G ok
+363#0 KBP645V ok
+364#0 - no
+364#1 - no
+364#4 - no
+364#6 - no
+364#7 - no
+366#0 - ignore partial
+367#0 KBR947B ok night
+369#0 KDH956Y ok 2line small
+370#0 KDK038W ok
+374#0 KBU527Y ok
+376#0 - no
+376#3 - no
+377#1 - ignore blur
+380#0 - no
+380#1 - no
+382#0 - no
+382#1 KCY699Y ok small
+383#0 KDQ936E ok newstyle
+384#0 KDQ936E ok newstyle
+385#0 KDQ321P ok newstyle
+387#0 KCA533D ok newstyle
+387#1 - no
+388#0 KBW209F ok newstyle
+388#1 - ignore small
+389#0 KDL085C ok newstyle
+391#0 KBV606E ok
+391#1 KCA394R ok newstyle
+392#0 - ignore small
+392#1 - no
+394#0 - no
+395#0 KCC472Q ok newstyle
+396#0 KCC472Q ok newstyle
+396#1 - no
+396#2 KCY078U ok
+397#0 KDL517S ok newstyle
+398#0 KDH089K ok
+399#0 KDM182H ok
+399#1 KDK849A ok
+399#2 KDT382G ok newstyle
+400#0 KDK849A ok 2line
+401#0 KDD527P ok
+401#2 - ignore partial
+402#0 KCF241L ok newstyle
+403#0 KCD752H ok blur hard
+407#0 - ignore partial
+409#0 KDP503Y ok newstyle
+410#0 KAZ874B ok newstyle tilted
+411#0 KCM448S ok 2line
+411#1 KDB051Y ok
+413#0 KBZ200F ok 2line
+415#0 RAD290X ok rwanda
+415#1 KCT293M ok
+416#0 KBW726A ok occluded hard
+421#0 KPR468 ok oldstyle
+422#0 KTWA227Z ok
+423#0 KBG178R ok
+423#1 KBG550E ok
+424#0 - no
+425#0 KBG178R ok 2line tuktuk
+426#0 KTWA204T ok
+426#1 - no
+427#0 KBM570H ok
+428#0 - no
+429#1 - ignore partial
+429#2 KAU247B ok
+431#0 KTWB459M ok 2line
+432#0 KTWB822D ok
+432#1 KAQ185G ok faded hard
+432#2 KTWA084V ok
+433#0 KAR446Y ok 2line occluded hard
+433#3 KTWA853A ok
+436#0 KCS941N ok
+436#1 KTWB467P ok
+438#0 KCR977N ok
+438#1 KCE933D ok blue
+438#2 KCR972Q ok
+440#0 KMGQ730S ok 2line moto
+440#1 - no
+441#0 UBR720H ok uganda glare
+442#0 KCL121N ok
+442#2 - no
+445#0 KJL631 ok oldstyle black
+445#1 KBB7 ok oldstyle black
+446#0 - no
+447#0 - no
+447#1 - no
+447#3 KCV681R ok
+448#0 KDU508E ok newstyle
+449#0 - no
+450#0 - ignore blur
+451#0 KCR055S ok night
+451#1 KTWB451H ok
+451#2 - no
+453#0 KBL099K ok
+455#0 - no
+456#0 KCB331R ok 2line
+459#0 - no
+460#0 - ignore partial
+460#1 - no
+460#2 KBV825X ok small
+461#0 - ignore
+461#1 - no
+466#0 KAZ187G ok
+466#1 - no
+474#0 - ignore
+476#0 KDN267J ok newstyle
+478#0 - no
