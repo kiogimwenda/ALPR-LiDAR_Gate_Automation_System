@@ -77,6 +77,9 @@ public sealed class Haptics : IHaptics
 {
     public void Play(HapticKind kind)
     {
+        // Logged, so the feedback path is visible on platforms without a
+        // haptic engine (Windows, Mac) and in field logs.
+        Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(AppLog.For("Haptics"), "haptic {Kind}", kind);
         try
         {
 #if IOS
@@ -199,12 +202,17 @@ public sealed class Navigator(IServiceProvider services) : INavigator
     public Task ShowPlateAsync(string plate)
     {
         var host = services.GetRequiredService<SessionHost>();
-        if (host.Current is not { } session || Shell.Current is null)
+        if (host.Current is not { } session || MainWindow?.Page is not NavigationPage nav)
         {
             return Task.CompletedTask;
         }
+        // Two-pane tabs show it beside the list on wide windows.
+        if (nav.CurrentPage is RootPage { CurrentPage: IPlatePaneHost { HasPane: true } pane })
+        {
+            return pane.ShowPlateAsync(plate);
+        }
         var page = new PlateDetailPage(new PlateDetailViewModel(session, plate));
-        return Shell.Current.Navigation.PushAsync(page);
+        return nav.PushAsync(page);
     }
 
     public Task ShowSignInAsync()
@@ -220,7 +228,15 @@ public sealed class Navigator(IServiceProvider services) : INavigator
     {
         if (MainWindow is { } w)
         {
-            w.Page = services.GetRequiredService<AppShell>();
+            // The persistent shell, with pushed pages (plate history,
+            // account, admin) stacked above it.
+            var nav = new NavigationPage(services.GetRequiredService<RootPage>());
+            var res = Application.Current!.Resources;
+            nav.SetAppThemeColor(NavigationPage.BarBackgroundColorProperty,
+                (Color)res["BackgroundLight"], (Color)res["BackgroundDark"]);
+            nav.SetAppThemeColor(NavigationPage.BarTextColorProperty,
+                (Color)res["LabelLight"], (Color)res["LabelDark"]);
+            w.Page = nav;
         }
         return Task.CompletedTask;
     }

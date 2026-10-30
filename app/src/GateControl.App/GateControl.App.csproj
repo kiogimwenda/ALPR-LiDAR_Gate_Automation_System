@@ -30,10 +30,24 @@
 		<TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
 	</PropertyGroup>
 
+	<!-- Measurement builds: Release code with the verification harness
+	     (Platform/Automation.cs) compiled in, so motion is timed on optimised
+	     code: dotnet build -c Release -p:GcHarness=true -->
+	<PropertyGroup Condition="'$(GcHarness)' == 'true'">
+		<DefineConstants>$(DefineConstants);GC_HARNESS</DefineConstants>
+	</PropertyGroup>
+
+	<!-- No GC configuration overrides. Round 2 tried System.GC.HighMemoryPercent=97
+	     (Windows); the EventPipe traces of the first tab entrance showed the gen-2
+	     collections were induced (WinUI's reference tracker and native memory
+	     pressure from per-frame WinUI objects), not memory-load triggered, so the
+	     override was removed once those sources were fixed. -->
+
 	<ItemGroup>
-		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#0A84FF" />
+		<MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#E15A41" />
 		<MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#000000" BaseSize="128,128" />
 		<MauiImage Include="Resources\Images\*" />
+		<MauiFont Include="Resources\Fonts\*.ttf" />
 		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
 	</ItemGroup>
 

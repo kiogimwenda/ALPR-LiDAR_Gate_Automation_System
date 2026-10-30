@@ -14,8 +14,28 @@ public static class MauiProgram
 {
     public static MauiApp CreateMauiApp()
     {
+        // No GC latency mode: the gen-2 collections that cost 40–95 ms frames
+        // were induced (WinUI's memory check, per-frame WinUI objects), which
+        // SustainedLowLatency does not prevent; they are fixed at the source
+        // (RootPage.SettleXamlCleanup, WinTransform, BlobClip, ChartView.Text).
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
+        // Inter with tabular figures frozen in (Resources/Fonts/OFL.txt):
+        // counting numbers keep their width, so they never jitter (spec §4).
+        builder.ConfigureFonts(fonts =>
+        {
+            fonts.AddFont("InterGC-Regular.ttf", "Inter");
+            fonts.AddFont("InterGC-Medium.ttf", "InterMedium");
+            fonts.AddFont("InterGC-SemiBold.ttf", "InterSemiBold");
+            fonts.AddFont("InterGC-Bold.ttf", "InterBold");
+        });
+
+#if WINDOWS
+        // Transforms updated in place, not rebuilt per frame (WinTransform.cs).
+        WinTransform.Register();
+        // Parked tabs unreachable by focus and UI Automation (ParkHost.cs).
+        builder.ConfigureMauiHandlers(h => h.AddHandler<Controls.ParkHost, Controls.ParkHostHandler>());
+#endif
 
         // Every Button responds on touch-down (Motion.cs, principle 01).
         ButtonHandler.Mapper.AppendToMapping("PressFeedback", (_, view) =>
@@ -97,16 +117,20 @@ public static class MauiProgram
         s.AddTransient<UsersPage>();
         s.AddTransient<GatesPage>();
         s.AddTransient<DataPage>();
-        s.AddTransient<AppShell>();
+        s.AddTransient<RootPage>();
 
 #if DEBUG
         builder.Logging.AddDebug();
 #endif
-        return builder.Build();
+        builder.Logging.AddProvider(new FileLoggerProvider());
+        var app = builder.Build();
+        AppLog.Init(app.Services.GetRequiredService<ILoggerFactory>());
+        return app;
     }
 
 #if WINDOWS
     private static Microsoft.UI.Xaml.Media.SolidColorBrush Transparent() =>
         new(Microsoft.UI.Colors.Transparent);
+
 #endif
 }

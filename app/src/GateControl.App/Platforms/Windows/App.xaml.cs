@@ -17,6 +17,11 @@ public partial class App : MauiWinUIApplication
 	public App()
 	{
 		this.InitializeComponent();
+		// Anything WinUI reports as unhandled goes to the app log first, with
+		// its message (WinUI's own crash report only says "stowed exception").
+		UnhandledException += (_, e) =>
+			Microsoft.Extensions.Logging.LoggerExtensions.LogCritical(
+				GateControl.Platform.AppLog.For("WinUI"), e.Exception, "unhandled: {Message}", e.Message);
 	}
 
 	protected override MauiApp CreateMauiApp() => MauiProgram.CreateMauiApp();

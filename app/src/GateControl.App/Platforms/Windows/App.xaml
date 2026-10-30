@@ -1,8 +1,39 @@
-﻿<maui:MauiWinUIApplication
+<maui:MauiWinUIApplication
     x:Class="GateControl.WinUI.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:maui="using:Microsoft.Maui"
     xmlns:local="using:GateControl.WinUI">
-
+    <!-- No system-accent (blue) chrome anywhere (spec §5, accent decision):
+         the WinUI accent becomes ink, and text fields drop their focus bar
+         and focus fill (they sit in a well; focus shows as the caret). -->
+    <maui:MauiWinUIApplication.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="SystemAccentColor">#151316</Color>
+                    <Color x:Key="SystemAccentColorLight1">#2A272C</Color>
+                    <Color x:Key="SystemAccentColorLight2">#3F3B42</Color>
+                    <Color x:Key="SystemAccentColorLight3">#545058</Color>
+                    <Color x:Key="SystemAccentColorDark1">#151316</Color>
+                    <Color x:Key="SystemAccentColorDark2">#151316</Color>
+                    <Color x:Key="SystemAccentColorDark3">#151316</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="SystemAccentColor">#F4F2F7</Color>
+                    <Color x:Key="SystemAccentColorLight1">#F4F2F7</Color>
+                    <Color x:Key="SystemAccentColorLight2">#F4F2F7</Color>
+                    <Color x:Key="SystemAccentColorLight3">#F4F2F7</Color>
+                    <Color x:Key="SystemAccentColorDark1">#DCDADF</Color>
+                    <Color x:Key="SystemAccentColorDark2">#C4C2C8</Color>
+                    <Color x:Key="SystemAccentColorDark3">#ADAAB1</Color>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="Transparent" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent" />
+            <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="Transparent" />
+            <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+            <Thickness x:Key="TextControlBorderThemeThicknessFocused">0</Thickness>
+        </ResourceDictionary>
+    </maui:MauiWinUIApplication.Resources>
 </maui:MauiWinUIApplication>

@@ -33,6 +33,49 @@ public partial class App : Application
         window.Resumed += (_, _) => MotionSettings.Refresh();
         window.MinimumWidth = 380;
         window.MinimumHeight = 600;
+#if WINDOWS
+        // The caption follows the app's theme tokens, not the OS theme:
+        // with the app in light mode on a dark OS the title text was white
+        // on light grey.
+        // Set explicitly, not by AppThemeBinding: the caption is outside the
+        // theme reveal's snapshot, so it would switch the moment the theme is
+        // applied under the snapshot (during the press), ahead of the wipe.
+        // RootPage switches it on the wipe's first frame; other theme changes
+        // (the OS theme with Appearance = System) switch it at once.
+        var titleBar = new TitleBar { Title = "Gate Control", HeightRequest = 32 };
+        _caption = titleBar;
+        ApplyCaption(Current!.RequestedTheme);
+        Current.RequestedThemeChanged += (_, e) =>
+        {
+            if (!Motion.ThemeReveal.Busy)
+            {
+                ApplyCaption(e.RequestedTheme);
+            }
+        };
+        window.TitleBar = titleBar;
+#endif
+#if DEBUG || GC_HARNESS
+        Platform.Automation.Start(window, _services);
+#endif
         return window;
+    }
+
+#if WINDOWS
+    private static TitleBar? _caption;
+#endif
+
+    // The window caption in `theme` (Windows; no-op elsewhere).
+    public static void ApplyCaption(AppTheme theme)
+    {
+#if WINDOWS
+        if (_caption is null || Current is null)
+        {
+            return;
+        }
+        var dark = theme == AppTheme.Dark;
+        var res = Current.Resources;
+        _caption.BackgroundColor = (Color)res[dark ? "OuterDark" : "OuterLight"];
+        _caption.ForegroundColor = (Color)res[dark ? "LabelDark" : "LabelLight"];
+#endif
     }
 }
