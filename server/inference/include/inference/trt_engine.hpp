@@ -120,8 +120,8 @@ private:
     cudaStream_t stream_{nullptr};
     nvinfer1::ILogger* logger_{nullptr};
 
-    void allocate_buffers_();
-    [[nodiscard]] std::size_t buffer_index_(std::string_view name) const;
+    void allocate_buffers();
+    [[nodiscard]] std::size_t buffer_index(std::string_view name) const;
 };
 
 // Helpers

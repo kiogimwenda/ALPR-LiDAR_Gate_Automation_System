@@ -5,9 +5,12 @@
 
 #include "inference/trt_engine.hpp"
 
+#include <NvInferVersion.h>
 #include <algorithm>
 #include <cstring>
+#include <dlfcn.h>
 #include <fstream>
+#include <mutex>
 #include <numeric>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -18,6 +21,43 @@
 namespace gate::inference {
 
 namespace {
+
+// dlopen()s libnvinfer_plugin.so.<major> and calls initLibNvInferPlugins once
+// per process. Loaded at runtime rather than linked, so a host without the
+// plugin library still runs plugin-free engines (the recognizer) and the
+// detector fails with this message instead of a dynamic-loader error before
+// main(). Returns "" on success, else a human-readable problem description.
+//
+// initLibNvInferPlugins keeps the logger pointer for the rest of the process,
+// so it gets its own process-lifetime logger — never the caller's, which may be
+// owned by a CameraSource or a stack frame and destroyed while plugins still
+// log. It is intentionally never deleted (not even at exit), so plugin
+// teardown can never log through a destroyed object.
+const std::string& register_standard_plugins() {
+    static std::once_flag once;
+    static std::string problem;
+    std::call_once(once, [] {
+        static auto* const plugin_logger = new TrtLogger{};  // process lifetime, leaked on purpose
+        const std::string lib = "libnvinfer_plugin.so." + std::to_string(NV_TENSORRT_MAJOR);
+        void* handle = dlopen(lib.c_str(), RTLD_NOW | RTLD_GLOBAL);
+        if (handle == nullptr) {
+            const char* why = dlerror();
+            problem = lib + " could not be loaded (" + (why ? why : "unknown error") +
+                      "): engines using TensorRT plugins (the EfficientNMS_TRT plate detector) "
+                      "need it — install it with `apt install libnvinfer-plugin" +
+                      std::to_string(NV_TENSORRT_MAJOR) + "` (part of tensorrt-libs)";
+            spdlog::warn("{}", problem);
+            return;
+        }
+        using InitFn = bool (*)(void*, const char*);
+        auto* init = reinterpret_cast<InitFn>(dlsym(handle, "initLibNvInferPlugins"));
+        if (init == nullptr || !init(plugin_logger, "")) {
+            problem = lib + ": initLibNvInferPlugins failed — plugin-based engines will not load";
+            spdlog::warn("{}", problem);
+        }
+    });
+    return problem;
+}
 
 // CUDA error → TrtException, with the failing call's name in the message.
 inline void check_cuda(cudaError_t status, const char* what) {
@@ -107,29 +147,21 @@ void TrtLogger::log(Severity severity, const char* msg) noexcept {
 std::size_t element_size(nvinfer1::DataType dt) noexcept {
     using DT = nvinfer1::DataType;
     switch (dt) {
-        case DT::kFLOAT:
-            return 4;
-        case DT::kHALF:
-            return 2;
-        case DT::kBF16:
-            return 2;
         case DT::kINT64:
             return 8;
+        case DT::kFLOAT:
         case DT::kINT32:
             return 4;
+        case DT::kHALF:
+        case DT::kBF16:
+            return 2;
         case DT::kINT8:
-            return 1;
         case DT::kUINT8:
-            return 1;
         case DT::kBOOL:
-            return 1;
         case DT::kFP8:
-            return 1;
-        case DT::kINT4:
-            return 1;  // packed: caller must round up
-        case DT::kFP4:
-            return 1;  // packed: caller must round up
         case DT::kE8M0:
+        case DT::kINT4:  // packed: caller must round up
+        case DT::kFP4:   // packed: caller must round up
             return 1;
     }
     return 0;
@@ -184,6 +216,10 @@ TrtEngine TrtEngine::load(const std::filesystem::path& engine_path, nvinfer1::IL
 
     auto blob = read_engine_blob(engine_path);
 
+    // Register TensorRT's standard plugins (EfficientNMS_TRT et al.). Without
+    // this the end2end detector engine cannot deserialize.
+    const std::string& plugin_problem = register_standard_plugins();
+
     TrtEngine self;
     self.logger_ = &logger;
 
@@ -197,6 +233,11 @@ TrtEngine TrtEngine::load(const std::filesystem::path& engine_path, nvinfer1::IL
 
     self.engine_.reset(self.runtime_->deserializeCudaEngine(blob.data(), blob.size()));
     if (!self.engine_) {
+        // A missing plugin library is the likelier cause when one was not
+        // loaded; say so first rather than sending the operator to rebuild.
+        if (!plugin_problem.empty()) {
+            throw TrtException("cannot load " + engine_path.string() + ": " + plugin_problem);
+        }
         throw TrtException("deserializeCudaEngine failed for: " + engine_path.string() + " on '" +
                            dev.name + "' (" + detail::sm_label(dev.major, dev.minor) +
                            ", TensorRT " + trt_version +
@@ -228,7 +269,7 @@ TrtEngine TrtEngine::load(const std::filesystem::path& engine_path, nvinfer1::IL
         self.tensors_.push_back(std::move(io));
     }
 
-    self.allocate_buffers_();
+    self.allocate_buffers();
 
     spdlog::info("Loaded TensorRT engine: {} ({} I/O tensors) on {} ({}, TensorRT {})",
                  engine_path.string(), self.tensors_.size(), dev.name,
@@ -295,7 +336,7 @@ TrtEngine::~TrtEngine() {
 // ---- Introspection ---------------------------------------------------------
 
 const TensorIo& TrtEngine::tensor(std::string_view name) const {
-    return tensors_[buffer_index_(name)];
+    return tensors_[buffer_index(name)];
 }
 
 // ---- Shape configuration ---------------------------------------------------
@@ -311,11 +352,11 @@ void TrtEngine::set_input_shape(std::string_view name, nvinfer1::Dims shape) {
 // ---- Buffer access ---------------------------------------------------------
 
 void* TrtEngine::device_buffer(std::string_view name) {
-    return device_buffers_[buffer_index_(name)];
+    return device_buffers_[buffer_index(name)];
 }
 
 const void* TrtEngine::device_buffer(std::string_view name) const {
-    return device_buffers_[buffer_index_(name)];
+    return device_buffers_[buffer_index(name)];
 }
 
 std::size_t TrtEngine::buffer_bytes(std::string_view name) const {
@@ -323,7 +364,7 @@ std::size_t TrtEngine::buffer_bytes(std::string_view name) const {
     // Use the context's view of the shape: for inputs it reflects the most
     // recent setInputShape; for outputs it's resolved from those inputs.
     const auto dims = context_->getTensorShape(key.c_str());
-    const auto& io = tensors_[buffer_index_(name)];
+    const auto& io = tensors_[buffer_index(name)];
     return volume(dims) * io.elem_size;
 }
 
@@ -343,7 +384,7 @@ void TrtEngine::enqueue(const std::unordered_map<std::string, std::span<const st
     // 2) Async H→D for every supplied input. The caller is responsible for
     //    keeping the host buffers alive until sync().
     for (const auto& [name, src] : host_in) {
-        const auto idx = buffer_index_(name);
+        const auto idx = buffer_index(name);
         if (!tensors_[idx].is_input) {
             throw TrtException("enqueue: '" + name + "' is not an input tensor");
         }
@@ -365,7 +406,7 @@ void TrtEngine::enqueue(const std::unordered_map<std::string, std::span<const st
 
     // 4) Async D→H for every requested output.
     for (const auto& [name, dst] : host_out) {
-        const auto idx = buffer_index_(name);
+        const auto idx = buffer_index(name);
         if (tensors_[idx].is_input) {
             throw TrtException("enqueue: '" + name + "' is an input, not an output");
         }
@@ -386,14 +427,14 @@ void TrtEngine::sync() {
 
 // ---- Internal helpers ------------------------------------------------------
 
-void TrtEngine::allocate_buffers_() {
+void TrtEngine::allocate_buffers() {
     device_buffers_.assign(tensors_.size(), nullptr);
     device_buffer_bytes_.assign(tensors_.size(), 0);
 
     // Buffers are sized to the optimization profile's MAX dims so a single
     // allocation works across every shape the engine accepts. For static
     // engines the static shape itself is the max.
-    constexpr int profile_idx = 0;
+    constexpr int kProfileIdx = 0;
 
     for (std::size_t i = 0; i < tensors_.size(); ++i) {
         const auto& io = tensors_[i];
@@ -403,7 +444,7 @@ void TrtEngine::allocate_buffers_() {
             std::any_of(io.shape.d, io.shape.d + io.shape.nbDims, [](int64_t x) { return x < 0; });
 
         if (has_dynamic && io.is_input) {
-            max_shape = engine_->getProfileShape(io.name.c_str(), profile_idx,
+            max_shape = engine_->getProfileShape(io.name.c_str(), kProfileIdx,
                                                  nvinfer1::OptProfileSelector::kMAX);
         }
         // Output shapes can also be dynamic; resolve them by setting each
@@ -442,7 +483,7 @@ void TrtEngine::allocate_buffers_() {
             std::any_of(io.shape.d, io.shape.d + io.shape.nbDims, [](int64_t x) { return x < 0; });
         if (!has_dynamic)
             continue;
-        const auto kmax = engine_->getProfileShape(io.name.c_str(), profile_idx,
+        const auto kmax = engine_->getProfileShape(io.name.c_str(), kProfileIdx,
                                                    nvinfer1::OptProfileSelector::kMAX);
         if (!context_->setInputShape(io.name.c_str(), kmax)) {
             throw TrtException("priming setInputShape failed for " + io.name);
@@ -463,7 +504,7 @@ void TrtEngine::allocate_buffers_() {
     }
 }
 
-std::size_t TrtEngine::buffer_index_(std::string_view name) const {
+std::size_t TrtEngine::buffer_index(std::string_view name) const {
     const auto it = name_to_index_.find(std::string{name});
     if (it == name_to_index_.end()) {
         throw TrtException("unknown tensor: " + std::string{name});

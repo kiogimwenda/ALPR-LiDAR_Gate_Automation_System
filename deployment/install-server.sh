@@ -38,6 +38,17 @@ done
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Runtime prerequisite of the ALPR camera path: TensorRT's standard plugin
+# library provides EfficientNMS_TRT, which the plate-detector engine contains
+# (gate-vision dlopen()s it; without it the detector engine cannot load).
+if [[ -x "${BUILD}/server/vision/gate-vision" ]] && ldd "${BUILD}/server/vision/gate-vision" 2>/dev/null | grep -q libnvinfer; then
+    ldconfig -p | grep -q 'libnvinfer_plugin\.so\.10' || {
+        echo "error: libnvinfer_plugin.so.10 not found — the ALPR plate detector needs TensorRT's" >&2
+        echo "       standard plugins: apt install libnvinfer-plugin10 (or tensorrt-libs)" >&2
+        exit 1
+    }
+fi
+
 install_binary() {
     local src="$1" name="$2"
     [[ -x "${src}" ]] || { echo "missing binary: ${src}" >&2; exit 1; }

@@ -58,6 +58,9 @@ set_target_properties(TensorRT::nvinfer PROPERTIES
     IMPORTED_LOCATION             "${TENSORRT_NVINFER_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${TENSORRT_INCLUDE_DIR}"
 )
+# libnvinfer_plugin (EfficientNMS_TRT for the detector engine) is dlopen()ed
+# at runtime by TrtEngine (register_standard_plugins), not linked, so a host
+# missing it gets an actionable error rather than a loader failure.
 
 # --- gate_inference library -------------------------------------------------
 
@@ -78,6 +81,7 @@ target_link_libraries(gate_inference
     PUBLIC
         TensorRT::nvinfer
         CUDA::cudart
+        ${CMAKE_DL_LIBS}
         opencv_core
         opencv_imgproc
     PRIVATE
