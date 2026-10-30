@@ -34,6 +34,21 @@ public readonly record struct SpringSpec(double DampingRatio, double Response)
 
 public sealed class Spring
 {
+    // Where a spring released at rest from 0 toward 1 is after `t` seconds
+    // (0 before it starts). Lets many staggered items share one clock, e.g.
+    // chart bars (spec A7) drawn in a single pass.
+    public static double StepResponse(SpringSpec spec, double t)
+    {
+        if (t <= 0)
+        {
+            return 0;
+        }
+        var s = new Spring(0, spec);
+        s.Retarget(1);
+        s.Step(t);
+        return s.Value;
+    }
+
     private const double RestDistance = 0.001;
     private const double RestVelocity = 0.01;
 
