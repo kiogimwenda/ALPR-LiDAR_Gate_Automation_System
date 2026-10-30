@@ -1,0 +1,7 @@
+| A8 nav pill slide | ζ 1.0, response 0.36 s; 90 % ≈ 0.20 s (6 frames); settled ≈ 0.37 s (11 frames) | ζ 1.0, response 0.38 s (fit err 0.005); motion starts -5 ms after the command ran; 90 % at 241 ms; within 1 px at 338 ms | pass |
+| A8 interrupted (Alerts, then Dashboard 160 ms later) | n/a (not in video) | pill heads right to x=346px, turns around in place and settles on Dashboard; no jump back to the start | pass |
+| A11 theme reveal (dark → light) | area 1 % → 98.5 % in 0.50 s (f155→f170; curve ease-in-quad 0.56 s from button size) | area 1 % at 233 ms after the command (snapshot capture first), 98.5 % at 699 ms → 466 ms | pass |
+| A11 theme reveal (light → dark) | area 1 % → 98.5 % in 0.50 s (f155→f170; curve ease-in-quad 0.56 s from button size) | area 1 % at 353 ms after the command (snapshot capture first), 98.5 % at 787 ms → 434 ms | pass |
+| A3 reveal: segmented (item 1) | ζ 1.0, response 0.40 s → 90 % ≈ 0.27 s after the card starts; cards 0.12 s apart | visibly starts 139 ms after the command; 90 % 267 ms after its start | pass |
+| A3 reveal: metric tiles (item 3) | ζ 1.0, response 0.40 s → 90 % ≈ 0.27 s after the card starts; cards 0.12 s apart | visibly starts 206 ms after the command; 90 % 266 ms after its start | pass |
+| A3 reveal: charts (item 4) | ζ 1.0, response 0.40 s → 90 % ≈ 0.27 s after the card starts; cards 0.12 s apart | visibly starts 449 ms after the command; 90 % 256 ms after its start | pass |

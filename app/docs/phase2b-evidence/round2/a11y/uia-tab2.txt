@@ -1,0 +1,262 @@
+ControlType.Pane | Non Client Input Sink Window |  | 51,20,1478,48
+ControlType.Pane | AppWindow Custom Title Bar |  | 1322,20,207,48
+ControlType.Button | Minimize | Minimize | 1322,20,69,48
+ControlType.Button | Maximize | Maximize | 1391,20,69,48
+ControlType.Button | Close | Close | 1460,20,69,48
+ControlType.Text | Gate Control |  | 75,33,107,22
+ControlType.Text | Gate Control |  | 159,127,128,26
+ControlType.Pane | Search reports |  | 1028,116,48,48
+ControlType.Pane | Alerts |  | 1079,116,48,48
+ControlType.Pane | Account |  | 1151,110,252,60
+ControlType.Text | A |  | 1174,129,14,21
+ControlType.Text | Administrator |  | 1220,117,129,24
+ControlType.Text | Administrator |  | 1220,142,129,20
+ControlType.Pane | Light or dark |  | 1427,116,48,48
+ControlType.Pane | Live |  | 371,116,86,48
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Pane | Dashboard |  | 457,116,150,48
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Pane | Reports |  | 608,116,121,48
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Pane | Vehicles |  | 729,116,127,48
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Pane | Alerts |  | 856,116,104,48
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Pane | Users and roles |  | 105,200,42,42
+ControlType.Pane | Gates |  | 105,254,42,42
+ControlType.Pane | Data and retention |  | 105,308,42,42
+ControlType.Pane | Account and settings |  | 105,818,42,42
+ControlType.Pane | Sign out |  | 105,872,42,42
+ControlType.Text | Reports |  | 189,200,1280,51
+ControlType.Text | Every decision, visit and unclear read, searchable and exportable. |  | 189,257,1280,24
+ControlType.Text | Search |  | 517,313,155,24
+ControlType.Text | Visits |  | 673,313,156,24
+ControlType.Text | Unreadable |  | 829,313,156,24
+ControlType.Text | Trend |  | 985,313,156,24
+ControlType.Text | From |  | 213,395,47,24
+ControlType.Text | 24 Oct 2026 | DateText | 272,392,128,31
+ControlType.Text | to |  | 460,395,18,24
+ControlType.Text | 30 Oct 2026 | DateText | 490,392,128,31
+ControlType.Text | Filters |  | 192,473,496,27
+ControlType.Edit | Plate (any part, e.g. KDA 12) |  | 213,512,454,66
+ControlType.ComboBox | Result |  | 207,580,466,94
+ControlType.ComboBox | Vehicle |  | 207,670,466,94
+ControlType.ComboBox | Direction |  | 207,760,466,94
+ControlType.ComboBox | Gate |  | 207,850,466,94
+ControlType.Text | Min. confidence |  | Empty
+ControlType.Text | Any |  | Empty
+ControlType.Button | Search |  | Empty
+ControlType.Button | Clear |  | Empty
+ControlType.Button | Export CSV |  | Empty
+ControlType.Text | 100 vehicles |  | Empty
+ControlType.Text | Plate ú vehicle ú gate |  | Empty
+ControlType.Text | Result ú time |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:24 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:24 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:23 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:23 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:23 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:23 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:23 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:23 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:22 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:22 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:22 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:22 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:22 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:22 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:21 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:21 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:21 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:21 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:21 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:21 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:20 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:20 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:20 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:20 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:20 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:20 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:19 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:19 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:19 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:19 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:19 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:19 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:18 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:18 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:18 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:18 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:18 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:18 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:17 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:17 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:17 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:17 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:17 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:17 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:16 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:16 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:16 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:16 AM |  | Empty
+ControlType.Text | KDA 123X |  | Empty
+ControlType.Text | SUV ú gate-demo-01 ú 93% |  | Empty
+ControlType.Text | Allowed |  | Empty
+ControlType.Text | 10/29/2026 11:16 AM |  | Empty
+ControlType.Text | KDX 999Z |  | Empty
+ControlType.Text | Car ú gate-demo-01 ú 90% |  | Empty
+ControlType.Text | Denied |  | Empty
+ControlType.Text | 10/29/2026 11:16 AM |  | Empty
+ControlType.Button | Show more |  | Empty
+ControlType.ScrollBar | Vertical | VerticalScrollBar | Empty
+ControlType.Text | Select a vehicle |  | 745,446,694,27
+ControlType.Text | Its visits and every decision about it show here. |  | 745,482,694,24

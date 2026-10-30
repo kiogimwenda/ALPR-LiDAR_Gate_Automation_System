@@ -1,0 +1,63 @@
+ControlType.Pane | Non Client Input Sink Window |  | 51,20,1478,48
+ControlType.Pane | AppWindow Custom Title Bar |  | 1322,20,207,48
+ControlType.Button | Minimize | Minimize | 1322,20,69,48
+ControlType.Button | Maximize | Maximize | 1391,20,69,48
+ControlType.Button | Close | Close | 1460,20,69,48
+ControlType.Text | Gate Control |  | 75,33,107,22
+ControlType.Text | Gate Control |  | 159,127,128,26
+ControlType.Pane | Search reports |  | 1028,116,48,48
+ControlType.Pane | Alerts |  | 1079,116,48,48
+ControlType.Pane | Account |  | 1151,110,252,60
+ControlType.Text | A |  | 1174,129,14,21
+ControlType.Text | Administrator |  | 1220,117,129,24
+ControlType.Text | Administrator |  | 1220,142,129,20
+ControlType.Pane | Light or dark |  | 1427,116,48,48
+ControlType.Pane | Live |  | 371,116,86,48
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Pane | Dashboard |  | 457,116,150,48
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Pane | Reports |  | 608,116,121,48
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Pane | Vehicles |  | 729,116,127,48
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Pane | Alerts |  | 856,116,104,48
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Pane | Users and roles |  | 105,200,42,42
+ControlType.Pane | Gates |  | 105,254,42,42
+ControlType.Pane | Data and retention |  | 105,308,42,42
+ControlType.Pane | Account and settings |  | 105,818,42,42
+ControlType.Pane | Sign out |  | 105,872,42,42
+ControlType.Text | Live |  | 189,200,1280,51
+ControlType.Text | Gates, commands and every plate as it is read. |  | 189,257,1280,24
+ControlType.Text | Live |  | 255,340,36,22
+ControlType.Text | Today |  | 1387,339,52,22
+ControlType.Text | 0 |  | 219,381,55,101
+ControlType.Text | allowed |  | 286,435,89,29
+ControlType.Text | 0 refused ú 0 reads |  | 219,521,1220,25
+ControlType.Text | Gates |  | 195,606,1268,27
+ControlType.Text | gate-demo-01 |  | 213,672,495,33
+ControlType.Text | Closed |  | 720,678,61,22
+ControlType.Text | Entry & exit |  | 279,734,514,26
+ControlType.Text | Beam clear |  | 279,794,514,26
+ControlType.Text | No activity yet |  | 279,844,514,25
+ControlType.Text | fw sim-0.1.0 |  | 279,869,514,20
+ControlType.Button | Open |  | 213,908,238,42
+ControlType.Button | Close |  | 463,908,239,42
+ControlType.Button | More gate controls |  | 715,908,78,42
+ControlType.Text | gate-demo-02 |  | 864,672,495,33
+ControlType.Text | Closed |  | 1372,678,61,22
+ControlType.Text | Entry & exit |  | 930,734,514,26
+ControlType.Text | Beam clear |  | 930,794,514,26
+ControlType.Text | No activity yet |  | 930,844,514,25
+ControlType.Text | fw sim-0.1.0 |  | 930,869,514,20
+ControlType.Button | Open |  | 864,908,239,42
+ControlType.Button | Close |  | 1116,908,239,42
+ControlType.Button | More gate controls |  | 1367,908,78,42
+ControlType.Text | Latest vehicles |  | Empty
+ControlType.Text | Vehicles appear here the moment a plate is read. |  | Empty
+ControlType.ScrollBar | Vertical | VerticalScrollBar | Empty

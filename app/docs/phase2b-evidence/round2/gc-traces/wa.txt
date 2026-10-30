@@ -1,0 +1,53 @@
+    2921.0 ms GCTriggered reason Induced thread 52940
+   stack: !0x7fffc698d60f
+          System.Runtime.InteropServices.ReferenceTrackerHost.IReferenceTrackerHost_DisconnectUnusedReferenceSources(int,unsigned int32)
+          ABI.Microsoft.UI.Xaml.IApplicationStaticsMethods.Start(class WinRT.IObjectReference,class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          Microsoft.UI.Xaml.Application.Start(class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          GateControl.WinUI.Program.Main(class System.String[])
+    2927.9 ms GCStart #12 depth 2 reason Induced type NonConcurrentGC  alloc-ticks since last GC 1609 KB
+   stack: (no stack)
+            global: condemned gen 2 gen0 reduction 2 reason Induced mode SustainedLowLatency mem pressure 88%
+    2964.3 ms GCEnd   #12 depth 2
+            heap gen0 0.0 gen1 0.9 gen2 13.2 LOH 9.8 POH 0.1 MB, pinned 2
+    3845.6 ms GCTriggered reason InducedNotForced thread 52940
+   stack: WinRT.IObjectReference.As(value class System.Guid)
+          Microsoft.UI.Xaml.Media.FontFamily.Make___objRef_global__Microsoft_UI_Xaml_Media_IFontFamily()
+          Microsoft.UI.Xaml.Media.FontFamily.get__objRef_global__Microsoft_UI_Xaml_Media_IFontFamily()
+          Microsoft.UI.Xaml.Media.FontFamily.get_Source()
+          Microsoft.Maui.Graphics.Win2D.FontExtensions.ToCanvasTextFormat(class Microsoft.Maui.Graphics.IFont,float32)
+          Microsoft.Maui.Graphics.Win2D.W2DCanvas.DrawString(class System.String,float32,float32,float32,float32,value class Microsoft.Maui.Graphics.HorizontalAlignment,value class Microsoft.Maui.Graphics.VerticalAlignment,value class Microsoft.Maui.Graphics.TextFlow,float32)
+          GateControl.Controls.ChartView.XLabels(class Microsoft.Maui.Graphics.ICanvas,value class Microsoft.Maui.Graphics.RectF,class System.Collections.Generic.List`1<class GateControl.Core.ViewModels.ChartPoint>,float32)
+          GateControl.Controls.ChartView.DrawStacked(class Microsoft.Maui.Graphics.ICanvas,value class Microsoft.Maui.Graphics.RectF,class System.Collections.Generic.List`1<class GateControl.Core.ViewModels.ChartPoint>)
+          GateControl.Controls.ChartView.DrawCore(class Microsoft.Maui.Graphics.ICanvas,value class Microsoft.Maui.Graphics.RectF)
+          GateControl.Controls.ChartView.Draw(class Microsoft.Maui.Graphics.ICanvas,value class Microsoft.Maui.Graphics.RectF)
+          Microsoft.Maui.Graphics.Win2D.W2DGraphicsView.OnDraw(class Microsoft.Graphics.Canvas.UI.Xaml.CanvasControl,class Microsoft.Graphics.Canvas.UI.Xaml.CanvasDrawEventArgs)
+          WinRT._EventSource_global__Windows_Foundation_TypedEventHandler_global__Microsoft_Graphics_Canvas_UI_Xaml_CanvasControl__global__Microsoft_Graphics_Canvas_UI_Xaml_CanvasDrawEventArgs_+EventState.<GetEventInvoke>b__1_0(class Microsoft.Graphics.Canvas.UI.Xaml.CanvasControl,class Microsoft.Graphics.Canvas.UI.Xaml.CanvasDrawEventArgs)
+          WinRT.GenericTypeInstantiations.Windows_Foundation_TypedEventHandler_2_Microsoft_Graphics_Canvas_UI_Xaml_CanvasControl__Microsoft_Graphics_Canvas_UI_Xaml_CanvasDrawEventArgs.Do_Abi_Invoke(int,int,int)
+          ABI.Microsoft.UI.Xaml.IApplicationStaticsMethods.Start(class WinRT.IObjectReference,class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          Microsoft.UI.Xaml.Application.Start(class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          GateControl.WinUI.Program.Main(class System.String[])
+    3853.4 ms GCStart #13 depth 2 reason InducedNotForced type BackgroundGC  alloc-ticks since last GC 4314 KB
+   stack: (no stack)
+            global: condemned gen 2 gen0 reduction 2 reason InducedNotForced mode SustainedLowLatency mem pressure 88%
+    3872.9 ms GCEnd   #13 depth 2
+            heap gen0 4.1 gen1 0.9 gen2 13.2 LOH 9.8 POH 0.1 MB, pinned 0
+    4745.5 ms GCTriggered reason InducedNotForced thread 52940
+   stack: ABI.Microsoft.UI.Xaml.Media.FontFamilyRcwFactoryAttribute.CreateInstance(class WinRT.IInspectable)
+          WinRT.DefaultComWrappers.CreateObject(int)
+          System.Runtime.InteropServices.ComWrappers.CreateAndRegisterObjectForComInstance(int,int,value class System.Runtime.InteropServices.CreateObjectFlags,class System.Object,int&)
+          System.Runtime.InteropServices.ComWrappers.TryGetOrCreateObjectForComInstanceInternal(int,int,value class System.Runtime.InteropServices.CreateObjectFlags,class System.Object,class System.Object,class System.Object&)
+          System.Runtime.InteropServices.ComWrappers.GetOrCreateObjectForComInstance(int,value class System.Runtime.InteropServices.CreateObjectFlags)
+          Microsoft.Maui.Graphics.Win2D.W2DCanvas.DrawString(class System.String,float32,float32,float32,float32,value class Microsoft.Maui.Graphics.HorizontalAlignment,value class Microsoft.Maui.Graphics.VerticalAlignment,value class Microsoft.Maui.Graphics.TextFlow,float32)
+          GateControl.Controls.ChartView.XLabels(class Microsoft.Maui.Graphics.ICanvas,value class Microsoft.Maui.Graphics.RectF,class System.Collections.Generic.List`1<class GateControl.Core.ViewModels.ChartPoint>,float32)
+          GateControl.Controls.ChartView.DrawStacked(class Microsoft.Maui.Graphics.ICanvas,value class Microsoft.Maui.Graphics.RectF,class System.Collections.Generic.List`1<class GateControl.Core.ViewModels.ChartPoint>)
+          GateControl.Controls.ChartView.DrawCore(class Microsoft.Maui.Graphics.ICanvas,value class Microsoft.Maui.Graphics.RectF)
+          WinRT._EventSource_global__Windows_Foundation_TypedEventHandler_global__Microsoft_Graphics_Canvas_UI_Xaml_CanvasControl__global__Microsoft_Graphics_Canvas_UI_Xaml_CanvasDrawEventArgs_+EventState.<GetEventInvoke>b__1_0(class Microsoft.Graphics.Canvas.UI.Xaml.CanvasControl,class Microsoft.Graphics.Canvas.UI.Xaml.CanvasDrawEventArgs)
+          WinRT.GenericTypeInstantiations.Windows_Foundation_TypedEventHandler_2_Microsoft_Graphics_Canvas_UI_Xaml_CanvasControl__Microsoft_Graphics_Canvas_UI_Xaml_CanvasDrawEventArgs.Do_Abi_Invoke(int,int,int)
+          ABI.Microsoft.UI.Xaml.IApplicationStaticsMethods.Start(class WinRT.IObjectReference,class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          Microsoft.UI.Xaml.Application.Start(class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          GateControl.WinUI.Program.Main(class System.String[])
+    4755.1 ms GCStart #14 depth 2 reason InducedNotForced type BackgroundGC  alloc-ticks since last GC 3554 KB
+   stack: (no stack)
+            global: condemned gen 2 gen0 reduction 2 reason InducedNotForced mode SustainedLowLatency mem pressure 88%
+    4776.1 ms GCEnd   #14 depth 2
+            heap gen0 5.2 gen1 0.9 gen2 13.2 LOH 9.5 POH 0.1 MB, pinned 0

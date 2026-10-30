@@ -1,0 +1,44 @@
+ControlType.Pane | Non Client Input Sink Window |  | 51,20,1478,48
+ControlType.Pane | AppWindow Custom Title Bar |  | 1322,20,207,48
+ControlType.Button | Minimize | Minimize | 1322,20,69,48
+ControlType.Button | Maximize | Maximize | 1391,20,69,48
+ControlType.Button | Close | Close | 1460,20,69,48
+ControlType.Text | Gate Control |  | 75,33,107,22
+ControlType.Text | Gate Control |  | 159,127,128,26
+ControlType.Pane | Search reports |  | 1028,116,48,48
+ControlType.Pane | Alerts |  | 1079,116,48,48
+ControlType.Pane | Account |  | 1151,110,252,60
+ControlType.Text | A |  | 1174,129,14,21
+ControlType.Text | Administrator |  | 1220,117,129,24
+ControlType.Text | Administrator |  | 1220,142,129,20
+ControlType.Pane | Light or dark |  | 1427,116,48,48
+ControlType.Pane | Live |  | 371,116,86,48
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Pane | Dashboard |  | 457,116,150,48
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Pane | Reports |  | 608,116,121,48
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Pane | Vehicles |  | 729,116,127,48
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Pane | Alerts |  | 856,116,104,48
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Pane | Users and roles |  | 105,200,42,42
+ControlType.Pane | Gates |  | 105,254,42,42
+ControlType.Pane | Data and retention |  | 105,308,42,42
+ControlType.Pane | Account and settings |  | 105,818,42,42
+ControlType.Pane | Sign out |  | 105,872,42,42
+ControlType.Text | Vehicles |  | 189,200,1047,51
+ControlType.Text | Registered vehicles the gates let in, with their owners and limits. |  | 189,257,1047,24
+ControlType.Button | +  Add vehicle |  | 1254,211,215,60
+ControlType.Text | Registered |  | 213,326,1129,27
+ControlType.Text | 1 vehicle |  | 1354,329,79,22
+ControlType.Edit | Search plate, owner or unit |  | 266,366,1161,60
+ControlType.Text | KDA 123X |  | 285,452,1142,28
+ControlType.Text | Demo Resident ú D-1 |  | 285,480,1142,24
+ControlType.Text | Car, SUV |  | 285,507,1142,20
+ControlType.Text | Swipe left on a vehicle to remove it. |  | 195,573,1268,22

@@ -1,0 +1,38 @@
+Gate Control — Phase 2b timing table (Windows 11, Release build with the measurement harness,
+1500x960 window at 1.5x scale, display at 240 Hz; tolerance ±2 frames at 30 fps = ±67 ms,
+stagger ±33 ms per the review). Method: in-app per-frame trace (CompositionTarget.Rendering,
+Platform/Automation.cs "trace") for entrances; PrintWindow bursts (~30 fps) for the theme wipe
+and A7; tools in app/tools/motion-capture/.
+
+| Animation | Reference (video) | Measured | Result |
+|---|---|---|---|
+| A3 card stagger, every entrance (card→card start) | 120 ms | Dashboard later 133/121/125/117/125; Alerts 121/121/117 and 121/117/121; Reports 121/125/133 (first), 108/137/117 (later); Live 137/117; Dashboard FIRST visit 167/88/125/121/117 (one step +47 ms, behind a 51 ms stall) | pass, except one step on Dashboard's first visit |
+| A3 card reveal (fade/rise/scale curve) | (1.0, 0.40) | every traced item monotonic in opacity and rise; per-frame steps within 2x the spring's steepest step except where a long frame preceded them (listed per entrance) | pass |
+| A5 count-up | OutCubic 1.45 s, lands and holds | TimedProgress.CountUp (unit-tested against the video's values, ±1 %); labels pinned to their final size while counting (no layout per frame) | pass (unit test) |
+| A7 stacked bars | bar n starts 65 ms after n-1, cap 0.2 s after its base, (1.0, 0.45) | demo data has one non-empty hour; cap height at +253/+319/+353/+419/+501 ms: 8/25/35/43/50 px measured vs 9/26/33/43/49 px model (53 px bar); base grows from the first frame (rank 0). Per-bar stagger by rank among non-empty bars: unit test ChartBarsStaggerAndCapsFollowTheirBase | pass (cap delay and curve); stagger by unit test |
+| A8 nav pill | (1.0, 0.36) | unchanged from Phase 2a: (1.0, 0.38), interruptible | pass (2a) |
+| A11 theme reveal: tap → first wipe frame | immediate | 21 ms (pointer-down snapshot), 21 ms, 24 ms (no pointer-down) | pass (target ≤ 100 ms) |
+| A11 theme reveal: area 1 % → 98.5 % | 500 ms | 484 / 527 / 499 ms | pass (500 ± 33 ms) |
+| A11 origin | the rail's moon (video) | the top-right toggle (user request) | by design |
+| Reduce Motion (DEBUG/harness override) | — | Dashboard and Vehicles entrances: one fade, no stagger, 0 dropped frames; theme: 0.2 s cross-fade | pass |
+
+Page-load smoothness (60 Hz budget, i.e. a frame > 16.7 ms drops round(d/16.7)-1 frames):
+
+| Entrance | frames | p90 ms | max ms | dropped @60 Hz | card steps ms | monotonic | shown before reveal | jumps > 2x spring |
+|---|---|---|---|---|---|---|---|---|
+| Dashboard, first visit | 359 | 8.3 | 50.9 | 4 | 167, 88, 125, 121, 117 | yes | 0 | 4 (after the stall) |
+| Reports, first visit | 307 | 8.4 | 21.3 | 0 | 121, 125, 133 | yes | 0 | 0 |
+| Vehicles, first visit | 415 | 4.3 | 54.5 | 2 | — | yes | 0 | 0 |
+| Alerts, first visit | 419 | 4.3 | 50.6 | 2 | 121, 117, 121 | yes | 0 | 1 |
+| Live, later visit | 377 | 8.3 | 41.5 | 1 | 137, 117 | yes | 0 | 1 |
+| Dashboard, later visit | 385 | 8.3 | 16.4 | 0 | 133, 121, 125, 117, 125 | yes | 0 | 0 |
+| Reports, later visit | 294 | 12.4 | 40.2 | 2 | 108, 137, 117 | yes | 0 | 5 (after the stall) |
+| Vehicles, later visit | 428 | 4.2 | 11.4 | 0 | — | yes | 0 | 0 |
+| Alerts, later visit | 434 | 4.2 | 4.6 | 0 | 121, 121, 117 | yes | 0 | 0 |
+| Dashboard, Reduce Motion | 216 | 4.2 | 11.3 | 0 | — | yes | 0 | 0 |
+| Vehicles, Reduce Motion | 218 | 4.2 | 7.8 | 0 | — | yes | 0 | 0 |
+
+Where the long frames fall (ms after the switch, duration): Dashboard first visit 56 (49), 152 (51);
+Vehicles first visit 14 (54) — the switch frame itself; Alerts first visit 330 (51); Live later 35 (41);
+Reports later 197 (40), 435 (30). Target was 0, at most 1: met by 5 of the 9 entrance types. Runs on this
+machine vary by ±2 dropped frames between sessions (it also hosts a VirtualBox VM).

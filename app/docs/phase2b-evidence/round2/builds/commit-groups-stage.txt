@@ -1,0 +1,21 @@
+group1 windows: exit 0,  0 Warning(s)  0 Error(s) 
+group2 windows: exit 0,  0 Warning(s)  0 Error(s) 
+group2 tests: Passed!  - Failed:     0, Passed:    95, Skipped:     0, Total:    95, Duration: 264 ms - GateControl.Core.Tests.dll (net10.0)
+group3 windows: exit 0,  4 Warning(s)  0 Error(s) 
+group4 windows: exit 0,  0 Warning(s)  0 Error(s) 
+group5 windows: exit 0,  0 Warning(s)  0 Error(s) 
+group5 tests: Passed!  - Failed:     0, Passed:   105, Skipped:     0, Total:   105, Duration: 122 ms - GateControl.Core.Tests.dll (net10.0)
+group6 windows: exit 0,  0 Warning(s)  0 Error(s) 
+group6 android: exit 0,  0 Warning(s)  0 Error(s) 
+diff vs working tree (app/, excluding evidence bursts):
+Files /home/deby/projects/gate-automation/app/GateControl.slnx and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/GateControl.slnx differ
+Only in /home/deby/projects/gate-automation/app: .idea
+Only in /home/deby/projects/gate-automation/app/src/GateControl.App: obj
+Files /home/deby/projects/gate-automation/app/src/GateControl.App/Platforms/Android/MainActivity.cs and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/src/GateControl.App/Platforms/Android/MainActivity.cs differ
+Files /home/deby/projects/gate-automation/app/src/GateControl.App/Platforms/Android/MainApplication.cs and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/src/GateControl.App/Platforms/Android/MainApplication.cs differ
+Files /home/deby/projects/gate-automation/app/src/GateControl.App/Platforms/Android/Resources/values/colors.xml and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/src/GateControl.App/Platforms/Android/Resources/values/colors.xml differ
+Files /home/deby/projects/gate-automation/app/src/GateControl.App/Platforms/iOS/AppDelegate.cs and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/src/GateControl.App/Platforms/iOS/AppDelegate.cs differ
+Files /home/deby/projects/gate-automation/app/src/GateControl.App/Platforms/iOS/Program.cs and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/src/GateControl.App/Platforms/iOS/Program.cs differ
+Files /home/deby/projects/gate-automation/app/src/GateControl.App/Platforms/iOS/Resources/PrivacyInfo.xcprivacy and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/src/GateControl.App/Platforms/iOS/Resources/PrivacyInfo.xcprivacy differ
+Files /home/deby/projects/gate-automation/app/src/GateControl.App/Platforms/MacCatalyst/AppDelegate.cs and /tmp/claude-1000/-home-deby-projects-gate-automation/2ee2d9ba-0769-44f3-a6a1-47be00738d3e/scratchpad/stage/wt/app/src/GateControl.App/Platforms/MacCatalyst/AppDelegate.cs differ
+exit 0

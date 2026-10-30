@@ -1,0 +1,15 @@
+   19560.4 ms GCTriggered reason InducedNotForced thread 44336
+   stack: WinRT.ObjectReference`1[WinRT.Interop.IUnknownVftbl].TryAs(class WinRT.IObjectReference,value class System.Guid,class WinRT.ObjectReference`1<!0>&)
+          WinRT.DefaultComWrappers.CreateObject(int)
+          System.Runtime.InteropServices.ComWrappers.CreateAndRegisterObjectForComInstance(int,int,value class System.Runtime.InteropServices.CreateObjectFlags,class System.Object,int&)
+          System.Runtime.InteropServices.ComWrappers.TryGetOrCreateObjectForComInstanceInternal(int,int,value class System.Runtime.InteropServices.CreateObjectFlags,class System.Object,class System.Object,class System.Object&)
+          WinRT.ComWrappersSupport.CreateRcwForComObject(int,bool)
+          WinRT.GenericTypeInstantiations.Windows_Foundation_EventHandler_1_object.Do_Abi_Invoke(int,int,int)
+          ABI.Microsoft.UI.Xaml.IApplicationStaticsMethods.Start(class WinRT.IObjectReference,class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          Microsoft.UI.Xaml.Application.Start(class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          GateControl.WinUI.Program.Main(class System.String[])
+   19575.8 ms GCStart #17 depth 2 reason InducedNotForced type BackgroundGC  alloc-ticks since last GC 7363 KB
+   stack: (no stack)
+            global: condemned gen 2 gen0 reduction 2 reason InducedNotForced mode Interactive mem pressure 85%
+   19615.5 ms GCEnd   #17 depth 2
+            heap gen0 11.3 gen1 1.3 gen2 23.9 LOH 9.9 POH 0.1 MB, pinned 0

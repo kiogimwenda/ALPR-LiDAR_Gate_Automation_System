@@ -1,0 +1,11 @@
+    2829.7 ms GCTriggered reason Induced thread 54100
+   stack: !0x7ffbee30d60f
+          System.Runtime.InteropServices.ReferenceTrackerHost.IReferenceTrackerHost_DisconnectUnusedReferenceSources(int,unsigned int32)
+          ABI.Microsoft.UI.Xaml.IApplicationStaticsMethods.Start(class WinRT.IObjectReference,class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          Microsoft.UI.Xaml.Application.Start(class Microsoft.UI.Xaml.ApplicationInitializationCallback)
+          GateControl.WinUI.Program.Main(class System.String[])
+    2851.9 ms GCStart #11 depth 2 reason Induced type NonConcurrentGC  alloc-ticks since last GC 564 KB
+   stack: (no stack)
+            global: condemned gen 2 gen0 reduction 2 reason Induced mode SustainedLowLatency mem pressure 87%
+    2896.7 ms GCEnd   #11 depth 2
+            heap gen0 0.0 gen1 7.5 gen2 22.2 LOH 9.8 POH 0.1 MB, pinned 2

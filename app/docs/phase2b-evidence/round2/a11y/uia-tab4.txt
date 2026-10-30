@@ -1,0 +1,41 @@
+ControlType.Pane | Non Client Input Sink Window |  | 51,20,1478,48
+ControlType.Pane | AppWindow Custom Title Bar |  | 1322,20,207,48
+ControlType.Button | Minimize | Minimize | 1322,20,69,48
+ControlType.Button | Maximize | Maximize | 1391,20,69,48
+ControlType.Button | Close | Close | 1460,20,69,48
+ControlType.Text | Gate Control |  | 75,33,107,22
+ControlType.Text | Gate Control |  | 159,127,128,26
+ControlType.Pane | Search reports |  | 1028,116,48,48
+ControlType.Pane | Alerts |  | 1079,116,48,48
+ControlType.Pane | Account |  | 1151,110,252,60
+ControlType.Text | A |  | 1174,129,14,21
+ControlType.Text | Administrator |  | 1220,117,129,24
+ControlType.Text | Administrator |  | 1220,142,129,20
+ControlType.Pane | Light or dark |  | 1427,116,48,48
+ControlType.Pane | Live |  | 371,116,86,48
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Pane | Dashboard |  | 457,116,150,48
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Pane | Reports |  | 608,116,121,48
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Pane | Vehicles |  | 729,116,127,48
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Pane | Alerts |  | 856,116,104,48
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Pane | Users and roles |  | 105,200,42,42
+ControlType.Pane | Gates |  | 105,254,42,42
+ControlType.Pane | Data and retention |  | 105,308,42,42
+ControlType.Pane | Account and settings |  | 105,818,42,42
+ControlType.Pane | Sign out |  | 105,872,42,42
+ControlType.Text | Alerts |  | 189,200,1262,51
+ControlType.Text | 0 open ú blocklisted plates, swapped plates, gate faults, failed commands |  | 189,257,1262,25
+ControlType.Text | Open |  | 210,338,229,24
+ControlType.Text | All |  | 439,338,230,24
+ControlType.Text | All clear. No alerts need attention. |  | 213,423,453,24
+ControlType.Text | Select an alert |  | 745,384,694,27
+ControlType.Text | The vehicle's visits and every decision about it show here. |  | 745,420,694,24

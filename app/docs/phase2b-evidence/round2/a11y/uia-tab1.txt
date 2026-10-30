@@ -1,0 +1,79 @@
+ControlType.Pane | Non Client Input Sink Window |  | 51,20,1478,48
+ControlType.Pane | AppWindow Custom Title Bar |  | 1322,20,207,48
+ControlType.Button | Minimize | Minimize | 1322,20,69,48
+ControlType.Button | Maximize | Maximize | 1391,20,69,48
+ControlType.Button | Close | Close | 1460,20,69,48
+ControlType.Text | Gate Control |  | 75,33,107,22
+ControlType.Text | Gate Control |  | 159,127,128,26
+ControlType.Pane | Search reports |  | 1028,116,48,48
+ControlType.Pane | Alerts |  | 1079,116,48,48
+ControlType.Pane | Account |  | 1151,110,252,60
+ControlType.Text | A |  | 1174,129,14,21
+ControlType.Text | Administrator |  | 1220,117,129,24
+ControlType.Text | Administrator |  | 1220,142,129,20
+ControlType.Pane | Light or dark |  | 1427,116,48,48
+ControlType.Pane | Live |  | 371,116,86,48
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Text | Live |  | 395,128,39,24
+ControlType.Pane | Dashboard |  | 457,116,150,48
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Text | Dashboard |  | 481,128,102,24
+ControlType.Pane | Reports |  | 608,116,121,48
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Text | Reports |  | 632,128,73,24
+ControlType.Pane | Vehicles |  | 729,116,127,48
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Text | Vehicles |  | 753,128,79,24
+ControlType.Pane | Alerts |  | 856,116,104,48
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Text | Alerts |  | 880,128,56,24
+ControlType.Pane | Users and roles |  | 105,200,42,42
+ControlType.Pane | Gates |  | 105,254,42,42
+ControlType.Pane | Data and retention |  | 105,308,42,42
+ControlType.Pane | Account and settings |  | 105,818,42,42
+ControlType.Pane | Sign out |  | 105,872,42,42
+ControlType.Text | Good evening, Administrator |  | 189,200,1280,51
+ControlType.Text | Today |  | 189,257,1280,24
+ControlType.Text | Today |  | 192,313,148,24
+ControlType.Text | 7 days |  | 340,313,147,24
+ControlType.Text | 30 days |  | 487,313,148,24
+ControlType.Text | Vehicles |  | 219,404,568,24
+ControlType.Text | 0 |  | 219,486,568,80
+ControlType.Text | 0 different plates |  | 231,579,148,22
+ControlType.Text | Allowed |  | 873,404,254,22
+ControlType.Text | 0 |  | 873,429,254,51
+ControlType.Text | Refused |  | 1182,404,254,22
+ControlType.Text | 0 |  | 1182,429,254,51
+ControlType.Text | On site now |  | 873,528,562,22
+ControlType.Text | 0 |  | 873,553,562,51
+ControlType.Text | Vehicles by hour |  | 213,682,1049,27
+ControlType.Text | Allowed and refused reads |  | 213,709,1049,20
+ControlType.Text | Allowed |  | 1282,682,62,20
+ControlType.Text | Refused |  | 1381,682,65,20
+ControlType.Text | Entries |  | Empty
+ControlType.Text | 0 |  | Empty
+ControlType.Text | Allowed in |  | Empty
+ControlType.Text | Exits |  | Empty
+ControlType.Text | 0 |  | Empty
+ControlType.Text | Allowed out |  | Empty
+ControlType.Text | Average stay |  | Empty
+ControlType.Text | - |  | Empty
+ControlType.Text | Completed visits |  | Empty
+ControlType.Text | Busiest hour |  | Empty
+ControlType.Text | - |  | Empty
+ControlType.Text | Gates online |  | Empty
+ControlType.Text | 2 of 2 |  | Empty
+ControlType.Text | Open alerts |  | Empty
+ControlType.Text | 0 |  | Empty
+ControlType.Text | Entries and exits |  | Empty
+ControlType.Text | Entries |  | Empty
+ControlType.Text | Exits |  | Empty
+ControlType.Text | Results |  | Empty
+ControlType.Text | Vehicle types |  | Empty
+ControlType.Text | Length of stay |  | Empty
+ControlType.Text | Most frequent |  | Empty
+ControlType.Text | Plate |  | Empty
+ControlType.Text | Last seen |  | Empty
+ControlType.Text | Visits |  | Empty
+ControlType.Text | No vehicles in this period. |  | Empty
+ControlType.ScrollBar | Vertical | VerticalScrollBar | Empty

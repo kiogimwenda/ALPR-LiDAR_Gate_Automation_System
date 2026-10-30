@@ -1,0 +1,11 @@
+alerts before: 3 open alerts
+alerts after clear one: 2 open alerts
+2026-10-23 20:28:28.410 Information Haptics: haptic Success
+2026-10-24 11:02:22.635 Information Haptics: haptic Success
+2026-10-24 11:02:46.326 Information Haptics: haptic Tap
+2026-10-24 11:02:55.893 Information Haptics: haptic Tap
+2026-10-24 11:02:55.900 Information Haptics: haptic Error
+2026-10-24 11:03:02.050 Information Haptics: haptic Tap
+2026-10-24 11:03:02.059 Information Haptics: haptic Error
+2026-10-24 11:03:16.953 Information Haptics: haptic Success
+2026-10-24 17:48 re-run Hold open: log 'haptic Tap' then 'haptic Error' (simulator refused the hold); screenshot gate-hold.png

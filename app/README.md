@@ -1,7 +1,8 @@
 # Gate Control — the operator app
 
 A native app for **Android, iOS, macOS (Mac Catalyst) and Windows**,
-built with .NET MAUI. It replaces the old web dashboard (see
+built with .NET MAUI. Windows is built and run-tested; **Android: built, not
+run-tested; needs a device**; iOS / macOS are not built here. It replaces the old web dashboard (see
 [ADR-013](../docs/decisions/ADR-013-native-operator-app.md)) and talks to
 `gate-dashboard`'s HTTP + WebSocket API.
 
@@ -32,19 +33,26 @@ The interface follows Apple's motion and typography principles (the
 |---|---|
 | Respond on press | `Motion/Motion.cs` `Pressable`: scale 0.97 on touch-**down** (~100 ms spring). Every `Button` gets it through a handler mapping. |
 | Interruptible | One long-lived spring per view and property; a new target retargets it, keeping position and velocity (`Spr.To`). |
-| Springs, not curves | `GateControl.Core/Motion/Spring.cs`: damping ratio + response, closed-form step (exact at any frame rate). No durations anywhere. |
+| Springs, not curves | `GateControl.Core/Motion/Spring.cs`: damping ratio + response, closed-form step (exact at any frame rate). Two measured exceptions use a timed curve (`Motion/Timing.cs`): number count-ups (ease-out-cubic 1.45 s) and the theme reveal (ease-in-quad 0.62 s). |
 | Direct manipulation, rubber-banding, velocity handoff, momentum | `Controls/Sheet.cs`: drag 1:1 from the grab point, 0.55 resistance past the top, release judged by projected landing (`Gesture.Project`, 0.998), flick speed carried into the spring. |
 | Spatial consistency | Sheets leave the way they came (down). Feed rows drop in from above. |
 | Gesture details | A press that moves ~10 pt becomes a scroll: the highlight cancels. |
-| Smooth frames | Only transform and opacity are animated. |
+| Smooth frames | Only transform and opacity are animated, plus three documented exceptions: count-up text, the wavy clip of the theme reveal / accent tile (`Motion/BlobClip.cs`), and the reveal blur on Android 12+ (`Motion/PlatformBlur.cs`, off by default until measured on a device). On Windows nothing creates WinUI objects per frame (`Platform/WinTransform.cs`, the native blob clip, cached chart text formats), and WinUI's own memory-check collection is run at idle after the tabs are warmed (`RootPage.SettleXamlCleanup`); measured: every tab entrance 0 dropped frames over 5 launches, tap → pill motion ≤ 9 ms; the light/dark wipe starts ≤ 91 ms after the tap with 0 dropped frames (Windows, 240 Hz, Release build with the measurement harness; `docs/phase2b-evidence/round2/acceptance-table.md`, `theme-reveal.md`). Parked tabs are kept out of keyboard focus and UI Automation (`Controls/ParkHost.cs`). Known: the frame ticker's one CompositionTarget.Rendering handler gets a WinRT event-args wrapper per frame, whose memory pressure can occasionally induce a background gen-2 collection while something animates (one 39 ms frame seen in a 40 s traced run; none in the 45 measured entrances). |
 | Materials | One translucent layer (tab bar chrome, sheet scrim); never glass on glass. |
 | Multimodal feedback | `Platform/PlatformServices.cs` `Haptics`: success, warning and error notifications on iOS, confirm and reject on Android, in the same frame as the motion. |
 | Reduced motion | `MotionSettings.ReduceMotion` reads the OS setting on every platform; slides become quick cross-fades, press scale becomes a dim. |
-| Typography | `Resources/Styles/Styles.xaml`: Apple's text styles; tracking tightens as type grows (−0.7 at 34 pt → 0 at body). |
+| Typography | `Resources/Styles/Styles.xaml`: Inter ("Inter GC", tabular digits frozen in so counting numbers never jitter); tracking tightens as type grows. |
 
-Colours are semantic (`Resources/Styles/Colors.xaml`, the iOS system
-palette in light and dark). Views ask for a meaning (positive, negative,
-caution, accent), never a hue.
+The visual design (layout, palette, motion catalogue) is specified in
+[docs/design-video-spec.md](docs/design-video-spec.md). The shell is one
+persistent page (`Pages/RootPage.cs`): a floating header with the
+navigation capsule and its sliding pill, a left rail on wide windows, and
+the same capsule at the bottom on phones; the light/dark toggle is at the
+top-right end of the header. Colours are semantic
+(`Resources/Styles/Colors.xaml`, light and dark): ink for selection and
+primary actions, one brand orange used sparingly, and four meanings
+(positive, negative, caution, neutral). Views ask for a meaning, never a
+hue.
 
 ## Projects
 
@@ -109,3 +117,10 @@ The app uses:
 
 Plain HTTP on the site LAN is permitted by the app's network policy.
 Put the dashboard behind TLS for anything beyond the site LAN.
+
+## Third-party notices
+
+| Component | Where | Licence |
+|---|---|---|
+| [Inter](https://github.com/rsms/inter) 4.1, Copyright 2016 The Inter Project Authors | `src/GateControl.App/Resources/Fonts/InterGC-*.ttf` | SIL Open Font License 1.1, full text in [`Resources/Fonts/OFL.txt`](src/GateControl.App/Resources/Fonts/OFL.txt). Modified version: the `tnum` feature is frozen into the character map for the digits 0–9 only (tabular figures by default; punctuation unchanged) and the family is renamed **"Inter GC"**, as the OFL asks of modified fonts. Rebuild with `tools/design-assets/freeze_tnum.py`. |
+| [Lucide](https://lucide.dev) icons 0.460.0 (portions from Feather, MIT) | sources `src/GateControl.App/Resources/Icons/*.svg`; generated path data `Controls/Icons.cs` | ISC licence, full text in [`Resources/Icons/LICENSE.txt`](src/GateControl.App/Resources/Icons/LICENSE.txt). Regenerate `Icons.cs` with `tools/design-assets/lucide2cs.py`. |

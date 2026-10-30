@@ -1,0 +1,10 @@
+tab 0: 63 UIA elements, 0 outside the window (right edge 1540)
+tab 1: 79 UIA elements, 0 outside the window (right edge 1540)
+tab 2: 262 UIA elements, 0 outside the window (right edge 1540)
+tab 3: 44 UIA elements, 0 outside the window (right edge 1540)
+tab 4: 41 UIA elements, 0 outside the window (right edge 1540)
+  tabstops (tab 0): 6 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 1): 1 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 2): 12 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 3): 3 reachable outside parked tabs, 0 inside parked tabs 
+  tabstops (tab 4): 1 reachable outside parked tabs, 0 inside parked tabs 
