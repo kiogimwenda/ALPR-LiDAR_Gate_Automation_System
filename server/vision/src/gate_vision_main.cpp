@@ -13,8 +13,10 @@
 //                       bench dry-runs with no camera attached
 //   --camera <uri>      RTSP/file/device through the TensorRT ALPR
 //                       pipeline (ENABLE_GPU builds only), with
-//                       --detector-engine / --recognizer-engine /
-//                       --ocr-dictionary
+//                       --detector-engine / --recognizer-engine and either
+//                       --plate-config (fixed-slot recognizer, the default
+//                       --recognizer-mode slots) or --ocr-dictionary
+//                       (--recognizer-mode ctc, PaddleOCR)
 //
 // LiDAR (Phase 6.1), added on top of either source:
 //   --lidar <spec>      synthetic:<scene.json> | pcd:<dir> |
@@ -33,6 +35,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <string>
@@ -128,14 +131,39 @@ int main(int argc, char** argv) {
     gate::vision::CameraSource::Config cam_cfg;
     app.add_option("--camera", cam_cfg.uri,
                    "Capture URI: rtsp://…, a video file, or a V4L2 index.");
+    // Defaults are the deployed models (scripts/export-models/build_engines.sh):
+    // YOLOv9-s-608 + EfficientNMS_TRT and the fast-plate-ocr fixed-slot recognizer.
+    cam_cfg.alpr.recognizer.mode = gate::inference::PlateRecognizer::Mode::kSlots;
     app.add_option("--detector-engine", cam_cfg.alpr.detector.engine_path,
-                   "YOLOv9 plate detector TensorRT .plan")
+                   "Plate detector TensorRT .plan (EfficientNMS_TRT outputs)")
+        ->needs(app.get_option("--camera"));
+    app.add_option("--detector-conf-floor", cam_cfg.alpr.detector.confidence_floor,
+                   "Minimum detector score kept (operating point).")
+        ->capture_default_str()
+        ->check(CLI::Range(0.0f, 1.0f))
         ->needs(app.get_option("--camera"));
     app.add_option("--recognizer-engine", cam_cfg.alpr.recognizer.engine_path,
-                   "PaddleOCR recognizer TensorRT .plan")
+                   "Plate recognizer TensorRT .plan")
+        ->needs(app.get_option("--camera"));
+    app.add_option("--recognizer-mode", cam_cfg.alpr.recognizer.mode,
+                   "slots = fast-plate-ocr fixed-slot model (needs --plate-config); "
+                   "ctc = PaddleOCR CTC model (needs --ocr-dictionary)")
+        ->transform(CLI::CheckedTransformer(
+            std::map<std::string, gate::inference::PlateRecognizer::Mode>{
+                {"slots", gate::inference::PlateRecognizer::Mode::kSlots},
+                {"ctc", gate::inference::PlateRecognizer::Mode::kCtc}},
+            CLI::ignore_case))
+        ->default_str("slots")
+        ->needs(app.get_option("--camera"));
+    app.add_option("--plate-config", cam_cfg.alpr.recognizer.plate_config_path,
+                   "Fixed-slot recognizer plate_config.yaml (alphabet, pad char, input size)")
         ->needs(app.get_option("--camera"));
     app.add_option("--ocr-dictionary", cam_cfg.alpr.recognizer.dictionary_path,
-                   "Recognizer character dictionary (one UTF-8 char per line)")
+                   "CTC recognizer character dictionary (one UTF-8 char per line)")
+        ->needs(app.get_option("--camera"));
+    app.add_flag("!--no-kenya-normalize", cam_cfg.alpr.normalize_kenya,
+                 "Report the raw OCR string instead of repairing it against the Kenyan "
+                 "plate templates (raw text is always sent as raw_ocr)")
         ->needs(app.get_option("--camera"));
     app.add_option("--frame-interval-ms", cam_cfg.frame_interval_ms,
                    "Inference cadence — frames are throttled to this interval.")
@@ -191,6 +219,20 @@ int main(int argc, char** argv) {
 #endif
         return 1;
     }
+#if defined(GATE_VISION_HAVE_CAMERA)
+    if (!camera_uri.empty()) {
+        using Mode = gate::inference::PlateRecognizer::Mode;
+        const auto& rc = cam_cfg.alpr.recognizer;
+        if (rc.mode == Mode::kSlots && rc.plate_config_path.empty()) {
+            spdlog::error("--recognizer-mode slots needs --plate-config");
+            return 1;
+        }
+        if (rc.mode == Mode::kCtc && rc.dictionary_path.empty()) {
+            spdlog::error("--recognizer-mode ctc needs --ocr-dictionary");
+            return 1;
+        }
+    }
+#endif
 
     spdlog::info("gate-vision starting (server={}, site={}, gate={})", client_cfg.server,
                  client_cfg.site_id, client_cfg.gate_id);
