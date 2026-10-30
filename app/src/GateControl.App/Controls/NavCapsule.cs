@@ -109,13 +109,13 @@ public sealed class NavCapsule : ContentView
         set
         {
             _compact = value;
-            // Liquid glass: no fill at all, so the page shows through; only
-            // a bright specular rim marks the edge.
+            // Liquid glass: the page shows through, with a bright specular rim.
             _capsule.StrokeThickness = value ? 1.2 : 0;
             if (value)
             {
-                _capsule.BackgroundColor = Colors.Transparent;
-                _capsule.Background = Brush.Transparent;
+                // A faint tint (18 %) so labels stay readable over page text.
+                _capsule.SetAppThemeColor(Border.BackgroundColorProperty,
+                    Color.FromRgba(255, 255, 255, 46), Color.FromRgba(0, 0, 0, 46));
                 // Refraction: faint spectral fringes along the bright rim.
                 _capsule.Stroke = new LinearGradientBrush(
                     [
