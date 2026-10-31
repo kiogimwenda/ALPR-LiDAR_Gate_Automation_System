@@ -37,8 +37,58 @@ typedef enum _gate_v1_GateState {
     gate_v1_GateState_GATE_STATE_OPEN = 3, /* Open limit switch active */
     gate_v1_GateState_GATE_STATE_CLOSING = 4, /* Auto-close timer expired, motor reversing */
     gate_v1_GateState_GATE_STATE_FAULT = 5, /* Limit switch stuck, motor timeout, beam blocked */
-    gate_v1_GateState_GATE_STATE_LOCKDOWN = 6 /* Force-close override active */
+    gate_v1_GateState_GATE_STATE_LOCKDOWN = 6, /* Force-close override active */
+    /* v2 lock-sequenced states (docs/design/gate-system-v2.md 8.5). Never
+ reported by legacy firmware (capabilities == 0). */
+    gate_v1_GateState_GATE_STATE_UNLOCKING = 7,
+    gate_v1_GateState_GATE_STATE_LOCKING = 8,
+    gate_v1_GateState_GATE_STATE_CLOSED_INSECURE = 9, /* Shut, at least one lock unproven */
+    gate_v1_GateState_GATE_STATE_VERIFYING = 10,
+    gate_v1_GateState_GATE_STATE_CALIBRATING = 11,
+    gate_v1_GateState_GATE_STATE_PRE_CLOSE = 12,
+    gate_v1_GateState_GATE_STATE_STOPPED = 13 /* Paused mid-travel; direction in reason */
 } gate_v1_GateState;
+
+typedef enum _gate_v1_GateType {
+    gate_v1_GateType_GATE_TYPE_UNSPECIFIED = 0,
+    gate_v1_GateType_GATE_TYPE_SLIDING = 1,
+    gate_v1_GateType_GATE_TYPE_SINGLE_LEAF = 2,
+    gate_v1_GateType_GATE_TYPE_DUAL_LEAF = 3
+} gate_v1_GateType;
+
+typedef enum _gate_v1_LockLayout {
+    gate_v1_LockLayout_LOCK_LAYOUT_NONE = 0, /* Rev 2 boards: no lock hardware */
+    gate_v1_LockLayout_LOCK_LAYOUT_4 = 1, /* Sliding, single leaf: 2 bolts + 2 maglocks */
+    gate_v1_LockLayout_LOCK_LAYOUT_5 = 2 /* Dual leaf: 2 bolts + 3 maglocks */
+} gate_v1_LockLayout;
+
+typedef enum _gate_v1_LaneMode {
+    gate_v1_LaneMode_LANE_MODE_SHARED = 0,
+    gate_v1_LaneMode_LANE_MODE_TWO_LANE = 1
+} gate_v1_LaneMode;
+
+typedef enum _gate_v1_GateSide {
+    gate_v1_GateSide_GATE_SIDE_UNSPECIFIED = 0,
+    gate_v1_GateSide_GATE_SIDE_ENTRY = 1,
+    gate_v1_GateSide_GATE_SIDE_EXIT = 2
+} gate_v1_GateSide;
+
+typedef enum _gate_v1_OpenSource {
+    gate_v1_OpenSource_OPEN_SOURCE_UNSPECIFIED = 0,
+    gate_v1_OpenSource_OPEN_SOURCE_PLATE = 1,
+    gate_v1_OpenSource_OPEN_SOURCE_APP = 2,
+    gate_v1_OpenSource_OPEN_SOURCE_RTE = 3,
+    gate_v1_OpenSource_OPEN_SOURCE_GUARD = 4,
+    gate_v1_OpenSource_OPEN_SOURCE_GUEST = 5,
+    gate_v1_OpenSource_OPEN_SOURCE_SCHEDULE = 6 /* Reserved */
+} gate_v1_OpenSource;
+
+typedef enum _gate_v1_ConfigStatus {
+    gate_v1_ConfigStatus_CONFIG_UNVERIFIED = 0,
+    gate_v1_ConfigStatus_CONFIG_VERIFIED = 1,
+    gate_v1_ConfigStatus_CONFIG_CALIBRATED = 2,
+    gate_v1_ConfigStatus_CONFIG_MISMATCH = 3
+} gate_v1_ConfigStatus;
 
 /* AuthVerdict — final fusion engine decision per
  docs/diagrams/04-fusion-decision.mmd. */
@@ -47,7 +97,8 @@ typedef enum _gate_v1_AuthVerdict {
     gate_v1_AuthVerdict_AUTH_VERDICT_AUTHORIZED = 1, /* Open the gate */
     gate_v1_AuthVerdict_AUTH_VERDICT_DENIED = 2, /* Hard deny — log + alert */
     gate_v1_AuthVerdict_AUTH_VERDICT_LOW_CONFIDENCE = 3, /* Below threshold — alert guard */
-    gate_v1_AuthVerdict_AUTH_VERDICT_MANUAL_REVIEW = 4 /* Allowlist hit but class mismatch */
+    gate_v1_AuthVerdict_AUTH_VERDICT_MANUAL_REVIEW = 4, /* Allowlist hit but class mismatch */
+    gate_v1_AuthVerdict_AUTH_VERDICT_REVIEW_MISMATCH = 5 /* Pass/plate OK, appearance mismatch: guard alert */
 } gate_v1_AuthVerdict;
 
 /* DenyReason — only meaningful when verdict == DENIED or LOW_CONFIDENCE. */
@@ -61,7 +112,10 @@ typedef enum _gate_v1_DenyReason {
     gate_v1_DenyReason_DENY_REASON_LOW_LIDAR_CONF = 6,
     gate_v1_DenyReason_DENY_REASON_CLASS_MISMATCH = 7,
     gate_v1_DenyReason_DENY_REASON_NO_PLATE_FOUND = 8,
-    gate_v1_DenyReason_DENY_REASON_DUPLICATE_ENTRY = 9 /* Anti-tailgating */
+    gate_v1_DenyReason_DENY_REASON_DUPLICATE_ENTRY = 9, /* Anti-tailgating */
+    gate_v1_DenyReason_DENY_REASON_PASS_EXPIRED = 10,
+    gate_v1_DenyReason_DENY_REASON_PASS_USED = 11,
+    gate_v1_DenyReason_DENY_REASON_WRONG_GATE = 12
 } gate_v1_DenyReason;
 
 /* CommandKind — every imperative the server sends to the field PCB. */
@@ -75,7 +129,15 @@ typedef enum _gate_v1_CommandKind {
     gate_v1_CommandKind_COMMAND_KIND_RELEASE_LATCH = 6,
     gate_v1_CommandKind_COMMAND_KIND_REBOOT = 7,
     gate_v1_CommandKind_COMMAND_KIND_BEGIN_OTA = 8,
-    gate_v1_CommandKind_COMMAND_KIND_LED_PATTERN = 9 /* Visual feedback (auth flash, fault blink) */
+    gate_v1_CommandKind_COMMAND_KIND_LED_PATTERN = 9, /* Visual feedback (auth flash, fault blink) */
+    /* v2: sent only to firmware advertising the matching capability. */
+    gate_v1_CommandKind_COMMAND_KIND_CONFIGURE = 10,
+    gate_v1_CommandKind_COMMAND_KIND_VERIFY_TYPE = 11,
+    gate_v1_CommandKind_COMMAND_KIND_CALIBRATE = 12,
+    gate_v1_CommandKind_COMMAND_KIND_LOCKDOWN_ON = 13,
+    gate_v1_CommandKind_COMMAND_KIND_LOCKDOWN_OFF = 14,
+    gate_v1_CommandKind_COMMAND_KIND_REQUEST_STATS = 15,
+    gate_v1_CommandKind_COMMAND_KIND_CLEAR_FAULT = 16
 } gate_v1_CommandKind;
 
 /* LedPattern — visual feedback patterns the firmware can render on the auth
@@ -98,6 +160,12 @@ typedef enum _gate_v1_FaultSeverity {
     gate_v1_FaultSeverity_FAULT_SEVERITY_CRITICAL = 4
 } gate_v1_FaultSeverity;
 
+typedef enum _gate_v1_VehicleAccessMode {
+    gate_v1_VehicleAccessMode_VEHICLE_ACCESS_UNSPECIFIED = 0,
+    gate_v1_VehicleAccessMode_VEHICLE_ACCESS_ALLOW = 1,
+    gate_v1_VehicleAccessMode_VEHICLE_ACCESS_BLOCK = 2
+} gate_v1_VehicleAccessMode;
+
 typedef enum _gate_v1_OtaProgress_OtaPhase {
     gate_v1_OtaProgress_OtaPhase_OTA_PHASE_UNKNOWN = 0,
     gate_v1_OtaProgress_OtaPhase_OTA_PHASE_DOWNLOADING = 1,
@@ -108,6 +176,20 @@ typedef enum _gate_v1_OtaProgress_OtaPhase {
     gate_v1_OtaProgress_OtaPhase_OTA_PHASE_FAILED = 6,
     gate_v1_OtaProgress_OtaPhase_OTA_PHASE_ROLLED_BACK = 7
 } gate_v1_OtaProgress_OtaPhase;
+
+typedef enum _gate_v1_OpenReply_Status {
+    gate_v1_OpenReply_Status_UNSPECIFIED = 0,
+    gate_v1_OpenReply_Status_GRANTED = 1,
+    gate_v1_OpenReply_Status_QUEUED = 2,
+    gate_v1_OpenReply_Status_DENIED = 3,
+    gate_v1_OpenReply_Status_ALREADY_SERVED = 4
+} gate_v1_OpenReply_Status;
+
+typedef enum _gate_v1_GuestPass_Kind {
+    gate_v1_GuestPass_Kind_UNSPECIFIED = 0,
+    gate_v1_GuestPass_Kind_SINGLE_VISIT = 1,
+    gate_v1_GuestPass_Kind_UNTIL = 2
+} gate_v1_GuestPass_Kind;
 
 /* Struct definitions */
 /* Pixel-space bounding box. Coordinates are absolute pixels in the camera's
@@ -164,30 +246,6 @@ typedef struct _gate_v1_VehicleDetection {
     uint32_t point_count; /* Number of LiDAR points in this cluster */
 } gate_v1_VehicleDetection;
 
-/* Snapshot of one detection cycle from both sensor pipelines. The server
- builds this from independent ALPR and LiDAR streams and feeds it to the
- fusion engine. */
-typedef struct _gate_v1_DetectionFrame {
-    bool has_capture_ts;
-    google_protobuf_Timestamp capture_ts; /* Earliest sensor timestamp */
-    uint64_t frame_id; /* Monotonic per gate_id */
-    pb_callback_t gate_id;
-    pb_callback_t plates;
-    pb_callback_t vehicles;
-    pb_callback_t camera_image_uri; /* Optional URI to JPEG snapshot */
-    pb_callback_t lidar_pcd_uri; /* Optional URI to point cloud */
-} gate_v1_DetectionFrame;
-
-/* Request from server to fusion engine. Server-internal but defined here so
- simulation and tests can drive the engine directly. */
-typedef struct _gate_v1_AuthorizeRequest {
-    bool has_frame;
-    gate_v1_DetectionFrame frame;
-    pb_callback_t site_id; /* Multi-tenant key */
-    bool override_allowlist; /* Guard manual approval */
-    pb_callback_t actor; /* "auto" / username for audit */
-} gate_v1_AuthorizeRequest;
-
 /* Final decision delivered to firmware and dashboard. */
 typedef struct _gate_v1_AuthDecision {
     pb_callback_t decision_id; /* UUIDv4 */
@@ -202,6 +260,10 @@ typedef struct _gate_v1_AuthDecision {
     pb_callback_t reason_text; /* Human-readable for UI */
     uint64_t frame_id; /* Backref to DetectionFrame */
     pb_callback_t actor;
+    gate_v1_GateSide side;
+    pb_callback_t pass_id;
+    pb_callback_t alerts;
+    pb_callback_t force_reason;
 } gate_v1_AuthDecision;
 
 /* Once per second from the firmware. Lightweight — keep payload small to
@@ -223,23 +285,22 @@ typedef struct _gate_v1_Telemetry {
     char firmware_version[24]; /* SemVer string */
     char firmware_sha256[65]; /* Hex digest of running image */
     uint64_t seq; /* Monotonic counter */
+    uint32_t capabilities; /* Bitset: 1 locks, 2 operator_profile, */
+    /* 4 event_log, 8 verify, 16 stats,
+ 32 current. 0 = legacy */
+    uint32_t config_version;
+    gate_v1_ConfigStatus config_status;
+    uint32_t lock_state_mask; /* 3 bits per lock: driven, feedback, fault */
+    uint32_t op_status; /* Decoded operator status enum */
+    uint32_t position_permille_a;
+    uint32_t position_permille_b;
+    float batt_v;
+    bool mains_ok;
+    uint32_t reason;
+    uint32_t pending_events;
+    uint32_t limit_extra_mask; /* Leaf B limits, beam 2 */
+    uint32_t hardware_rev;
 } gate_v1_Telemetry;
-
-typedef PB_BYTES_ARRAY_T(64) gate_v1_GateCommand_signature_t;
-/* Server → firmware command. */
-typedef struct _gate_v1_GateCommand {
-    char command_id[40]; /* UUIDv4 — firmware echoes in ack */
-    bool has_issued_ts;
-    google_protobuf_Timestamp issued_ts;
-    char gate_id[32];
-    gate_v1_CommandKind kind;
-    bool has_duration;
-    google_protobuf_Duration duration; /* For pulse / latch operations */
-    gate_v1_LedPattern led_pattern; /* Only for COMMAND_KIND_LED_PATTERN */
-    uint32_t relay_index; /* 0-3, default 0 (leaf 1) */
-    char actor[48]; /* For audit log */
-    gate_v1_GateCommand_signature_t signature; /* Optional ed25519 over hash */
-} gate_v1_GateCommand;
 
 /* Firmware → server acknowledgement of a command. Sent immediately on receipt
  (with completed=false) and again when execution finishes. */
@@ -283,6 +344,7 @@ typedef struct _gate_v1_OtaManifest {
     google_protobuf_Timestamp built_ts;
     char release_notes[128]; /* URL or short text */
     uint32_t min_uptime_sec; /* Refuse update if uptime < this (production safety) */
+    uint32_t hardware_rev;
 } gate_v1_OtaManifest;
 
 typedef PB_BYTES_ARRAY_T(4096) gate_v1_OtaChunk_data_t;
@@ -303,21 +365,6 @@ typedef struct _gate_v1_OtaProgress {
     gate_v1_OtaProgress_OtaPhase phase;
     pb_callback_t message; /* Optional human description */
 } gate_v1_OtaProgress;
-
-typedef struct _gate_v1_DashboardEvent {
-    uint64_t event_id; /* Monotonic per server boot */
-    bool has_event_ts;
-    google_protobuf_Timestamp event_ts;
-    pb_size_t which_payload;
-    union {
-        gate_v1_AuthDecision decision;
-        gate_v1_Telemetry telemetry;
-        gate_v1_FaultEvent fault;
-        gate_v1_OtaProgress ota;
-        gate_v1_GateCommand command;
-        gate_v1_CommandAck ack;
-    } payload;
-} gate_v1_DashboardEvent;
 
 /* Filter the dashboard subscription by site/gate. */
 typedef struct _gate_v1_DashboardSubscription {
@@ -350,6 +397,7 @@ typedef struct _gate_v1_Allowlistentry {
     pb_callback_t added_by;
     bool has_added_ts;
     google_protobuf_Timestamp added_ts;
+    pb_callback_t gate_ids; /* Empty = all gates */
 } gate_v1_Allowlistentry;
 
 typedef struct _gate_v1_UpsertAllowlistRequest {
@@ -378,6 +426,323 @@ typedef struct _gate_v1_DeleteAllowlistRequest {
     pb_callback_t plate_texts;
 } gate_v1_DeleteAllowlistRequest;
 
+typedef struct _gate_v1_LockTimings {
+    uint32_t mag_release_ms;
+    uint32_t bolt_retract_ms;
+    uint32_t pre_move_ms;
+    uint32_t settle_ms;
+    uint32_t mag_bond_ms;
+    uint32_t bolt_extend_ms;
+    uint32_t retries;
+} gate_v1_LockTimings;
+
+typedef struct _gate_v1_GateConfig {
+    uint32_t version;
+    gate_v1_GateType type;
+    gate_v1_LockLayout lock_layout;
+    gate_v1_LaneMode lane_mode;
+    uint32_t leaf_count;
+    uint32_t auto_close_s;
+    uint32_t offline_close_s;
+    uint32_t bolt_hold_open_s;
+    uint32_t maglock_shed_s;
+    bool has_timings;
+    gate_v1_LockTimings timings;
+} gate_v1_GateConfig;
+
+typedef PB_BYTES_ARRAY_T(64) gate_v1_GateCommand_signature_t;
+typedef PB_BYTES_ARRAY_T(32) gate_v1_GateCommand_nonce_t;
+/* Server → firmware command. */
+typedef struct _gate_v1_GateCommand {
+    char command_id[40]; /* UUIDv4 — firmware echoes in ack */
+    bool has_issued_ts;
+    google_protobuf_Timestamp issued_ts;
+    char gate_id[32];
+    gate_v1_CommandKind kind;
+    bool has_duration;
+    google_protobuf_Duration duration; /* For pulse / latch operations */
+    gate_v1_LedPattern led_pattern; /* Only for COMMAND_KIND_LED_PATTERN */
+    uint32_t relay_index; /* 0-3, default 0 (leaf 1) */
+    char actor[48]; /* For audit log */
+    gate_v1_GateCommand_signature_t signature; /* Optional ed25519 over hash */
+    gate_v1_OpenSource source;
+    gate_v1_GateSide side;
+    char request_id[40];
+    bool has_config;
+    gate_v1_GateConfig config; /* COMMAND_KIND_CONFIGURE */
+    gate_v1_GateCommand_nonce_t nonce; /* VERIFY_TYPE, CALIBRATE */
+    bool has_expires_ts;
+    google_protobuf_Timestamp expires_ts; /* Refused after this */
+} gate_v1_GateCommand;
+
+typedef struct _gate_v1_OpenRequest {
+    char request_id[40];
+    char gate_id[32];
+    gate_v1_GateSide side;
+    gate_v1_OpenSource source;
+    bool has_ts;
+    google_protobuf_Timestamp ts;
+    bool offline_served;
+} gate_v1_OpenRequest;
+
+typedef struct _gate_v1_OpenReply {
+    char request_id[40];
+    gate_v1_OpenReply_Status status;
+    uint32_t queue_position;
+} gate_v1_OpenReply;
+
+typedef struct _gate_v1_OpenRequestRecord {
+    bool has_request;
+    gate_v1_OpenRequest request;
+    pb_callback_t actor;
+    pb_callback_t decision_id;
+    uint32_t queued_ms;
+    pb_callback_t preempted_by;
+    pb_callback_t outcome;
+} gate_v1_OpenRequestRecord;
+
+typedef struct _gate_v1_ControllerEvent {
+    uint64_t seq;
+    uint32_t boot_id;
+    uint64_t uptime_ms;
+    int64_t unix_ms;
+    uint32_t kind;
+    gate_v1_OpenSource source;
+    gate_v1_GateSide side;
+    uint32_t result;
+    gate_v1_GateState state_after;
+    pb_callback_t request_id; /* 16 bytes binary */
+} gate_v1_ControllerEvent;
+
+typedef struct _gate_v1_EventBatch {
+    pb_callback_t events;
+    uint32_t dropped;
+} gate_v1_EventBatch;
+
+typedef struct _gate_v1_EventAck {
+    uint32_t boot_id;
+    uint64_t last_seq;
+} gate_v1_EventAck;
+
+/* 30 s / on-demand controller detail (spec section 16). */
+typedef struct _gate_v1_ControllerStats {
+    pb_callback_t cpu_load_pct; /* One per core */
+    pb_callback_t link;
+    uint32_t link_speed_mbps;
+    pb_callback_t ip;
+    uint32_t reconnects;
+    pb_callback_t reset_reason;
+    uint32_t outputs_mask;
+    uint32_t cycles_operator;
+    pb_callback_t cycles_lock;
+    pb_callback_t cycles_relay;
+    uint32_t last_run_open_ms;
+    uint32_t last_run_close_ms;
+    uint32_t expected_run_open_ms;
+    uint32_t expected_run_close_ms;
+    pb_callback_t motor_mean_ma;
+    pb_callback_t motor_peak_ma;
+    float core_temp_c;
+    float board_temp_c;
+    float rail_12v;
+    uint32_t on_battery_s;
+} gate_v1_ControllerStats;
+
+typedef struct _gate_v1_VerifyReport {
+    pb_callback_t command_id;
+    gate_v1_GateType observed;
+    bool passed;
+    pb_callback_t detail;
+    uint32_t limits_released;
+    uint32_t motor_channels;
+} gate_v1_VerifyReport;
+
+typedef struct _gate_v1_GateCalibration {
+    uint32_t open_ms_a;
+    uint32_t close_ms_a;
+    uint32_t open_ms_b;
+    uint32_t close_ms_b;
+    pb_callback_t current_curve_ma;
+    uint32_t unlock_ms;
+    uint32_t lock_ms;
+} gate_v1_GateCalibration;
+
+typedef struct _gate_v1_Alert {
+    pb_callback_t ref;
+    pb_callback_t kind;
+    gate_v1_FaultSeverity severity;
+    pb_callback_t gate_id;
+    pb_callback_t plate;
+    pb_callback_t message;
+    pb_callback_t image_uri;
+} gate_v1_Alert;
+
+typedef struct _gate_v1_DashboardEvent {
+    uint64_t event_id; /* Monotonic per server boot */
+    bool has_event_ts;
+    google_protobuf_Timestamp event_ts;
+    pb_size_t which_payload;
+    union {
+        gate_v1_AuthDecision decision;
+        gate_v1_Telemetry telemetry;
+        gate_v1_FaultEvent fault;
+        gate_v1_OtaProgress ota;
+        gate_v1_GateCommand command;
+        gate_v1_CommandAck ack;
+        gate_v1_OpenRequestRecord open_request;
+        gate_v1_ControllerStats stats;
+        gate_v1_Alert alert;
+    } payload;
+} gate_v1_DashboardEvent;
+
+typedef struct _gate_v1_VehicleAppearance {
+    pb_callback_t make;
+    pb_callback_t model;
+    uint32_t year_from;
+    uint32_t year_to;
+    pb_callback_t colour;
+    float conf;
+    pb_callback_t embedding_ref;
+} gate_v1_VehicleAppearance;
+
+/* Snapshot of one detection cycle from both sensor pipelines. The server
+ builds this from independent ALPR and LiDAR streams and feeds it to the
+ fusion engine. */
+typedef struct _gate_v1_DetectionFrame {
+    bool has_capture_ts;
+    google_protobuf_Timestamp capture_ts; /* Earliest sensor timestamp */
+    uint64_t frame_id; /* Monotonic per gate_id */
+    pb_callback_t gate_id;
+    pb_callback_t plates;
+    pb_callback_t vehicles;
+    pb_callback_t camera_image_uri; /* Optional URI to JPEG snapshot */
+    pb_callback_t lidar_pcd_uri; /* Optional URI to point cloud */
+    gate_v1_GateSide side;
+    pb_callback_t camera_id;
+    bool has_appearance;
+    gate_v1_VehicleAppearance appearance;
+} gate_v1_DetectionFrame;
+
+/* Request from server to fusion engine. Server-internal but defined here so
+ simulation and tests can drive the engine directly. */
+typedef struct _gate_v1_AuthorizeRequest {
+    bool has_frame;
+    gate_v1_DetectionFrame frame;
+    pb_callback_t site_id; /* Multi-tenant key */
+    bool override_allowlist; /* Guard manual approval */
+    pb_callback_t actor; /* "auto" / username for audit */
+    pb_callback_t force_reason; /* Admin-only forced open (spec 17.5) */
+} gate_v1_AuthorizeRequest;
+
+typedef struct _gate_v1_BlocklistEntry {
+    pb_callback_t plate_text;
+    pb_callback_t reason;
+    pb_callback_t added_by;
+    bool has_added_ts;
+    google_protobuf_Timestamp added_ts;
+} gate_v1_BlocklistEntry;
+
+typedef struct _gate_v1_UpsertBlocklistRequest {
+    pb_callback_t site_id;
+    pb_callback_t entries;
+} gate_v1_UpsertBlocklistRequest;
+
+typedef struct _gate_v1_ListBlocklistRequest {
+    pb_callback_t site_id;
+    uint32_t page_size;
+    pb_callback_t page_token;
+} gate_v1_ListBlocklistRequest;
+
+typedef struct _gate_v1_ListBlocklistResponse {
+    pb_callback_t entries;
+    pb_callback_t next_page_token;
+} gate_v1_ListBlocklistResponse;
+
+typedef struct _gate_v1_VehicleAccess {
+    pb_callback_t site_id;
+    pb_callback_t plate_text;
+    gate_v1_VehicleAccessMode mode;
+    pb_callback_t reason;
+} gate_v1_VehicleAccess;
+
+typedef struct _gate_v1_SetVehicleAccessRequest {
+    bool has_access;
+    gate_v1_VehicleAccess access;
+} gate_v1_SetVehicleAccessRequest;
+
+typedef struct _gate_v1_GuestPass {
+    pb_callback_t pass_id;
+    pb_callback_t site_id;
+    pb_callback_t plate_text;
+    pb_callback_t guest_name;
+    pb_callback_t host;
+    pb_callback_t gate_ids;
+    gate_v1_GuestPass_Kind kind;
+    bool has_valid_from;
+    google_protobuf_Timestamp valid_from;
+    bool has_valid_until;
+    google_protobuf_Timestamp valid_until;
+    uint32_t entries_used;
+    pb_callback_t status;
+    pb_callback_t expected_make;
+    pb_callback_t expected_model;
+    pb_callback_t expected_colour;
+    pb_callback_t created_by;
+} gate_v1_GuestPass;
+
+typedef struct _gate_v1_ListGuestPassesRequest {
+    pb_callback_t site_id;
+    uint32_t page_size;
+    pb_callback_t page_token;
+} gate_v1_ListGuestPassesRequest;
+
+typedef struct _gate_v1_ListGuestPassesResponse {
+    pb_callback_t passes;
+    pb_callback_t next_page_token;
+} gate_v1_ListGuestPassesResponse;
+
+typedef struct _gate_v1_RevokeGuestPassRequest {
+    pb_callback_t pass_id;
+} gate_v1_RevokeGuestPassRequest;
+
+typedef struct _gate_v1_GetGateConfigRequest {
+    pb_callback_t gate_id;
+} gate_v1_GetGateConfigRequest;
+
+/* Server-side view of a gate's configuration. */
+typedef struct _gate_v1_GateConfigRecord {
+    pb_callback_t gate_id;
+    bool has_config;
+    gate_v1_GateConfig config;
+    gate_v1_ConfigStatus status;
+    bool has_calibration;
+    gate_v1_GateCalibration calibration;
+    bool has_updated_ts;
+    google_protobuf_Timestamp updated_ts;
+    pb_callback_t updated_by;
+} gate_v1_GateConfigRecord;
+
+typedef struct _gate_v1_SetGateConfigRequest {
+    pb_callback_t gate_id;
+    bool has_config;
+    gate_v1_GateConfig config;
+} gate_v1_SetGateConfigRequest;
+
+typedef struct _gate_v1_SetLaneConfigRequest {
+    pb_callback_t gate_id;
+    gate_v1_LaneMode lane_mode;
+} gate_v1_SetLaneConfigRequest;
+
+typedef struct _gate_v1_GateOpRequest {
+    pb_callback_t gate_id;
+} gate_v1_GateOpRequest;
+
+typedef struct _gate_v1_GateOpStatus {
+    pb_callback_t gate_id;
+    gate_v1_ConfigStatus status;
+    pb_callback_t detail;
+} gate_v1_GateOpStatus;
+
 /* ControlEnvelope multiplexes the bidirectional Control stream. Exactly one
  payload set per envelope. */
 typedef struct _gate_v1_ControlEnvelope {
@@ -387,6 +752,13 @@ typedef struct _gate_v1_ControlEnvelope {
         gate_v1_CommandAck ack;
         gate_v1_FaultEvent fault;
         gate_v1_GateCommand command; /* Only ever populated by server */
+        gate_v1_OpenRequest open_request;
+        gate_v1_EventBatch events;
+        gate_v1_EventAck events_ack; /* Server to firmware */
+        gate_v1_ControllerStats stats;
+        gate_v1_VerifyReport verify;
+        gate_v1_GateCalibration calibration;
+        gate_v1_OpenReply open_reply; /* Server to firmware */
     } payload;
 } gate_v1_ControlEnvelope;
 
@@ -401,20 +773,44 @@ extern "C" {
 #define _gate_v1_VehicleClass_ARRAYSIZE ((gate_v1_VehicleClass)(gate_v1_VehicleClass_VEHICLE_CLASS_TRUCK+1))
 
 #define _gate_v1_GateState_MIN gate_v1_GateState_GATE_STATE_UNKNOWN
-#define _gate_v1_GateState_MAX gate_v1_GateState_GATE_STATE_LOCKDOWN
-#define _gate_v1_GateState_ARRAYSIZE ((gate_v1_GateState)(gate_v1_GateState_GATE_STATE_LOCKDOWN+1))
+#define _gate_v1_GateState_MAX gate_v1_GateState_GATE_STATE_STOPPED
+#define _gate_v1_GateState_ARRAYSIZE ((gate_v1_GateState)(gate_v1_GateState_GATE_STATE_STOPPED+1))
+
+#define _gate_v1_GateType_MIN gate_v1_GateType_GATE_TYPE_UNSPECIFIED
+#define _gate_v1_GateType_MAX gate_v1_GateType_GATE_TYPE_DUAL_LEAF
+#define _gate_v1_GateType_ARRAYSIZE ((gate_v1_GateType)(gate_v1_GateType_GATE_TYPE_DUAL_LEAF+1))
+
+#define _gate_v1_LockLayout_MIN gate_v1_LockLayout_LOCK_LAYOUT_NONE
+#define _gate_v1_LockLayout_MAX gate_v1_LockLayout_LOCK_LAYOUT_5
+#define _gate_v1_LockLayout_ARRAYSIZE ((gate_v1_LockLayout)(gate_v1_LockLayout_LOCK_LAYOUT_5+1))
+
+#define _gate_v1_LaneMode_MIN gate_v1_LaneMode_LANE_MODE_SHARED
+#define _gate_v1_LaneMode_MAX gate_v1_LaneMode_LANE_MODE_TWO_LANE
+#define _gate_v1_LaneMode_ARRAYSIZE ((gate_v1_LaneMode)(gate_v1_LaneMode_LANE_MODE_TWO_LANE+1))
+
+#define _gate_v1_GateSide_MIN gate_v1_GateSide_GATE_SIDE_UNSPECIFIED
+#define _gate_v1_GateSide_MAX gate_v1_GateSide_GATE_SIDE_EXIT
+#define _gate_v1_GateSide_ARRAYSIZE ((gate_v1_GateSide)(gate_v1_GateSide_GATE_SIDE_EXIT+1))
+
+#define _gate_v1_OpenSource_MIN gate_v1_OpenSource_OPEN_SOURCE_UNSPECIFIED
+#define _gate_v1_OpenSource_MAX gate_v1_OpenSource_OPEN_SOURCE_SCHEDULE
+#define _gate_v1_OpenSource_ARRAYSIZE ((gate_v1_OpenSource)(gate_v1_OpenSource_OPEN_SOURCE_SCHEDULE+1))
+
+#define _gate_v1_ConfigStatus_MIN gate_v1_ConfigStatus_CONFIG_UNVERIFIED
+#define _gate_v1_ConfigStatus_MAX gate_v1_ConfigStatus_CONFIG_MISMATCH
+#define _gate_v1_ConfigStatus_ARRAYSIZE ((gate_v1_ConfigStatus)(gate_v1_ConfigStatus_CONFIG_MISMATCH+1))
 
 #define _gate_v1_AuthVerdict_MIN gate_v1_AuthVerdict_AUTH_VERDICT_UNSPECIFIED
-#define _gate_v1_AuthVerdict_MAX gate_v1_AuthVerdict_AUTH_VERDICT_MANUAL_REVIEW
-#define _gate_v1_AuthVerdict_ARRAYSIZE ((gate_v1_AuthVerdict)(gate_v1_AuthVerdict_AUTH_VERDICT_MANUAL_REVIEW+1))
+#define _gate_v1_AuthVerdict_MAX gate_v1_AuthVerdict_AUTH_VERDICT_REVIEW_MISMATCH
+#define _gate_v1_AuthVerdict_ARRAYSIZE ((gate_v1_AuthVerdict)(gate_v1_AuthVerdict_AUTH_VERDICT_REVIEW_MISMATCH+1))
 
 #define _gate_v1_DenyReason_MIN gate_v1_DenyReason_DENY_REASON_NONE
-#define _gate_v1_DenyReason_MAX gate_v1_DenyReason_DENY_REASON_DUPLICATE_ENTRY
-#define _gate_v1_DenyReason_ARRAYSIZE ((gate_v1_DenyReason)(gate_v1_DenyReason_DENY_REASON_DUPLICATE_ENTRY+1))
+#define _gate_v1_DenyReason_MAX gate_v1_DenyReason_DENY_REASON_WRONG_GATE
+#define _gate_v1_DenyReason_ARRAYSIZE ((gate_v1_DenyReason)(gate_v1_DenyReason_DENY_REASON_WRONG_GATE+1))
 
 #define _gate_v1_CommandKind_MIN gate_v1_CommandKind_COMMAND_KIND_UNSPECIFIED
-#define _gate_v1_CommandKind_MAX gate_v1_CommandKind_COMMAND_KIND_LED_PATTERN
-#define _gate_v1_CommandKind_ARRAYSIZE ((gate_v1_CommandKind)(gate_v1_CommandKind_COMMAND_KIND_LED_PATTERN+1))
+#define _gate_v1_CommandKind_MAX gate_v1_CommandKind_COMMAND_KIND_CLEAR_FAULT
+#define _gate_v1_CommandKind_ARRAYSIZE ((gate_v1_CommandKind)(gate_v1_CommandKind_COMMAND_KIND_CLEAR_FAULT+1))
 
 #define _gate_v1_LedPattern_MIN gate_v1_LedPattern_LED_PATTERN_OFF
 #define _gate_v1_LedPattern_MAX gate_v1_LedPattern_LED_PATTERN_BOOT_OK
@@ -424,9 +820,21 @@ extern "C" {
 #define _gate_v1_FaultSeverity_MAX gate_v1_FaultSeverity_FAULT_SEVERITY_CRITICAL
 #define _gate_v1_FaultSeverity_ARRAYSIZE ((gate_v1_FaultSeverity)(gate_v1_FaultSeverity_FAULT_SEVERITY_CRITICAL+1))
 
+#define _gate_v1_VehicleAccessMode_MIN gate_v1_VehicleAccessMode_VEHICLE_ACCESS_UNSPECIFIED
+#define _gate_v1_VehicleAccessMode_MAX gate_v1_VehicleAccessMode_VEHICLE_ACCESS_BLOCK
+#define _gate_v1_VehicleAccessMode_ARRAYSIZE ((gate_v1_VehicleAccessMode)(gate_v1_VehicleAccessMode_VEHICLE_ACCESS_BLOCK+1))
+
 #define _gate_v1_OtaProgress_OtaPhase_MIN gate_v1_OtaProgress_OtaPhase_OTA_PHASE_UNKNOWN
 #define _gate_v1_OtaProgress_OtaPhase_MAX gate_v1_OtaProgress_OtaPhase_OTA_PHASE_ROLLED_BACK
 #define _gate_v1_OtaProgress_OtaPhase_ARRAYSIZE ((gate_v1_OtaProgress_OtaPhase)(gate_v1_OtaProgress_OtaPhase_OTA_PHASE_ROLLED_BACK+1))
+
+#define _gate_v1_OpenReply_Status_MIN gate_v1_OpenReply_Status_UNSPECIFIED
+#define _gate_v1_OpenReply_Status_MAX gate_v1_OpenReply_Status_ALREADY_SERVED
+#define _gate_v1_OpenReply_Status_ARRAYSIZE ((gate_v1_OpenReply_Status)(gate_v1_OpenReply_Status_ALREADY_SERVED+1))
+
+#define _gate_v1_GuestPass_Kind_MIN gate_v1_GuestPass_Kind_UNSPECIFIED
+#define _gate_v1_GuestPass_Kind_MAX gate_v1_GuestPass_Kind_UNTIL
+#define _gate_v1_GuestPass_Kind_ARRAYSIZE ((gate_v1_GuestPass_Kind)(gate_v1_GuestPass_Kind_UNTIL+1))
 
 
 
@@ -434,16 +842,21 @@ extern "C" {
 
 #define gate_v1_VehicleDetection_vehicle_class_ENUMTYPE gate_v1_VehicleClass
 
+#define gate_v1_DetectionFrame_side_ENUMTYPE gate_v1_GateSide
 
 
 #define gate_v1_AuthDecision_verdict_ENUMTYPE gate_v1_AuthVerdict
 #define gate_v1_AuthDecision_deny_reason_ENUMTYPE gate_v1_DenyReason
 #define gate_v1_AuthDecision_matched_class_ENUMTYPE gate_v1_VehicleClass
+#define gate_v1_AuthDecision_side_ENUMTYPE gate_v1_GateSide
 
 #define gate_v1_Telemetry_gate_state_ENUMTYPE gate_v1_GateState
+#define gate_v1_Telemetry_config_status_ENUMTYPE gate_v1_ConfigStatus
 
 #define gate_v1_GateCommand_kind_ENUMTYPE gate_v1_CommandKind
 #define gate_v1_GateCommand_led_pattern_ENUMTYPE gate_v1_LedPattern
+#define gate_v1_GateCommand_source_ENUMTYPE gate_v1_OpenSource
+#define gate_v1_GateCommand_side_ENUMTYPE gate_v1_GateSide
 
 #define gate_v1_CommandAck_state_after_ENUMTYPE gate_v1_GateState
 
@@ -465,6 +878,51 @@ extern "C" {
 
 
 
+#define gate_v1_GateConfig_type_ENUMTYPE gate_v1_GateType
+#define gate_v1_GateConfig_lock_layout_ENUMTYPE gate_v1_LockLayout
+#define gate_v1_GateConfig_lane_mode_ENUMTYPE gate_v1_LaneMode
+
+#define gate_v1_OpenRequest_side_ENUMTYPE gate_v1_GateSide
+#define gate_v1_OpenRequest_source_ENUMTYPE gate_v1_OpenSource
+
+#define gate_v1_OpenReply_status_ENUMTYPE gate_v1_OpenReply_Status
+
+
+#define gate_v1_ControllerEvent_source_ENUMTYPE gate_v1_OpenSource
+#define gate_v1_ControllerEvent_side_ENUMTYPE gate_v1_GateSide
+#define gate_v1_ControllerEvent_state_after_ENUMTYPE gate_v1_GateState
+
+
+
+
+#define gate_v1_VerifyReport_observed_ENUMTYPE gate_v1_GateType
+
+
+#define gate_v1_Alert_severity_ENUMTYPE gate_v1_FaultSeverity
+
+
+
+
+
+
+#define gate_v1_VehicleAccess_mode_ENUMTYPE gate_v1_VehicleAccessMode
+
+
+#define gate_v1_GuestPass_kind_ENUMTYPE gate_v1_GuestPass_Kind
+
+
+
+
+
+#define gate_v1_GateConfigRecord_status_ENUMTYPE gate_v1_ConfigStatus
+
+
+#define gate_v1_SetLaneConfigRequest_lane_mode_ENUMTYPE gate_v1_LaneMode
+
+
+#define gate_v1_GateOpStatus_status_ENUMTYPE gate_v1_ConfigStatus
+
+
 
 /* Initializer values for message structs */
 #define gate_v1_BoundingBox_init_default         {0, 0, 0, 0}
@@ -472,52 +930,110 @@ extern "C" {
 #define gate_v1_BoundingBox3D_init_default       {false, gate_v1_Point3D_init_default, 0, 0, 0, 0}
 #define gate_v1_PlateDetection_init_default      {{{NULL}, NULL}, 0, 0, false, gate_v1_BoundingBox_init_default, {{NULL}, NULL}, {{NULL}, NULL}}
 #define gate_v1_VehicleDetection_init_default    {_gate_v1_VehicleClass_MIN, 0, false, gate_v1_BoundingBox3D_init_default, false, gate_v1_Point3D_init_default, 0, 0}
-#define gate_v1_DetectionFrame_init_default      {false, google_protobuf_Timestamp_init_default, 0, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
-#define gate_v1_AuthorizeRequest_init_default    {false, gate_v1_DetectionFrame_init_default, {{NULL}, NULL}, 0, {{NULL}, NULL}}
-#define gate_v1_AuthDecision_init_default        {{{NULL}, NULL}, false, google_protobuf_Timestamp_init_default, {{NULL}, NULL}, _gate_v1_AuthVerdict_MIN, _gate_v1_DenyReason_MIN, {{NULL}, NULL}, _gate_v1_VehicleClass_MIN, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}}
-#define gate_v1_Telemetry_init_default           {"", false, google_protobuf_Timestamp_init_default, _gate_v1_GateState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", "", 0}
-#define gate_v1_GateCommand_init_default         {"", false, google_protobuf_Timestamp_init_default, "", _gate_v1_CommandKind_MIN, false, google_protobuf_Duration_init_default, _gate_v1_LedPattern_MIN, 0, "", {0, {0}}}
+#define gate_v1_DetectionFrame_init_default      {false, google_protobuf_Timestamp_init_default, 0, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_GateSide_MIN, {{NULL}, NULL}, false, gate_v1_VehicleAppearance_init_default}
+#define gate_v1_AuthorizeRequest_init_default    {false, gate_v1_DetectionFrame_init_default, {{NULL}, NULL}, 0, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_AuthDecision_init_default        {{{NULL}, NULL}, false, google_protobuf_Timestamp_init_default, {{NULL}, NULL}, _gate_v1_AuthVerdict_MIN, _gate_v1_DenyReason_MIN, {{NULL}, NULL}, _gate_v1_VehicleClass_MIN, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}, _gate_v1_GateSide_MIN, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_Telemetry_init_default           {"", false, google_protobuf_Timestamp_init_default, _gate_v1_GateState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", "", 0, 0, 0, _gate_v1_ConfigStatus_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define gate_v1_GateCommand_init_default         {"", false, google_protobuf_Timestamp_init_default, "", _gate_v1_CommandKind_MIN, false, google_protobuf_Duration_init_default, _gate_v1_LedPattern_MIN, 0, "", {0, {0}}, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, "", false, gate_v1_GateConfig_init_default, {0, {0}}, false, google_protobuf_Timestamp_init_default}
 #define gate_v1_CommandAck_init_default          {"", false, google_protobuf_Timestamp_init_default, false, google_protobuf_Timestamp_init_default, 0, 0, "", _gate_v1_GateState_MIN}
 #define gate_v1_FaultEvent_init_default          {"", false, google_protobuf_Timestamp_init_default, "", _gate_v1_FaultSeverity_MIN, "", "", 0, {gate_v1_FaultEvent_ContextEntry_init_default, gate_v1_FaultEvent_ContextEntry_init_default, gate_v1_FaultEvent_ContextEntry_init_default, gate_v1_FaultEvent_ContextEntry_init_default}}
 #define gate_v1_FaultEvent_ContextEntry_init_default {"", ""}
-#define gate_v1_OtaManifest_init_default         {"", "", 0, {0, {0}}, "", false, google_protobuf_Timestamp_init_default, "", 0}
+#define gate_v1_OtaManifest_init_default         {"", "", 0, {0, {0}}, "", false, google_protobuf_Timestamp_init_default, "", 0, 0}
 #define gate_v1_OtaChunk_init_default            {0, {0, {0}}, 0}
 #define gate_v1_OtaProgress_init_default         {"", 0, 0, _gate_v1_OtaProgress_OtaPhase_MIN, {{NULL}, NULL}}
 #define gate_v1_DashboardEvent_init_default      {0, false, google_protobuf_Timestamp_init_default, 0, {gate_v1_AuthDecision_init_default}}
 #define gate_v1_DashboardSubscription_init_default {{{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0, 0}
 #define gate_v1_TimeWindow_init_default          {0, 0, 0}
-#define gate_v1_Allowlistentry_init_default      {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_default, false, google_protobuf_Timestamp_init_default, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_default}
+#define gate_v1_Allowlistentry_init_default      {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_default, false, google_protobuf_Timestamp_init_default, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_default, {{NULL}, NULL}}
 #define gate_v1_UpsertAllowlistRequest_init_default {{{NULL}, NULL}, {{NULL}, NULL}}
 #define gate_v1_UpsertAllowlistResponse_init_default {0, 0}
 #define gate_v1_ListAllowlistRequest_init_default {{{NULL}, NULL}, 0, {{NULL}, NULL}}
 #define gate_v1_ListAllowlistResponse_init_default {{{NULL}, NULL}, {{NULL}, NULL}}
 #define gate_v1_DeleteAllowlistRequest_init_default {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_LockTimings_init_default         {0, 0, 0, 0, 0, 0, 0}
+#define gate_v1_GateConfig_init_default          {0, _gate_v1_GateType_MIN, _gate_v1_LockLayout_MIN, _gate_v1_LaneMode_MIN, 0, 0, 0, 0, 0, false, gate_v1_LockTimings_init_default}
+#define gate_v1_OpenRequest_init_default         {"", "", _gate_v1_GateSide_MIN, _gate_v1_OpenSource_MIN, false, google_protobuf_Timestamp_init_default, 0}
+#define gate_v1_OpenReply_init_default           {"", _gate_v1_OpenReply_Status_MIN, 0}
+#define gate_v1_OpenRequestRecord_init_default   {false, gate_v1_OpenRequest_init_default, {{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_ControllerEvent_init_default     {0, 0, 0, 0, 0, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, 0, _gate_v1_GateState_MIN, {{NULL}, NULL}}
+#define gate_v1_EventBatch_init_default          {{{NULL}, NULL}, 0}
+#define gate_v1_EventAck_init_default            {0, 0}
+#define gate_v1_ControllerStats_init_default     {{{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0}
+#define gate_v1_VerifyReport_init_default        {{{NULL}, NULL}, _gate_v1_GateType_MIN, 0, {{NULL}, NULL}, 0, 0}
+#define gate_v1_GateCalibration_init_default     {0, 0, 0, 0, {{NULL}, NULL}, 0, 0}
+#define gate_v1_Alert_init_default               {{{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_FaultSeverity_MIN, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_VehicleAppearance_init_default   {{{NULL}, NULL}, {{NULL}, NULL}, 0, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}}
+#define gate_v1_BlocklistEntry_init_default      {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_default}
+#define gate_v1_UpsertBlocklistRequest_init_default {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_ListBlocklistRequest_init_default {{{NULL}, NULL}, 0, {{NULL}, NULL}}
+#define gate_v1_ListBlocklistResponse_init_default {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_VehicleAccess_init_default       {{{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_VehicleAccessMode_MIN, {{NULL}, NULL}}
+#define gate_v1_SetVehicleAccessRequest_init_default {false, gate_v1_VehicleAccess_init_default}
+#define gate_v1_GuestPass_init_default           {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_GuestPass_Kind_MIN, false, google_protobuf_Timestamp_init_default, false, google_protobuf_Timestamp_init_default, 0, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_ListGuestPassesRequest_init_default {{{NULL}, NULL}, 0, {{NULL}, NULL}}
+#define gate_v1_ListGuestPassesResponse_init_default {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_RevokeGuestPassRequest_init_default {{{NULL}, NULL}}
+#define gate_v1_GetGateConfigRequest_init_default {{{NULL}, NULL}}
+#define gate_v1_GateConfigRecord_init_default    {{{NULL}, NULL}, false, gate_v1_GateConfig_init_default, _gate_v1_ConfigStatus_MIN, false, gate_v1_GateCalibration_init_default, false, google_protobuf_Timestamp_init_default, {{NULL}, NULL}}
+#define gate_v1_SetGateConfigRequest_init_default {{{NULL}, NULL}, false, gate_v1_GateConfig_init_default}
+#define gate_v1_SetLaneConfigRequest_init_default {{{NULL}, NULL}, _gate_v1_LaneMode_MIN}
+#define gate_v1_GateOpRequest_init_default       {{{NULL}, NULL}}
+#define gate_v1_GateOpStatus_init_default        {{{NULL}, NULL}, _gate_v1_ConfigStatus_MIN, {{NULL}, NULL}}
 #define gate_v1_ControlEnvelope_init_default     {0, {gate_v1_Telemetry_init_default}}
 #define gate_v1_BoundingBox_init_zero            {0, 0, 0, 0}
 #define gate_v1_Point3D_init_zero                {0, 0, 0}
 #define gate_v1_BoundingBox3D_init_zero          {false, gate_v1_Point3D_init_zero, 0, 0, 0, 0}
 #define gate_v1_PlateDetection_init_zero         {{{NULL}, NULL}, 0, 0, false, gate_v1_BoundingBox_init_zero, {{NULL}, NULL}, {{NULL}, NULL}}
 #define gate_v1_VehicleDetection_init_zero       {_gate_v1_VehicleClass_MIN, 0, false, gate_v1_BoundingBox3D_init_zero, false, gate_v1_Point3D_init_zero, 0, 0}
-#define gate_v1_DetectionFrame_init_zero         {false, google_protobuf_Timestamp_init_zero, 0, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
-#define gate_v1_AuthorizeRequest_init_zero       {false, gate_v1_DetectionFrame_init_zero, {{NULL}, NULL}, 0, {{NULL}, NULL}}
-#define gate_v1_AuthDecision_init_zero           {{{NULL}, NULL}, false, google_protobuf_Timestamp_init_zero, {{NULL}, NULL}, _gate_v1_AuthVerdict_MIN, _gate_v1_DenyReason_MIN, {{NULL}, NULL}, _gate_v1_VehicleClass_MIN, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}}
-#define gate_v1_Telemetry_init_zero              {"", false, google_protobuf_Timestamp_init_zero, _gate_v1_GateState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", "", 0}
-#define gate_v1_GateCommand_init_zero            {"", false, google_protobuf_Timestamp_init_zero, "", _gate_v1_CommandKind_MIN, false, google_protobuf_Duration_init_zero, _gate_v1_LedPattern_MIN, 0, "", {0, {0}}}
+#define gate_v1_DetectionFrame_init_zero         {false, google_protobuf_Timestamp_init_zero, 0, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_GateSide_MIN, {{NULL}, NULL}, false, gate_v1_VehicleAppearance_init_zero}
+#define gate_v1_AuthorizeRequest_init_zero       {false, gate_v1_DetectionFrame_init_zero, {{NULL}, NULL}, 0, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_AuthDecision_init_zero           {{{NULL}, NULL}, false, google_protobuf_Timestamp_init_zero, {{NULL}, NULL}, _gate_v1_AuthVerdict_MIN, _gate_v1_DenyReason_MIN, {{NULL}, NULL}, _gate_v1_VehicleClass_MIN, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}, _gate_v1_GateSide_MIN, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_Telemetry_init_zero              {"", false, google_protobuf_Timestamp_init_zero, _gate_v1_GateState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", "", 0, 0, 0, _gate_v1_ConfigStatus_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define gate_v1_GateCommand_init_zero            {"", false, google_protobuf_Timestamp_init_zero, "", _gate_v1_CommandKind_MIN, false, google_protobuf_Duration_init_zero, _gate_v1_LedPattern_MIN, 0, "", {0, {0}}, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, "", false, gate_v1_GateConfig_init_zero, {0, {0}}, false, google_protobuf_Timestamp_init_zero}
 #define gate_v1_CommandAck_init_zero             {"", false, google_protobuf_Timestamp_init_zero, false, google_protobuf_Timestamp_init_zero, 0, 0, "", _gate_v1_GateState_MIN}
 #define gate_v1_FaultEvent_init_zero             {"", false, google_protobuf_Timestamp_init_zero, "", _gate_v1_FaultSeverity_MIN, "", "", 0, {gate_v1_FaultEvent_ContextEntry_init_zero, gate_v1_FaultEvent_ContextEntry_init_zero, gate_v1_FaultEvent_ContextEntry_init_zero, gate_v1_FaultEvent_ContextEntry_init_zero}}
 #define gate_v1_FaultEvent_ContextEntry_init_zero {"", ""}
-#define gate_v1_OtaManifest_init_zero            {"", "", 0, {0, {0}}, "", false, google_protobuf_Timestamp_init_zero, "", 0}
+#define gate_v1_OtaManifest_init_zero            {"", "", 0, {0, {0}}, "", false, google_protobuf_Timestamp_init_zero, "", 0, 0}
 #define gate_v1_OtaChunk_init_zero               {0, {0, {0}}, 0}
 #define gate_v1_OtaProgress_init_zero            {"", 0, 0, _gate_v1_OtaProgress_OtaPhase_MIN, {{NULL}, NULL}}
 #define gate_v1_DashboardEvent_init_zero         {0, false, google_protobuf_Timestamp_init_zero, 0, {gate_v1_AuthDecision_init_zero}}
 #define gate_v1_DashboardSubscription_init_zero  {{{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0, 0}
 #define gate_v1_TimeWindow_init_zero             {0, 0, 0}
-#define gate_v1_Allowlistentry_init_zero         {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_zero, false, google_protobuf_Timestamp_init_zero, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_zero}
+#define gate_v1_Allowlistentry_init_zero         {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_zero, false, google_protobuf_Timestamp_init_zero, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_zero, {{NULL}, NULL}}
 #define gate_v1_UpsertAllowlistRequest_init_zero {{{NULL}, NULL}, {{NULL}, NULL}}
 #define gate_v1_UpsertAllowlistResponse_init_zero {0, 0}
 #define gate_v1_ListAllowlistRequest_init_zero   {{{NULL}, NULL}, 0, {{NULL}, NULL}}
 #define gate_v1_ListAllowlistResponse_init_zero  {{{NULL}, NULL}, {{NULL}, NULL}}
 #define gate_v1_DeleteAllowlistRequest_init_zero {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_LockTimings_init_zero            {0, 0, 0, 0, 0, 0, 0}
+#define gate_v1_GateConfig_init_zero             {0, _gate_v1_GateType_MIN, _gate_v1_LockLayout_MIN, _gate_v1_LaneMode_MIN, 0, 0, 0, 0, 0, false, gate_v1_LockTimings_init_zero}
+#define gate_v1_OpenRequest_init_zero            {"", "", _gate_v1_GateSide_MIN, _gate_v1_OpenSource_MIN, false, google_protobuf_Timestamp_init_zero, 0}
+#define gate_v1_OpenReply_init_zero              {"", _gate_v1_OpenReply_Status_MIN, 0}
+#define gate_v1_OpenRequestRecord_init_zero      {false, gate_v1_OpenRequest_init_zero, {{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_ControllerEvent_init_zero        {0, 0, 0, 0, 0, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, 0, _gate_v1_GateState_MIN, {{NULL}, NULL}}
+#define gate_v1_EventBatch_init_zero             {{{NULL}, NULL}, 0}
+#define gate_v1_EventAck_init_zero               {0, 0}
+#define gate_v1_ControllerStats_init_zero        {{{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0}
+#define gate_v1_VerifyReport_init_zero           {{{NULL}, NULL}, _gate_v1_GateType_MIN, 0, {{NULL}, NULL}, 0, 0}
+#define gate_v1_GateCalibration_init_zero        {0, 0, 0, 0, {{NULL}, NULL}, 0, 0}
+#define gate_v1_Alert_init_zero                  {{{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_FaultSeverity_MIN, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_VehicleAppearance_init_zero      {{{NULL}, NULL}, {{NULL}, NULL}, 0, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}}
+#define gate_v1_BlocklistEntry_init_zero         {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, false, google_protobuf_Timestamp_init_zero}
+#define gate_v1_UpsertBlocklistRequest_init_zero {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_ListBlocklistRequest_init_zero   {{{NULL}, NULL}, 0, {{NULL}, NULL}}
+#define gate_v1_ListBlocklistResponse_init_zero  {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_VehicleAccess_init_zero          {{{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_VehicleAccessMode_MIN, {{NULL}, NULL}}
+#define gate_v1_SetVehicleAccessRequest_init_zero {false, gate_v1_VehicleAccess_init_zero}
+#define gate_v1_GuestPass_init_zero              {{{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, _gate_v1_GuestPass_Kind_MIN, false, google_protobuf_Timestamp_init_zero, false, google_protobuf_Timestamp_init_zero, 0, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_ListGuestPassesRequest_init_zero {{{NULL}, NULL}, 0, {{NULL}, NULL}}
+#define gate_v1_ListGuestPassesResponse_init_zero {{{NULL}, NULL}, {{NULL}, NULL}}
+#define gate_v1_RevokeGuestPassRequest_init_zero {{{NULL}, NULL}}
+#define gate_v1_GetGateConfigRequest_init_zero   {{{NULL}, NULL}}
+#define gate_v1_GateConfigRecord_init_zero       {{{NULL}, NULL}, false, gate_v1_GateConfig_init_zero, _gate_v1_ConfigStatus_MIN, false, gate_v1_GateCalibration_init_zero, false, google_protobuf_Timestamp_init_zero, {{NULL}, NULL}}
+#define gate_v1_SetGateConfigRequest_init_zero   {{{NULL}, NULL}, false, gate_v1_GateConfig_init_zero}
+#define gate_v1_SetLaneConfigRequest_init_zero   {{{NULL}, NULL}, _gate_v1_LaneMode_MIN}
+#define gate_v1_GateOpRequest_init_zero          {{{NULL}, NULL}}
+#define gate_v1_GateOpStatus_init_zero           {{{NULL}, NULL}, _gate_v1_ConfigStatus_MIN, {{NULL}, NULL}}
 #define gate_v1_ControlEnvelope_init_zero        {0, {gate_v1_Telemetry_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
@@ -545,17 +1061,6 @@ extern "C" {
 #define gate_v1_VehicleDetection_velocity_mps_tag 4
 #define gate_v1_VehicleDetection_track_id_tag    5
 #define gate_v1_VehicleDetection_point_count_tag 6
-#define gate_v1_DetectionFrame_capture_ts_tag    1
-#define gate_v1_DetectionFrame_frame_id_tag      2
-#define gate_v1_DetectionFrame_gate_id_tag       3
-#define gate_v1_DetectionFrame_plates_tag        4
-#define gate_v1_DetectionFrame_vehicles_tag      5
-#define gate_v1_DetectionFrame_camera_image_uri_tag 6
-#define gate_v1_DetectionFrame_lidar_pcd_uri_tag 7
-#define gate_v1_AuthorizeRequest_frame_tag       1
-#define gate_v1_AuthorizeRequest_site_id_tag     2
-#define gate_v1_AuthorizeRequest_override_allowlist_tag 3
-#define gate_v1_AuthorizeRequest_actor_tag       4
 #define gate_v1_AuthDecision_decision_id_tag     1
 #define gate_v1_AuthDecision_decision_ts_tag     2
 #define gate_v1_AuthDecision_gate_id_tag         3
@@ -567,6 +1072,10 @@ extern "C" {
 #define gate_v1_AuthDecision_reason_text_tag     9
 #define gate_v1_AuthDecision_frame_id_tag        10
 #define gate_v1_AuthDecision_actor_tag           11
+#define gate_v1_AuthDecision_side_tag            12
+#define gate_v1_AuthDecision_pass_id_tag         13
+#define gate_v1_AuthDecision_alerts_tag          14
+#define gate_v1_AuthDecision_force_reason_tag    15
 #define gate_v1_Telemetry_gate_id_tag            1
 #define gate_v1_Telemetry_sent_ts_tag            2
 #define gate_v1_Telemetry_gate_state_tag         3
@@ -582,15 +1091,19 @@ extern "C" {
 #define gate_v1_Telemetry_firmware_version_tag   13
 #define gate_v1_Telemetry_firmware_sha256_tag    14
 #define gate_v1_Telemetry_seq_tag                15
-#define gate_v1_GateCommand_command_id_tag       1
-#define gate_v1_GateCommand_issued_ts_tag        2
-#define gate_v1_GateCommand_gate_id_tag          3
-#define gate_v1_GateCommand_kind_tag             4
-#define gate_v1_GateCommand_duration_tag         5
-#define gate_v1_GateCommand_led_pattern_tag      6
-#define gate_v1_GateCommand_relay_index_tag      7
-#define gate_v1_GateCommand_actor_tag            8
-#define gate_v1_GateCommand_signature_tag        9
+#define gate_v1_Telemetry_capabilities_tag       16
+#define gate_v1_Telemetry_config_version_tag     17
+#define gate_v1_Telemetry_config_status_tag      18
+#define gate_v1_Telemetry_lock_state_mask_tag    19
+#define gate_v1_Telemetry_op_status_tag          20
+#define gate_v1_Telemetry_position_permille_a_tag 21
+#define gate_v1_Telemetry_position_permille_b_tag 22
+#define gate_v1_Telemetry_batt_v_tag             23
+#define gate_v1_Telemetry_mains_ok_tag           24
+#define gate_v1_Telemetry_reason_tag             25
+#define gate_v1_Telemetry_pending_events_tag     26
+#define gate_v1_Telemetry_limit_extra_mask_tag   27
+#define gate_v1_Telemetry_hardware_rev_tag       28
 #define gate_v1_CommandAck_command_id_tag        1
 #define gate_v1_CommandAck_received_ts_tag       2
 #define gate_v1_CommandAck_completed_ts_tag      3
@@ -615,6 +1128,7 @@ extern "C" {
 #define gate_v1_OtaManifest_built_ts_tag         6
 #define gate_v1_OtaManifest_release_notes_tag    7
 #define gate_v1_OtaManifest_min_uptime_sec_tag   8
+#define gate_v1_OtaManifest_hardware_rev_tag     9
 #define gate_v1_OtaChunk_offset_tag              1
 #define gate_v1_OtaChunk_data_tag                2
 #define gate_v1_OtaChunk_is_final_tag            3
@@ -623,14 +1137,6 @@ extern "C" {
 #define gate_v1_OtaProgress_bytes_total_tag      3
 #define gate_v1_OtaProgress_phase_tag            4
 #define gate_v1_OtaProgress_message_tag          5
-#define gate_v1_DashboardEvent_event_id_tag      1
-#define gate_v1_DashboardEvent_event_ts_tag      2
-#define gate_v1_DashboardEvent_decision_tag      3
-#define gate_v1_DashboardEvent_telemetry_tag     4
-#define gate_v1_DashboardEvent_fault_tag         5
-#define gate_v1_DashboardEvent_ota_tag           6
-#define gate_v1_DashboardEvent_command_tag       7
-#define gate_v1_DashboardEvent_ack_tag           8
 #define gate_v1_DashboardSubscription_site_id_tag 1
 #define gate_v1_DashboardSubscription_gate_ids_tag 2
 #define gate_v1_DashboardSubscription_include_decisions_tag 3
@@ -651,6 +1157,7 @@ extern "C" {
 #define gate_v1_Allowlistentry_notes_tag         8
 #define gate_v1_Allowlistentry_added_by_tag      9
 #define gate_v1_Allowlistentry_added_ts_tag      10
+#define gate_v1_Allowlistentry_gate_ids_tag      11
 #define gate_v1_UpsertAllowlistRequest_site_id_tag 1
 #define gate_v1_UpsertAllowlistRequest_entries_tag 2
 #define gate_v1_UpsertAllowlistResponse_inserted_tag 1
@@ -662,10 +1169,203 @@ extern "C" {
 #define gate_v1_ListAllowlistResponse_next_page_token_tag 2
 #define gate_v1_DeleteAllowlistRequest_site_id_tag 1
 #define gate_v1_DeleteAllowlistRequest_plate_texts_tag 2
+#define gate_v1_LockTimings_mag_release_ms_tag   1
+#define gate_v1_LockTimings_bolt_retract_ms_tag  2
+#define gate_v1_LockTimings_pre_move_ms_tag      3
+#define gate_v1_LockTimings_settle_ms_tag        4
+#define gate_v1_LockTimings_mag_bond_ms_tag      5
+#define gate_v1_LockTimings_bolt_extend_ms_tag   6
+#define gate_v1_LockTimings_retries_tag          7
+#define gate_v1_GateConfig_version_tag           1
+#define gate_v1_GateConfig_type_tag              2
+#define gate_v1_GateConfig_lock_layout_tag       3
+#define gate_v1_GateConfig_lane_mode_tag         4
+#define gate_v1_GateConfig_leaf_count_tag        5
+#define gate_v1_GateConfig_auto_close_s_tag      6
+#define gate_v1_GateConfig_offline_close_s_tag   7
+#define gate_v1_GateConfig_bolt_hold_open_s_tag  8
+#define gate_v1_GateConfig_maglock_shed_s_tag    9
+#define gate_v1_GateConfig_timings_tag           11
+#define gate_v1_GateCommand_command_id_tag       1
+#define gate_v1_GateCommand_issued_ts_tag        2
+#define gate_v1_GateCommand_gate_id_tag          3
+#define gate_v1_GateCommand_kind_tag             4
+#define gate_v1_GateCommand_duration_tag         5
+#define gate_v1_GateCommand_led_pattern_tag      6
+#define gate_v1_GateCommand_relay_index_tag      7
+#define gate_v1_GateCommand_actor_tag            8
+#define gate_v1_GateCommand_signature_tag        9
+#define gate_v1_GateCommand_source_tag           10
+#define gate_v1_GateCommand_side_tag             11
+#define gate_v1_GateCommand_request_id_tag       12
+#define gate_v1_GateCommand_config_tag           13
+#define gate_v1_GateCommand_nonce_tag            14
+#define gate_v1_GateCommand_expires_ts_tag       15
+#define gate_v1_OpenRequest_request_id_tag       1
+#define gate_v1_OpenRequest_gate_id_tag          2
+#define gate_v1_OpenRequest_side_tag             3
+#define gate_v1_OpenRequest_source_tag           4
+#define gate_v1_OpenRequest_ts_tag               5
+#define gate_v1_OpenRequest_offline_served_tag   6
+#define gate_v1_OpenReply_request_id_tag         1
+#define gate_v1_OpenReply_status_tag             2
+#define gate_v1_OpenReply_queue_position_tag     3
+#define gate_v1_OpenRequestRecord_request_tag    1
+#define gate_v1_OpenRequestRecord_actor_tag      2
+#define gate_v1_OpenRequestRecord_decision_id_tag 3
+#define gate_v1_OpenRequestRecord_queued_ms_tag  4
+#define gate_v1_OpenRequestRecord_preempted_by_tag 5
+#define gate_v1_OpenRequestRecord_outcome_tag    6
+#define gate_v1_ControllerEvent_seq_tag          1
+#define gate_v1_ControllerEvent_boot_id_tag      2
+#define gate_v1_ControllerEvent_uptime_ms_tag    3
+#define gate_v1_ControllerEvent_unix_ms_tag      4
+#define gate_v1_ControllerEvent_kind_tag         5
+#define gate_v1_ControllerEvent_source_tag       6
+#define gate_v1_ControllerEvent_side_tag         7
+#define gate_v1_ControllerEvent_result_tag       8
+#define gate_v1_ControllerEvent_state_after_tag  9
+#define gate_v1_ControllerEvent_request_id_tag   10
+#define gate_v1_EventBatch_events_tag            1
+#define gate_v1_EventBatch_dropped_tag           2
+#define gate_v1_EventAck_boot_id_tag             1
+#define gate_v1_EventAck_last_seq_tag            2
+#define gate_v1_ControllerStats_cpu_load_pct_tag 1
+#define gate_v1_ControllerStats_link_tag         2
+#define gate_v1_ControllerStats_link_speed_mbps_tag 3
+#define gate_v1_ControllerStats_ip_tag           4
+#define gate_v1_ControllerStats_reconnects_tag   5
+#define gate_v1_ControllerStats_reset_reason_tag 6
+#define gate_v1_ControllerStats_outputs_mask_tag 7
+#define gate_v1_ControllerStats_cycles_operator_tag 8
+#define gate_v1_ControllerStats_cycles_lock_tag  9
+#define gate_v1_ControllerStats_cycles_relay_tag 10
+#define gate_v1_ControllerStats_last_run_open_ms_tag 11
+#define gate_v1_ControllerStats_last_run_close_ms_tag 12
+#define gate_v1_ControllerStats_expected_run_open_ms_tag 13
+#define gate_v1_ControllerStats_expected_run_close_ms_tag 14
+#define gate_v1_ControllerStats_motor_mean_ma_tag 15
+#define gate_v1_ControllerStats_motor_peak_ma_tag 16
+#define gate_v1_ControllerStats_core_temp_c_tag  17
+#define gate_v1_ControllerStats_board_temp_c_tag 18
+#define gate_v1_ControllerStats_rail_12v_tag     19
+#define gate_v1_ControllerStats_on_battery_s_tag 20
+#define gate_v1_VerifyReport_command_id_tag      1
+#define gate_v1_VerifyReport_observed_tag        2
+#define gate_v1_VerifyReport_passed_tag          3
+#define gate_v1_VerifyReport_detail_tag          4
+#define gate_v1_VerifyReport_limits_released_tag 5
+#define gate_v1_VerifyReport_motor_channels_tag  6
+#define gate_v1_GateCalibration_open_ms_a_tag    1
+#define gate_v1_GateCalibration_close_ms_a_tag   2
+#define gate_v1_GateCalibration_open_ms_b_tag    3
+#define gate_v1_GateCalibration_close_ms_b_tag   4
+#define gate_v1_GateCalibration_current_curve_ma_tag 5
+#define gate_v1_GateCalibration_unlock_ms_tag    6
+#define gate_v1_GateCalibration_lock_ms_tag      7
+#define gate_v1_Alert_ref_tag                    1
+#define gate_v1_Alert_kind_tag                   2
+#define gate_v1_Alert_severity_tag               3
+#define gate_v1_Alert_gate_id_tag                4
+#define gate_v1_Alert_plate_tag                  5
+#define gate_v1_Alert_message_tag                6
+#define gate_v1_Alert_image_uri_tag              7
+#define gate_v1_DashboardEvent_event_id_tag      1
+#define gate_v1_DashboardEvent_event_ts_tag      2
+#define gate_v1_DashboardEvent_decision_tag      3
+#define gate_v1_DashboardEvent_telemetry_tag     4
+#define gate_v1_DashboardEvent_fault_tag         5
+#define gate_v1_DashboardEvent_ota_tag           6
+#define gate_v1_DashboardEvent_command_tag       7
+#define gate_v1_DashboardEvent_ack_tag           8
+#define gate_v1_DashboardEvent_open_request_tag  9
+#define gate_v1_DashboardEvent_stats_tag         10
+#define gate_v1_DashboardEvent_alert_tag         11
+#define gate_v1_VehicleAppearance_make_tag       1
+#define gate_v1_VehicleAppearance_model_tag      2
+#define gate_v1_VehicleAppearance_year_from_tag  3
+#define gate_v1_VehicleAppearance_year_to_tag    4
+#define gate_v1_VehicleAppearance_colour_tag     5
+#define gate_v1_VehicleAppearance_conf_tag       6
+#define gate_v1_VehicleAppearance_embedding_ref_tag 7
+#define gate_v1_DetectionFrame_capture_ts_tag    1
+#define gate_v1_DetectionFrame_frame_id_tag      2
+#define gate_v1_DetectionFrame_gate_id_tag       3
+#define gate_v1_DetectionFrame_plates_tag        4
+#define gate_v1_DetectionFrame_vehicles_tag      5
+#define gate_v1_DetectionFrame_camera_image_uri_tag 6
+#define gate_v1_DetectionFrame_lidar_pcd_uri_tag 7
+#define gate_v1_DetectionFrame_side_tag          8
+#define gate_v1_DetectionFrame_camera_id_tag     9
+#define gate_v1_DetectionFrame_appearance_tag    10
+#define gate_v1_AuthorizeRequest_frame_tag       1
+#define gate_v1_AuthorizeRequest_site_id_tag     2
+#define gate_v1_AuthorizeRequest_override_allowlist_tag 3
+#define gate_v1_AuthorizeRequest_actor_tag       4
+#define gate_v1_AuthorizeRequest_force_reason_tag 5
+#define gate_v1_BlocklistEntry_plate_text_tag    1
+#define gate_v1_BlocklistEntry_reason_tag        2
+#define gate_v1_BlocklistEntry_added_by_tag      3
+#define gate_v1_BlocklistEntry_added_ts_tag      4
+#define gate_v1_UpsertBlocklistRequest_site_id_tag 1
+#define gate_v1_UpsertBlocklistRequest_entries_tag 2
+#define gate_v1_ListBlocklistRequest_site_id_tag 1
+#define gate_v1_ListBlocklistRequest_page_size_tag 2
+#define gate_v1_ListBlocklistRequest_page_token_tag 3
+#define gate_v1_ListBlocklistResponse_entries_tag 1
+#define gate_v1_ListBlocklistResponse_next_page_token_tag 2
+#define gate_v1_VehicleAccess_site_id_tag        1
+#define gate_v1_VehicleAccess_plate_text_tag     2
+#define gate_v1_VehicleAccess_mode_tag           3
+#define gate_v1_VehicleAccess_reason_tag         4
+#define gate_v1_SetVehicleAccessRequest_access_tag 1
+#define gate_v1_GuestPass_pass_id_tag            1
+#define gate_v1_GuestPass_site_id_tag            2
+#define gate_v1_GuestPass_plate_text_tag         3
+#define gate_v1_GuestPass_guest_name_tag         4
+#define gate_v1_GuestPass_host_tag               5
+#define gate_v1_GuestPass_gate_ids_tag           6
+#define gate_v1_GuestPass_kind_tag               7
+#define gate_v1_GuestPass_valid_from_tag         8
+#define gate_v1_GuestPass_valid_until_tag        9
+#define gate_v1_GuestPass_entries_used_tag       10
+#define gate_v1_GuestPass_status_tag             11
+#define gate_v1_GuestPass_expected_make_tag      12
+#define gate_v1_GuestPass_expected_model_tag     13
+#define gate_v1_GuestPass_expected_colour_tag    14
+#define gate_v1_GuestPass_created_by_tag         15
+#define gate_v1_ListGuestPassesRequest_site_id_tag 1
+#define gate_v1_ListGuestPassesRequest_page_size_tag 2
+#define gate_v1_ListGuestPassesRequest_page_token_tag 3
+#define gate_v1_ListGuestPassesResponse_passes_tag 1
+#define gate_v1_ListGuestPassesResponse_next_page_token_tag 2
+#define gate_v1_RevokeGuestPassRequest_pass_id_tag 1
+#define gate_v1_GetGateConfigRequest_gate_id_tag 1
+#define gate_v1_GateConfigRecord_gate_id_tag     1
+#define gate_v1_GateConfigRecord_config_tag      2
+#define gate_v1_GateConfigRecord_status_tag      3
+#define gate_v1_GateConfigRecord_calibration_tag 4
+#define gate_v1_GateConfigRecord_updated_ts_tag  5
+#define gate_v1_GateConfigRecord_updated_by_tag  6
+#define gate_v1_SetGateConfigRequest_gate_id_tag 1
+#define gate_v1_SetGateConfigRequest_config_tag  2
+#define gate_v1_SetLaneConfigRequest_gate_id_tag 1
+#define gate_v1_SetLaneConfigRequest_lane_mode_tag 2
+#define gate_v1_GateOpRequest_gate_id_tag        1
+#define gate_v1_GateOpStatus_gate_id_tag         1
+#define gate_v1_GateOpStatus_status_tag          2
+#define gate_v1_GateOpStatus_detail_tag          3
 #define gate_v1_ControlEnvelope_telemetry_tag    1
 #define gate_v1_ControlEnvelope_ack_tag          2
 #define gate_v1_ControlEnvelope_fault_tag        3
 #define gate_v1_ControlEnvelope_command_tag      4
+#define gate_v1_ControlEnvelope_open_request_tag 5
+#define gate_v1_ControlEnvelope_events_tag       6
+#define gate_v1_ControlEnvelope_events_ack_tag   7
+#define gate_v1_ControlEnvelope_stats_tag        8
+#define gate_v1_ControlEnvelope_verify_tag       9
+#define gate_v1_ControlEnvelope_calibration_tag  10
+#define gate_v1_ControlEnvelope_open_reply_tag   11
 
 /* Struct field encoding specification for nanopb */
 #define gate_v1_BoundingBox_FIELDLIST(X, a) \
@@ -723,18 +1423,23 @@ X(a, CALLBACK, SINGULAR, STRING,   gate_id,           3) \
 X(a, CALLBACK, REPEATED, MESSAGE,  plates,            4) \
 X(a, CALLBACK, REPEATED, MESSAGE,  vehicles,          5) \
 X(a, CALLBACK, SINGULAR, STRING,   camera_image_uri,   6) \
-X(a, CALLBACK, SINGULAR, STRING,   lidar_pcd_uri,     7)
+X(a, CALLBACK, SINGULAR, STRING,   lidar_pcd_uri,     7) \
+X(a, STATIC,   SINGULAR, UENUM,    side,              8) \
+X(a, CALLBACK, SINGULAR, STRING,   camera_id,         9) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  appearance,       10)
 #define gate_v1_DetectionFrame_CALLBACK pb_default_field_callback
 #define gate_v1_DetectionFrame_DEFAULT NULL
 #define gate_v1_DetectionFrame_capture_ts_MSGTYPE google_protobuf_Timestamp
 #define gate_v1_DetectionFrame_plates_MSGTYPE gate_v1_PlateDetection
 #define gate_v1_DetectionFrame_vehicles_MSGTYPE gate_v1_VehicleDetection
+#define gate_v1_DetectionFrame_appearance_MSGTYPE gate_v1_VehicleAppearance
 
 #define gate_v1_AuthorizeRequest_FIELDLIST(X, a) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  frame,             1) \
 X(a, CALLBACK, SINGULAR, STRING,   site_id,           2) \
 X(a, STATIC,   SINGULAR, BOOL,     override_allowlist,   3) \
-X(a, CALLBACK, SINGULAR, STRING,   actor,             4)
+X(a, CALLBACK, SINGULAR, STRING,   actor,             4) \
+X(a, CALLBACK, SINGULAR, STRING,   force_reason,      5)
 #define gate_v1_AuthorizeRequest_CALLBACK pb_default_field_callback
 #define gate_v1_AuthorizeRequest_DEFAULT NULL
 #define gate_v1_AuthorizeRequest_frame_MSGTYPE gate_v1_DetectionFrame
@@ -750,7 +1455,11 @@ X(a, STATIC,   SINGULAR, UENUM,    matched_class,     7) \
 X(a, STATIC,   SINGULAR, FLOAT,    combined_conf,     8) \
 X(a, CALLBACK, SINGULAR, STRING,   reason_text,       9) \
 X(a, STATIC,   SINGULAR, UINT64,   frame_id,         10) \
-X(a, CALLBACK, SINGULAR, STRING,   actor,            11)
+X(a, CALLBACK, SINGULAR, STRING,   actor,            11) \
+X(a, STATIC,   SINGULAR, UENUM,    side,             12) \
+X(a, CALLBACK, SINGULAR, STRING,   pass_id,          13) \
+X(a, CALLBACK, REPEATED, STRING,   alerts,           14) \
+X(a, CALLBACK, SINGULAR, STRING,   force_reason,     15)
 #define gate_v1_AuthDecision_CALLBACK pb_default_field_callback
 #define gate_v1_AuthDecision_DEFAULT NULL
 #define gate_v1_AuthDecision_decision_ts_MSGTYPE google_protobuf_Timestamp
@@ -770,7 +1479,20 @@ X(a, STATIC,   SINGULAR, FLOAT,    supply_voltage_v,  11) \
 X(a, STATIC,   SINGULAR, FLOAT,    core_temp_c,      12) \
 X(a, STATIC,   SINGULAR, STRING,   firmware_version,  13) \
 X(a, STATIC,   SINGULAR, STRING,   firmware_sha256,  14) \
-X(a, STATIC,   SINGULAR, UINT64,   seq,              15)
+X(a, STATIC,   SINGULAR, UINT64,   seq,              15) \
+X(a, STATIC,   SINGULAR, UINT32,   capabilities,     16) \
+X(a, STATIC,   SINGULAR, UINT32,   config_version,   17) \
+X(a, STATIC,   SINGULAR, UENUM,    config_status,    18) \
+X(a, STATIC,   SINGULAR, UINT32,   lock_state_mask,  19) \
+X(a, STATIC,   SINGULAR, UINT32,   op_status,        20) \
+X(a, STATIC,   SINGULAR, UINT32,   position_permille_a,  21) \
+X(a, STATIC,   SINGULAR, UINT32,   position_permille_b,  22) \
+X(a, STATIC,   SINGULAR, FLOAT,    batt_v,           23) \
+X(a, STATIC,   SINGULAR, BOOL,     mains_ok,         24) \
+X(a, STATIC,   SINGULAR, UINT32,   reason,           25) \
+X(a, STATIC,   SINGULAR, UINT32,   pending_events,   26) \
+X(a, STATIC,   SINGULAR, UINT32,   limit_extra_mask,  27) \
+X(a, STATIC,   SINGULAR, UINT32,   hardware_rev,     28)
 #define gate_v1_Telemetry_CALLBACK NULL
 #define gate_v1_Telemetry_DEFAULT NULL
 #define gate_v1_Telemetry_sent_ts_MSGTYPE google_protobuf_Timestamp
@@ -784,11 +1506,19 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  duration,          5) \
 X(a, STATIC,   SINGULAR, UENUM,    led_pattern,       6) \
 X(a, STATIC,   SINGULAR, UINT32,   relay_index,       7) \
 X(a, STATIC,   SINGULAR, STRING,   actor,             8) \
-X(a, STATIC,   SINGULAR, BYTES,    signature,         9)
+X(a, STATIC,   SINGULAR, BYTES,    signature,         9) \
+X(a, STATIC,   SINGULAR, UENUM,    source,           10) \
+X(a, STATIC,   SINGULAR, UENUM,    side,             11) \
+X(a, STATIC,   SINGULAR, STRING,   request_id,       12) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  config,           13) \
+X(a, STATIC,   SINGULAR, BYTES,    nonce,            14) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  expires_ts,       15)
 #define gate_v1_GateCommand_CALLBACK NULL
 #define gate_v1_GateCommand_DEFAULT NULL
 #define gate_v1_GateCommand_issued_ts_MSGTYPE google_protobuf_Timestamp
 #define gate_v1_GateCommand_duration_MSGTYPE google_protobuf_Duration
+#define gate_v1_GateCommand_config_MSGTYPE gate_v1_GateConfig
+#define gate_v1_GateCommand_expires_ts_MSGTYPE google_protobuf_Timestamp
 
 #define gate_v1_CommandAck_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, STRING,   command_id,        1) \
@@ -830,7 +1560,8 @@ X(a, STATIC,   SINGULAR, BYTES,    ed25519_sig,       4) \
 X(a, STATIC,   SINGULAR, STRING,   signing_key_id,    5) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  built_ts,          6) \
 X(a, STATIC,   SINGULAR, STRING,   release_notes,     7) \
-X(a, STATIC,   SINGULAR, UINT32,   min_uptime_sec,    8)
+X(a, STATIC,   SINGULAR, UINT32,   min_uptime_sec,    8) \
+X(a, STATIC,   SINGULAR, UINT32,   hardware_rev,      9)
 #define gate_v1_OtaManifest_CALLBACK NULL
 #define gate_v1_OtaManifest_DEFAULT NULL
 #define gate_v1_OtaManifest_built_ts_MSGTYPE google_protobuf_Timestamp
@@ -859,7 +1590,10 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,telemetry,payload.telemetry),   4) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,fault,payload.fault),   5) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ota,payload.ota),   6) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,command,payload.command),   7) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ack,payload.ack),   8)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ack,payload.ack),   8) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,open_request,payload.open_request),   9) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,stats,payload.stats),  10) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,alert,payload.alert),  11)
 #define gate_v1_DashboardEvent_CALLBACK NULL
 #define gate_v1_DashboardEvent_DEFAULT NULL
 #define gate_v1_DashboardEvent_event_ts_MSGTYPE google_protobuf_Timestamp
@@ -869,6 +1603,9 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ack,payload.ack),   8)
 #define gate_v1_DashboardEvent_payload_ota_MSGTYPE gate_v1_OtaProgress
 #define gate_v1_DashboardEvent_payload_command_MSGTYPE gate_v1_GateCommand
 #define gate_v1_DashboardEvent_payload_ack_MSGTYPE gate_v1_CommandAck
+#define gate_v1_DashboardEvent_payload_open_request_MSGTYPE gate_v1_OpenRequestRecord
+#define gate_v1_DashboardEvent_payload_stats_MSGTYPE gate_v1_ControllerStats
+#define gate_v1_DashboardEvent_payload_alert_MSGTYPE gate_v1_Alert
 
 #define gate_v1_DashboardSubscription_FIELDLIST(X, a) \
 X(a, CALLBACK, SINGULAR, STRING,   site_id,           1) \
@@ -898,7 +1635,8 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  valid_from,        6) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  valid_until,       7) \
 X(a, CALLBACK, SINGULAR, STRING,   notes,             8) \
 X(a, CALLBACK, SINGULAR, STRING,   added_by,          9) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  added_ts,         10)
+X(a, STATIC,   OPTIONAL, MESSAGE,  added_ts,         10) \
+X(a, CALLBACK, REPEATED, STRING,   gate_ids,         11)
 #define gate_v1_Allowlistentry_CALLBACK pb_default_field_callback
 #define gate_v1_Allowlistentry_DEFAULT NULL
 #define gate_v1_Allowlistentry_time_windows_MSGTYPE gate_v1_TimeWindow
@@ -939,17 +1677,307 @@ X(a, CALLBACK, REPEATED, STRING,   plate_texts,       2)
 #define gate_v1_DeleteAllowlistRequest_CALLBACK pb_default_field_callback
 #define gate_v1_DeleteAllowlistRequest_DEFAULT NULL
 
+#define gate_v1_LockTimings_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   mag_release_ms,    1) \
+X(a, STATIC,   SINGULAR, UINT32,   bolt_retract_ms,   2) \
+X(a, STATIC,   SINGULAR, UINT32,   pre_move_ms,       3) \
+X(a, STATIC,   SINGULAR, UINT32,   settle_ms,         4) \
+X(a, STATIC,   SINGULAR, UINT32,   mag_bond_ms,       5) \
+X(a, STATIC,   SINGULAR, UINT32,   bolt_extend_ms,    6) \
+X(a, STATIC,   SINGULAR, UINT32,   retries,           7)
+#define gate_v1_LockTimings_CALLBACK NULL
+#define gate_v1_LockTimings_DEFAULT NULL
+
+#define gate_v1_GateConfig_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   version,           1) \
+X(a, STATIC,   SINGULAR, UENUM,    type,              2) \
+X(a, STATIC,   SINGULAR, UENUM,    lock_layout,       3) \
+X(a, STATIC,   SINGULAR, UENUM,    lane_mode,         4) \
+X(a, STATIC,   SINGULAR, UINT32,   leaf_count,        5) \
+X(a, STATIC,   SINGULAR, UINT32,   auto_close_s,      6) \
+X(a, STATIC,   SINGULAR, UINT32,   offline_close_s,   7) \
+X(a, STATIC,   SINGULAR, UINT32,   bolt_hold_open_s,   8) \
+X(a, STATIC,   SINGULAR, UINT32,   maglock_shed_s,    9) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  timings,          11)
+#define gate_v1_GateConfig_CALLBACK NULL
+#define gate_v1_GateConfig_DEFAULT NULL
+#define gate_v1_GateConfig_timings_MSGTYPE gate_v1_LockTimings
+
+#define gate_v1_OpenRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, STRING,   request_id,        1) \
+X(a, STATIC,   SINGULAR, STRING,   gate_id,           2) \
+X(a, STATIC,   SINGULAR, UENUM,    side,              3) \
+X(a, STATIC,   SINGULAR, UENUM,    source,            4) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  ts,                5) \
+X(a, STATIC,   SINGULAR, BOOL,     offline_served,    6)
+#define gate_v1_OpenRequest_CALLBACK NULL
+#define gate_v1_OpenRequest_DEFAULT NULL
+#define gate_v1_OpenRequest_ts_MSGTYPE google_protobuf_Timestamp
+
+#define gate_v1_OpenReply_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, STRING,   request_id,        1) \
+X(a, STATIC,   SINGULAR, UENUM,    status,            2) \
+X(a, STATIC,   SINGULAR, UINT32,   queue_position,    3)
+#define gate_v1_OpenReply_CALLBACK NULL
+#define gate_v1_OpenReply_DEFAULT NULL
+
+#define gate_v1_OpenRequestRecord_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  request,           1) \
+X(a, CALLBACK, SINGULAR, STRING,   actor,             2) \
+X(a, CALLBACK, SINGULAR, STRING,   decision_id,       3) \
+X(a, STATIC,   SINGULAR, UINT32,   queued_ms,         4) \
+X(a, CALLBACK, SINGULAR, STRING,   preempted_by,      5) \
+X(a, CALLBACK, SINGULAR, STRING,   outcome,           6)
+#define gate_v1_OpenRequestRecord_CALLBACK pb_default_field_callback
+#define gate_v1_OpenRequestRecord_DEFAULT NULL
+#define gate_v1_OpenRequestRecord_request_MSGTYPE gate_v1_OpenRequest
+
+#define gate_v1_ControllerEvent_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT64,   seq,               1) \
+X(a, STATIC,   SINGULAR, UINT32,   boot_id,           2) \
+X(a, STATIC,   SINGULAR, UINT64,   uptime_ms,         3) \
+X(a, STATIC,   SINGULAR, INT64,    unix_ms,           4) \
+X(a, STATIC,   SINGULAR, UINT32,   kind,              5) \
+X(a, STATIC,   SINGULAR, UENUM,    source,            6) \
+X(a, STATIC,   SINGULAR, UENUM,    side,              7) \
+X(a, STATIC,   SINGULAR, UINT32,   result,            8) \
+X(a, STATIC,   SINGULAR, UENUM,    state_after,       9) \
+X(a, CALLBACK, SINGULAR, BYTES,    request_id,       10)
+#define gate_v1_ControllerEvent_CALLBACK pb_default_field_callback
+#define gate_v1_ControllerEvent_DEFAULT NULL
+
+#define gate_v1_EventBatch_FIELDLIST(X, a) \
+X(a, CALLBACK, REPEATED, MESSAGE,  events,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   dropped,           2)
+#define gate_v1_EventBatch_CALLBACK pb_default_field_callback
+#define gate_v1_EventBatch_DEFAULT NULL
+#define gate_v1_EventBatch_events_MSGTYPE gate_v1_ControllerEvent
+
+#define gate_v1_EventAck_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   boot_id,           1) \
+X(a, STATIC,   SINGULAR, UINT64,   last_seq,          2)
+#define gate_v1_EventAck_CALLBACK NULL
+#define gate_v1_EventAck_DEFAULT NULL
+
+#define gate_v1_ControllerStats_FIELDLIST(X, a) \
+X(a, CALLBACK, REPEATED, UINT32,   cpu_load_pct,      1) \
+X(a, CALLBACK, SINGULAR, STRING,   link,              2) \
+X(a, STATIC,   SINGULAR, UINT32,   link_speed_mbps,   3) \
+X(a, CALLBACK, SINGULAR, STRING,   ip,                4) \
+X(a, STATIC,   SINGULAR, UINT32,   reconnects,        5) \
+X(a, CALLBACK, SINGULAR, STRING,   reset_reason,      6) \
+X(a, STATIC,   SINGULAR, UINT32,   outputs_mask,      7) \
+X(a, STATIC,   SINGULAR, UINT32,   cycles_operator,   8) \
+X(a, CALLBACK, REPEATED, UINT32,   cycles_lock,       9) \
+X(a, CALLBACK, REPEATED, UINT32,   cycles_relay,     10) \
+X(a, STATIC,   SINGULAR, UINT32,   last_run_open_ms,  11) \
+X(a, STATIC,   SINGULAR, UINT32,   last_run_close_ms,  12) \
+X(a, STATIC,   SINGULAR, UINT32,   expected_run_open_ms,  13) \
+X(a, STATIC,   SINGULAR, UINT32,   expected_run_close_ms,  14) \
+X(a, CALLBACK, REPEATED, UINT32,   motor_mean_ma,    15) \
+X(a, CALLBACK, REPEATED, UINT32,   motor_peak_ma,    16) \
+X(a, STATIC,   SINGULAR, FLOAT,    core_temp_c,      17) \
+X(a, STATIC,   SINGULAR, FLOAT,    board_temp_c,     18) \
+X(a, STATIC,   SINGULAR, FLOAT,    rail_12v,         19) \
+X(a, STATIC,   SINGULAR, UINT32,   on_battery_s,     20)
+#define gate_v1_ControllerStats_CALLBACK pb_default_field_callback
+#define gate_v1_ControllerStats_DEFAULT NULL
+
+#define gate_v1_VerifyReport_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   command_id,        1) \
+X(a, STATIC,   SINGULAR, UENUM,    observed,          2) \
+X(a, STATIC,   SINGULAR, BOOL,     passed,            3) \
+X(a, CALLBACK, SINGULAR, STRING,   detail,            4) \
+X(a, STATIC,   SINGULAR, UINT32,   limits_released,   5) \
+X(a, STATIC,   SINGULAR, UINT32,   motor_channels,    6)
+#define gate_v1_VerifyReport_CALLBACK pb_default_field_callback
+#define gate_v1_VerifyReport_DEFAULT NULL
+
+#define gate_v1_GateCalibration_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   open_ms_a,         1) \
+X(a, STATIC,   SINGULAR, UINT32,   close_ms_a,        2) \
+X(a, STATIC,   SINGULAR, UINT32,   open_ms_b,         3) \
+X(a, STATIC,   SINGULAR, UINT32,   close_ms_b,        4) \
+X(a, CALLBACK, REPEATED, UINT32,   current_curve_ma,   5) \
+X(a, STATIC,   SINGULAR, UINT32,   unlock_ms,         6) \
+X(a, STATIC,   SINGULAR, UINT32,   lock_ms,           7)
+#define gate_v1_GateCalibration_CALLBACK pb_default_field_callback
+#define gate_v1_GateCalibration_DEFAULT NULL
+
+#define gate_v1_Alert_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   ref,               1) \
+X(a, CALLBACK, SINGULAR, STRING,   kind,              2) \
+X(a, STATIC,   SINGULAR, UENUM,    severity,          3) \
+X(a, CALLBACK, SINGULAR, STRING,   gate_id,           4) \
+X(a, CALLBACK, SINGULAR, STRING,   plate,             5) \
+X(a, CALLBACK, SINGULAR, STRING,   message,           6) \
+X(a, CALLBACK, SINGULAR, STRING,   image_uri,         7)
+#define gate_v1_Alert_CALLBACK pb_default_field_callback
+#define gate_v1_Alert_DEFAULT NULL
+
+#define gate_v1_VehicleAppearance_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   make,              1) \
+X(a, CALLBACK, SINGULAR, STRING,   model,             2) \
+X(a, STATIC,   SINGULAR, UINT32,   year_from,         3) \
+X(a, STATIC,   SINGULAR, UINT32,   year_to,           4) \
+X(a, CALLBACK, SINGULAR, STRING,   colour,            5) \
+X(a, STATIC,   SINGULAR, FLOAT,    conf,              6) \
+X(a, CALLBACK, SINGULAR, STRING,   embedding_ref,     7)
+#define gate_v1_VehicleAppearance_CALLBACK pb_default_field_callback
+#define gate_v1_VehicleAppearance_DEFAULT NULL
+
+#define gate_v1_BlocklistEntry_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   plate_text,        1) \
+X(a, CALLBACK, SINGULAR, STRING,   reason,            2) \
+X(a, CALLBACK, SINGULAR, STRING,   added_by,          3) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  added_ts,          4)
+#define gate_v1_BlocklistEntry_CALLBACK pb_default_field_callback
+#define gate_v1_BlocklistEntry_DEFAULT NULL
+#define gate_v1_BlocklistEntry_added_ts_MSGTYPE google_protobuf_Timestamp
+
+#define gate_v1_UpsertBlocklistRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   site_id,           1) \
+X(a, CALLBACK, REPEATED, MESSAGE,  entries,           2)
+#define gate_v1_UpsertBlocklistRequest_CALLBACK pb_default_field_callback
+#define gate_v1_UpsertBlocklistRequest_DEFAULT NULL
+#define gate_v1_UpsertBlocklistRequest_entries_MSGTYPE gate_v1_BlocklistEntry
+
+#define gate_v1_ListBlocklistRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   site_id,           1) \
+X(a, STATIC,   SINGULAR, UINT32,   page_size,         2) \
+X(a, CALLBACK, SINGULAR, STRING,   page_token,        3)
+#define gate_v1_ListBlocklistRequest_CALLBACK pb_default_field_callback
+#define gate_v1_ListBlocklistRequest_DEFAULT NULL
+
+#define gate_v1_ListBlocklistResponse_FIELDLIST(X, a) \
+X(a, CALLBACK, REPEATED, MESSAGE,  entries,           1) \
+X(a, CALLBACK, SINGULAR, STRING,   next_page_token,   2)
+#define gate_v1_ListBlocklistResponse_CALLBACK pb_default_field_callback
+#define gate_v1_ListBlocklistResponse_DEFAULT NULL
+#define gate_v1_ListBlocklistResponse_entries_MSGTYPE gate_v1_BlocklistEntry
+
+#define gate_v1_VehicleAccess_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   site_id,           1) \
+X(a, CALLBACK, SINGULAR, STRING,   plate_text,        2) \
+X(a, STATIC,   SINGULAR, UENUM,    mode,              3) \
+X(a, CALLBACK, SINGULAR, STRING,   reason,            4)
+#define gate_v1_VehicleAccess_CALLBACK pb_default_field_callback
+#define gate_v1_VehicleAccess_DEFAULT NULL
+
+#define gate_v1_SetVehicleAccessRequest_FIELDLIST(X, a) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  access,            1)
+#define gate_v1_SetVehicleAccessRequest_CALLBACK NULL
+#define gate_v1_SetVehicleAccessRequest_DEFAULT NULL
+#define gate_v1_SetVehicleAccessRequest_access_MSGTYPE gate_v1_VehicleAccess
+
+#define gate_v1_GuestPass_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   pass_id,           1) \
+X(a, CALLBACK, SINGULAR, STRING,   site_id,           2) \
+X(a, CALLBACK, SINGULAR, STRING,   plate_text,        3) \
+X(a, CALLBACK, SINGULAR, STRING,   guest_name,        4) \
+X(a, CALLBACK, SINGULAR, STRING,   host,              5) \
+X(a, CALLBACK, REPEATED, STRING,   gate_ids,          6) \
+X(a, STATIC,   SINGULAR, UENUM,    kind,              7) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  valid_from,        8) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  valid_until,       9) \
+X(a, STATIC,   SINGULAR, UINT32,   entries_used,     10) \
+X(a, CALLBACK, SINGULAR, STRING,   status,           11) \
+X(a, CALLBACK, SINGULAR, STRING,   expected_make,    12) \
+X(a, CALLBACK, SINGULAR, STRING,   expected_model,   13) \
+X(a, CALLBACK, SINGULAR, STRING,   expected_colour,  14) \
+X(a, CALLBACK, SINGULAR, STRING,   created_by,       15)
+#define gate_v1_GuestPass_CALLBACK pb_default_field_callback
+#define gate_v1_GuestPass_DEFAULT NULL
+#define gate_v1_GuestPass_valid_from_MSGTYPE google_protobuf_Timestamp
+#define gate_v1_GuestPass_valid_until_MSGTYPE google_protobuf_Timestamp
+
+#define gate_v1_ListGuestPassesRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   site_id,           1) \
+X(a, STATIC,   SINGULAR, UINT32,   page_size,         2) \
+X(a, CALLBACK, SINGULAR, STRING,   page_token,        3)
+#define gate_v1_ListGuestPassesRequest_CALLBACK pb_default_field_callback
+#define gate_v1_ListGuestPassesRequest_DEFAULT NULL
+
+#define gate_v1_ListGuestPassesResponse_FIELDLIST(X, a) \
+X(a, CALLBACK, REPEATED, MESSAGE,  passes,            1) \
+X(a, CALLBACK, SINGULAR, STRING,   next_page_token,   2)
+#define gate_v1_ListGuestPassesResponse_CALLBACK pb_default_field_callback
+#define gate_v1_ListGuestPassesResponse_DEFAULT NULL
+#define gate_v1_ListGuestPassesResponse_passes_MSGTYPE gate_v1_GuestPass
+
+#define gate_v1_RevokeGuestPassRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   pass_id,           1)
+#define gate_v1_RevokeGuestPassRequest_CALLBACK pb_default_field_callback
+#define gate_v1_RevokeGuestPassRequest_DEFAULT NULL
+
+#define gate_v1_GetGateConfigRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   gate_id,           1)
+#define gate_v1_GetGateConfigRequest_CALLBACK pb_default_field_callback
+#define gate_v1_GetGateConfigRequest_DEFAULT NULL
+
+#define gate_v1_GateConfigRecord_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   gate_id,           1) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  config,            2) \
+X(a, STATIC,   SINGULAR, UENUM,    status,            3) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  calibration,       4) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  updated_ts,        5) \
+X(a, CALLBACK, SINGULAR, STRING,   updated_by,        6)
+#define gate_v1_GateConfigRecord_CALLBACK pb_default_field_callback
+#define gate_v1_GateConfigRecord_DEFAULT NULL
+#define gate_v1_GateConfigRecord_config_MSGTYPE gate_v1_GateConfig
+#define gate_v1_GateConfigRecord_calibration_MSGTYPE gate_v1_GateCalibration
+#define gate_v1_GateConfigRecord_updated_ts_MSGTYPE google_protobuf_Timestamp
+
+#define gate_v1_SetGateConfigRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   gate_id,           1) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  config,            2)
+#define gate_v1_SetGateConfigRequest_CALLBACK pb_default_field_callback
+#define gate_v1_SetGateConfigRequest_DEFAULT NULL
+#define gate_v1_SetGateConfigRequest_config_MSGTYPE gate_v1_GateConfig
+
+#define gate_v1_SetLaneConfigRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   gate_id,           1) \
+X(a, STATIC,   SINGULAR, UENUM,    lane_mode,         2)
+#define gate_v1_SetLaneConfigRequest_CALLBACK pb_default_field_callback
+#define gate_v1_SetLaneConfigRequest_DEFAULT NULL
+
+#define gate_v1_GateOpRequest_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   gate_id,           1)
+#define gate_v1_GateOpRequest_CALLBACK pb_default_field_callback
+#define gate_v1_GateOpRequest_DEFAULT NULL
+
+#define gate_v1_GateOpStatus_FIELDLIST(X, a) \
+X(a, CALLBACK, SINGULAR, STRING,   gate_id,           1) \
+X(a, STATIC,   SINGULAR, UENUM,    status,            2) \
+X(a, CALLBACK, SINGULAR, STRING,   detail,            3)
+#define gate_v1_GateOpStatus_CALLBACK pb_default_field_callback
+#define gate_v1_GateOpStatus_DEFAULT NULL
+
 #define gate_v1_ControlEnvelope_FIELDLIST(X, a) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,telemetry,payload.telemetry),   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ack,payload.ack),   2) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,fault,payload.fault),   3) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,command,payload.command),   4)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,command,payload.command),   4) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,open_request,payload.open_request),   5) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,events,payload.events),   6) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,events_ack,payload.events_ack),   7) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,stats,payload.stats),   8) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,verify,payload.verify),   9) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,calibration,payload.calibration),  10) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,open_reply,payload.open_reply),  11)
 #define gate_v1_ControlEnvelope_CALLBACK NULL
 #define gate_v1_ControlEnvelope_DEFAULT NULL
 #define gate_v1_ControlEnvelope_payload_telemetry_MSGTYPE gate_v1_Telemetry
 #define gate_v1_ControlEnvelope_payload_ack_MSGTYPE gate_v1_CommandAck
 #define gate_v1_ControlEnvelope_payload_fault_MSGTYPE gate_v1_FaultEvent
 #define gate_v1_ControlEnvelope_payload_command_MSGTYPE gate_v1_GateCommand
+#define gate_v1_ControlEnvelope_payload_open_request_MSGTYPE gate_v1_OpenRequest
+#define gate_v1_ControlEnvelope_payload_events_MSGTYPE gate_v1_EventBatch
+#define gate_v1_ControlEnvelope_payload_events_ack_MSGTYPE gate_v1_EventAck
+#define gate_v1_ControlEnvelope_payload_stats_MSGTYPE gate_v1_ControllerStats
+#define gate_v1_ControlEnvelope_payload_verify_MSGTYPE gate_v1_VerifyReport
+#define gate_v1_ControlEnvelope_payload_calibration_MSGTYPE gate_v1_GateCalibration
+#define gate_v1_ControlEnvelope_payload_open_reply_MSGTYPE gate_v1_OpenReply
 
 extern const pb_msgdesc_t gate_v1_BoundingBox_msg;
 extern const pb_msgdesc_t gate_v1_Point3D_msg;
@@ -976,6 +2004,35 @@ extern const pb_msgdesc_t gate_v1_UpsertAllowlistResponse_msg;
 extern const pb_msgdesc_t gate_v1_ListAllowlistRequest_msg;
 extern const pb_msgdesc_t gate_v1_ListAllowlistResponse_msg;
 extern const pb_msgdesc_t gate_v1_DeleteAllowlistRequest_msg;
+extern const pb_msgdesc_t gate_v1_LockTimings_msg;
+extern const pb_msgdesc_t gate_v1_GateConfig_msg;
+extern const pb_msgdesc_t gate_v1_OpenRequest_msg;
+extern const pb_msgdesc_t gate_v1_OpenReply_msg;
+extern const pb_msgdesc_t gate_v1_OpenRequestRecord_msg;
+extern const pb_msgdesc_t gate_v1_ControllerEvent_msg;
+extern const pb_msgdesc_t gate_v1_EventBatch_msg;
+extern const pb_msgdesc_t gate_v1_EventAck_msg;
+extern const pb_msgdesc_t gate_v1_ControllerStats_msg;
+extern const pb_msgdesc_t gate_v1_VerifyReport_msg;
+extern const pb_msgdesc_t gate_v1_GateCalibration_msg;
+extern const pb_msgdesc_t gate_v1_Alert_msg;
+extern const pb_msgdesc_t gate_v1_VehicleAppearance_msg;
+extern const pb_msgdesc_t gate_v1_BlocklistEntry_msg;
+extern const pb_msgdesc_t gate_v1_UpsertBlocklistRequest_msg;
+extern const pb_msgdesc_t gate_v1_ListBlocklistRequest_msg;
+extern const pb_msgdesc_t gate_v1_ListBlocklistResponse_msg;
+extern const pb_msgdesc_t gate_v1_VehicleAccess_msg;
+extern const pb_msgdesc_t gate_v1_SetVehicleAccessRequest_msg;
+extern const pb_msgdesc_t gate_v1_GuestPass_msg;
+extern const pb_msgdesc_t gate_v1_ListGuestPassesRequest_msg;
+extern const pb_msgdesc_t gate_v1_ListGuestPassesResponse_msg;
+extern const pb_msgdesc_t gate_v1_RevokeGuestPassRequest_msg;
+extern const pb_msgdesc_t gate_v1_GetGateConfigRequest_msg;
+extern const pb_msgdesc_t gate_v1_GateConfigRecord_msg;
+extern const pb_msgdesc_t gate_v1_SetGateConfigRequest_msg;
+extern const pb_msgdesc_t gate_v1_SetLaneConfigRequest_msg;
+extern const pb_msgdesc_t gate_v1_GateOpRequest_msg;
+extern const pb_msgdesc_t gate_v1_GateOpStatus_msg;
 extern const pb_msgdesc_t gate_v1_ControlEnvelope_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
@@ -1004,6 +2061,35 @@ extern const pb_msgdesc_t gate_v1_ControlEnvelope_msg;
 #define gate_v1_ListAllowlistRequest_fields &gate_v1_ListAllowlistRequest_msg
 #define gate_v1_ListAllowlistResponse_fields &gate_v1_ListAllowlistResponse_msg
 #define gate_v1_DeleteAllowlistRequest_fields &gate_v1_DeleteAllowlistRequest_msg
+#define gate_v1_LockTimings_fields &gate_v1_LockTimings_msg
+#define gate_v1_GateConfig_fields &gate_v1_GateConfig_msg
+#define gate_v1_OpenRequest_fields &gate_v1_OpenRequest_msg
+#define gate_v1_OpenReply_fields &gate_v1_OpenReply_msg
+#define gate_v1_OpenRequestRecord_fields &gate_v1_OpenRequestRecord_msg
+#define gate_v1_ControllerEvent_fields &gate_v1_ControllerEvent_msg
+#define gate_v1_EventBatch_fields &gate_v1_EventBatch_msg
+#define gate_v1_EventAck_fields &gate_v1_EventAck_msg
+#define gate_v1_ControllerStats_fields &gate_v1_ControllerStats_msg
+#define gate_v1_VerifyReport_fields &gate_v1_VerifyReport_msg
+#define gate_v1_GateCalibration_fields &gate_v1_GateCalibration_msg
+#define gate_v1_Alert_fields &gate_v1_Alert_msg
+#define gate_v1_VehicleAppearance_fields &gate_v1_VehicleAppearance_msg
+#define gate_v1_BlocklistEntry_fields &gate_v1_BlocklistEntry_msg
+#define gate_v1_UpsertBlocklistRequest_fields &gate_v1_UpsertBlocklistRequest_msg
+#define gate_v1_ListBlocklistRequest_fields &gate_v1_ListBlocklistRequest_msg
+#define gate_v1_ListBlocklistResponse_fields &gate_v1_ListBlocklistResponse_msg
+#define gate_v1_VehicleAccess_fields &gate_v1_VehicleAccess_msg
+#define gate_v1_SetVehicleAccessRequest_fields &gate_v1_SetVehicleAccessRequest_msg
+#define gate_v1_GuestPass_fields &gate_v1_GuestPass_msg
+#define gate_v1_ListGuestPassesRequest_fields &gate_v1_ListGuestPassesRequest_msg
+#define gate_v1_ListGuestPassesResponse_fields &gate_v1_ListGuestPassesResponse_msg
+#define gate_v1_RevokeGuestPassRequest_fields &gate_v1_RevokeGuestPassRequest_msg
+#define gate_v1_GetGateConfigRequest_fields &gate_v1_GetGateConfigRequest_msg
+#define gate_v1_GateConfigRecord_fields &gate_v1_GateConfigRecord_msg
+#define gate_v1_SetGateConfigRequest_fields &gate_v1_SetGateConfigRequest_msg
+#define gate_v1_SetLaneConfigRequest_fields &gate_v1_SetLaneConfigRequest_msg
+#define gate_v1_GateOpRequest_fields &gate_v1_GateOpRequest_msg
+#define gate_v1_GateOpStatus_fields &gate_v1_GateOpStatus_msg
 #define gate_v1_ControlEnvelope_fields &gate_v1_ControlEnvelope_msg
 
 /* Maximum encoded size of messages (where known) */
@@ -1019,18 +2105,47 @@ extern const pb_msgdesc_t gate_v1_ControlEnvelope_msg;
 /* gate_v1_ListAllowlistRequest_size depends on runtime parameters */
 /* gate_v1_ListAllowlistResponse_size depends on runtime parameters */
 /* gate_v1_DeleteAllowlistRequest_size depends on runtime parameters */
+/* gate_v1_OpenRequestRecord_size depends on runtime parameters */
+/* gate_v1_ControllerEvent_size depends on runtime parameters */
+/* gate_v1_EventBatch_size depends on runtime parameters */
+/* gate_v1_ControllerStats_size depends on runtime parameters */
+/* gate_v1_VerifyReport_size depends on runtime parameters */
+/* gate_v1_GateCalibration_size depends on runtime parameters */
+/* gate_v1_Alert_size depends on runtime parameters */
+/* gate_v1_VehicleAppearance_size depends on runtime parameters */
+/* gate_v1_BlocklistEntry_size depends on runtime parameters */
+/* gate_v1_UpsertBlocklistRequest_size depends on runtime parameters */
+/* gate_v1_ListBlocklistRequest_size depends on runtime parameters */
+/* gate_v1_ListBlocklistResponse_size depends on runtime parameters */
+/* gate_v1_VehicleAccess_size depends on runtime parameters */
+/* gate_v1_SetVehicleAccessRequest_size depends on runtime parameters */
+/* gate_v1_GuestPass_size depends on runtime parameters */
+/* gate_v1_ListGuestPassesRequest_size depends on runtime parameters */
+/* gate_v1_ListGuestPassesResponse_size depends on runtime parameters */
+/* gate_v1_RevokeGuestPassRequest_size depends on runtime parameters */
+/* gate_v1_GetGateConfigRequest_size depends on runtime parameters */
+/* gate_v1_GateConfigRecord_size depends on runtime parameters */
+/* gate_v1_SetGateConfigRequest_size depends on runtime parameters */
+/* gate_v1_SetLaneConfigRequest_size depends on runtime parameters */
+/* gate_v1_GateOpRequest_size depends on runtime parameters */
+/* gate_v1_GateOpStatus_size depends on runtime parameters */
+/* gate_v1_ControlEnvelope_size depends on runtime parameters */
 #define GATE_V1_GATE_SERVICE_PB_H_MAX_SIZE       gate_v1_OtaChunk_size
 #define gate_v1_BoundingBox3D_size               37
 #define gate_v1_BoundingBox_size                 24
 #define gate_v1_CommandAck_size                  192
-#define gate_v1_ControlEnvelope_size             537
+#define gate_v1_EventAck_size                    17
 #define gate_v1_FaultEvent_ContextEntry_size     74
 #define gate_v1_FaultEvent_size                  534
-#define gate_v1_GateCommand_size                 247
+#define gate_v1_GateCommand_size                 438
+#define gate_v1_GateConfig_size                  86
+#define gate_v1_LockTimings_size                 42
+#define gate_v1_OpenReply_size                   49
+#define gate_v1_OpenRequest_size                 104
 #define gate_v1_OtaChunk_size                    4112
-#define gate_v1_OtaManifest_size                 361
+#define gate_v1_OtaManifest_size                 367
 #define gate_v1_Point3D_size                     15
-#define gate_v1_Telemetry_size                   206
+#define gate_v1_Telemetry_size                   288
 #define gate_v1_TimeWindow_size                  18
 #define gate_v1_UpsertAllowlistResponse_size     12
 #define gate_v1_VehicleDetection_size            75

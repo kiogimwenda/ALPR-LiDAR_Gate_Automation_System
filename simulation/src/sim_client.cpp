@@ -19,20 +19,7 @@ namespace sm = gate::state_machine;
 namespace {
 
 gate::v1::GateState to_wire(sm::State s) {
-    switch (s) {
-        case sm::State::Closed:
-            return gate::v1::GATE_STATE_CLOSED;
-        case sm::State::Opening:
-            return gate::v1::GATE_STATE_OPENING;
-        case sm::State::Open:
-            return gate::v1::GATE_STATE_OPEN;
-        case sm::State::Closing:
-            return gate::v1::GATE_STATE_CLOSING;
-        case sm::State::Faulted:
-            return gate::v1::GATE_STATE_FAULT;
-        default:
-            return gate::v1::GATE_STATE_UNKNOWN;
-    }
+    return static_cast<gate::v1::GateState>(sm::wire_state(s));
 }
 
 void stamp_now(google::protobuf::Timestamp* ts) {
@@ -160,6 +147,29 @@ bool SimClient::run_session(const std::atomic<bool>& shutdown) {
                     break;
                 case gate::v1::COMMAND_KIND_REBOOT:
                     gate_.reboot();
+                    write_ack_completed(writer, cmd.command_id(), true, "", to_wire(gate_.state()));
+                    break;
+                case gate::v1::COMMAND_KIND_LATCH_OPEN: {
+                    const bool ok = gate_.latch_open();
+                    write_ack_completed(writer, cmd.command_id(), ok, ok ? "" : "refused",
+                                        to_wire(gate_.state()));
+                    break;
+                }
+                case gate::v1::COMMAND_KIND_LATCH_CLOSE:
+                case gate::v1::COMMAND_KIND_LOCKDOWN_ON: {
+                    const bool ok = gate_.latch_close();
+                    write_ack_completed(writer, cmd.command_id(), ok,
+                                        ok ? "" : "unsupported without locks",
+                                        to_wire(gate_.state()));
+                    break;
+                }
+                case gate::v1::COMMAND_KIND_RELEASE_LATCH:
+                case gate::v1::COMMAND_KIND_LOCKDOWN_OFF:
+                    gate_.release_latch();
+                    write_ack_completed(writer, cmd.command_id(), true, "", to_wire(gate_.state()));
+                    break;
+                case gate::v1::COMMAND_KIND_CLEAR_FAULT:
+                    gate_.clear_fault();
                     write_ack_completed(writer, cmd.command_id(), true, "", to_wire(gate_.state()));
                     break;
                 case gate::v1::COMMAND_KIND_BEGIN_OTA:

@@ -40,6 +40,10 @@ EXPECTED_MESSAGES = {
     "ListAllowlistRequest",   "ListAllowlistResponse",
     "DeleteAllowlistRequest",
     "ControlEnvelope",
+    "GateConfig", "LockTimings", "OpenRequest", "OpenReply", "OpenRequestRecord",
+    "ControllerEvent", "EventBatch", "EventAck", "ControllerStats",
+    "VerifyReport", "GateCalibration", "Alert", "VehicleAppearance",
+    "BlocklistEntry", "GuestPass", "GateConfigRecord",
 }
 
 EXPECTED_ENUMS = {
@@ -62,6 +66,13 @@ EXPECTED_ENUMS = {
         "GATE_STATE_CLOSING":  4,
         "GATE_STATE_FAULT":    5,
         "GATE_STATE_LOCKDOWN": 6,
+        "GATE_STATE_UNLOCKING": 7,
+        "GATE_STATE_LOCKING": 8,
+        "GATE_STATE_CLOSED_INSECURE": 9,
+        "GATE_STATE_VERIFYING": 10,
+        "GATE_STATE_CALIBRATING": 11,
+        "GATE_STATE_PRE_CLOSE": 12,
+        "GATE_STATE_STOPPED": 13,
     },
     "AuthVerdict": {
         "AUTH_VERDICT_UNSPECIFIED":    0,
@@ -88,6 +99,12 @@ EXPECTED_SERVICES = {
         "UpsertAllowlist": ("unary", "unary"),
         "ListAllowlist":   ("unary", "unary"),
         "DeleteAllowlist": ("unary", "unary"),
+        "ListBlocklist":   ("unary", "unary"),
+        "UpsertBlocklist": ("unary", "unary"),
+        "DeleteBlocklist": ("unary", "unary"),
+        "CreateGuestPass": ("unary", "unary"),
+        "GetGateConfig":   ("unary", "unary"),
+        "SetGateConfig":   ("unary", "unary"),
     },
 }
 
@@ -179,7 +196,10 @@ def check_control_envelope(proto: descriptor_pb2.FileDescriptorProto) -> None:
     payload = env.oneof_decl[0]
     if payload.name != "payload":
         fail(f"ControlEnvelope oneof must be named 'payload', got '{payload.name}'")
-    expected_fields = {"telemetry", "ack", "fault", "command"}
+    expected_fields = {
+        "telemetry", "ack", "fault", "command", "open_request", "events", "events_ack",
+        "stats", "verify", "calibration", "open_reply",
+    }
     actual_fields = {f.name for f in env.field if f.HasField("oneof_index")}
     if actual_fields != expected_fields:
         fail(f"ControlEnvelope payload fields mismatch: expected {expected_fields}, got {actual_fields}")

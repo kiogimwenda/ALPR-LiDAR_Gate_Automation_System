@@ -44,7 +44,7 @@ constexpr UBaseType_t kTaskPriority = 4;  // below gate_ctrl (5) — RPC yields 
 constexpr UBaseType_t kOutQueueDepth = 8;
 constexpr int kPollPeriodMs = 250;
 // Largest message we accept on the Control stream. GateCommand is the
-// biggest legal payload (~300 B with every string at max_size); 1 KiB
+// biggest legal payload (438 B with every string at max_size); 1 KiB
 // leaves generous slack. OTA chunks arrive on their own RPC (4.5.5)
 // with their own budget.
 constexpr std::size_t kMaxInMessage = 1024;
@@ -88,25 +88,9 @@ bool fill_wallclock(google_protobuf_Timestamp& ts) {
 }  // namespace
 
 gate_v1_GateState to_wire_state(sm::State s) noexcept {
-    switch (s) {
-        case sm::State::Closed:
-            return gate_v1_GateState_GATE_STATE_CLOSED;
-        case sm::State::Opening:
-            return gate_v1_GateState_GATE_STATE_OPENING;
-        case sm::State::Open:
-            return gate_v1_GateState_GATE_STATE_OPEN;
-        case sm::State::Closing:
-            return gate_v1_GateState_GATE_STATE_CLOSING;
-        case sm::State::Faulted:
-            return gate_v1_GateState_GATE_STATE_FAULT;
-        case sm::State::Initializing:
-        case sm::State::StoppedOpen:
-        case sm::State::StoppedClose:
-            // No wire value for "paused mid-travel" yet (4.5.4 revisits
-            // the enum); UNKNOWN is honest, OPENING/CLOSING would lie.
-            return gate_v1_GateState_GATE_STATE_UNKNOWN;
-    }
-    return gate_v1_GateState_GATE_STATE_UNKNOWN;
+    static_assert(gate_v1_GateState_GATE_STATE_LOCKDOWN == sm::wire_state(sm::State::Lockdown));
+    static_assert(gate_v1_GateState_GATE_STATE_STOPPED == sm::wire_state(sm::State::StoppedOpen));
+    return static_cast<gate_v1_GateState>(sm::wire_state(s));
 }
 
 // Session-scoped state. Lives on the gate_rpc task for exactly one

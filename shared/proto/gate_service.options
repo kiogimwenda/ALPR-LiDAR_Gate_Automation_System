@@ -19,9 +19,19 @@ gate.v1.GateCommand.command_id        max_size:40   # UUIDv4 + NUL
 gate.v1.GateCommand.gate_id           max_size:32
 gate.v1.GateCommand.actor             max_size:48
 gate.v1.GateCommand.signature         max_size:64   # ed25519
+gate.v1.GateCommand.request_id        max_size:40
+gate.v1.GateCommand.nonce             max_size:32
 
 gate.v1.CommandAck.command_id         max_size:40
 gate.v1.CommandAck.error_text         max_size:96
+
+# Open requests travel on the Control stream. EventBatch, ControllerStats,
+# VerifyReport and GateCalibration stay callback-only until the firmware
+# builds them: static sizes would inflate every stack-allocated
+# ControlEnvelope, so size them with their phase (and the frame buffers).
+gate.v1.OpenRequest.request_id        max_size:40
+gate.v1.OpenRequest.gate_id           max_size:32
+gate.v1.OpenReply.request_id          max_size:40
 
 gate.v1.FaultEvent.fault_id           max_size:40
 gate.v1.FaultEvent.gate_id            max_size:32

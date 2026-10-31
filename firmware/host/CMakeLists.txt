@@ -9,6 +9,8 @@
 
 add_library(gate_state_machine STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_state_machine/src/state_machine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_state_machine/src/state_machine_locked.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../components/gate_state_machine/src/lock_sequencer.cpp
 )
 
 target_include_directories(gate_state_machine PUBLIC

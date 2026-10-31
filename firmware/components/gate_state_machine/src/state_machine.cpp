@@ -8,11 +8,14 @@
 
 #include "gate_state_machine/state_machine.hpp"
 
+#include <cassert>
+
 namespace gate::state_machine {
 
 namespace {
 
 void push(Outputs& o, Action a) noexcept {
+    assert(o.count < kMaxActionsPerStep);
     if (o.count < kMaxActionsPerStep) {
         o.actions[o.count++] = a;
     }
@@ -24,8 +27,27 @@ StateMachine::StateMachine(Config cfg) noexcept : cfg_(cfg) {}
 
 // ---------- init helpers -----------------------------------------------------
 
-Outputs StateMachine::init_closed() noexcept {
+void StateMachine::restore_lockdown(bool latched) noexcept {
+    lockdown_ = locked_mode() && latched;
+}
+
+Outputs StateMachine::init_closed(bool locks_proven) noexcept {
     Outputs o{};
+    at_closed_ = true;
+    locks_free_ = false;
+    if (locked_mode()) {
+        const State s =
+            !locks_proven ? State::ClosedInsecure : (lockdown_ ? State::Lockdown : State::Closed);
+        state_ = s;
+        reason_ = locks_proven ? Reason::None : Reason::LockIncomplete;
+        o.new_state = state_;
+        o.reason = reason_;
+        o.transitioned = true;
+        push(o, Action::StopMotor);
+        push(o, Action::SetLedClosed);
+        push(o, Action::EmitTelemetryStateChanged);
+        return o;
+    }
     state_ = State::Closed;
     reason_ = Reason::None;
     o.new_state = state_;
@@ -38,6 +60,11 @@ Outputs StateMachine::init_closed() noexcept {
 
 Outputs StateMachine::init_open() noexcept {
     Outputs o{};
+    at_closed_ = false;
+    locks_free_ = false;
+    // A latched lockdown found open at boot closes on the driver's next
+    // CommandClose or the next beam-clear; boot itself moves nothing.
+    close_pending_ = lockdown_;
     state_ = State::Open;
     reason_ = Reason::None;
     o.new_state = state_;
@@ -48,8 +75,10 @@ Outputs StateMachine::init_open() noexcept {
     return o;
 }
 
-Outputs StateMachine::init_unknown() noexcept {
+Outputs StateMachine::init_limit_conflict() noexcept {
     Outputs o{};
+    at_closed_ = false;
+    locks_free_ = false;
     state_ = State::Faulted;
     reason_ = Reason::LimitSwitchConflict;
     o.new_state = state_;
@@ -61,9 +90,29 @@ Outputs StateMachine::init_unknown() noexcept {
     return o;
 }
 
+Outputs StateMachine::init_unknown() noexcept {
+    Outputs o{};
+    at_closed_ = false;
+    locks_free_ = false;
+    state_ = State::Faulted;
+    // The legacy reason is kept for deployed dashboards; lock-sequenced
+    // mode separates "mid-travel" from a both-limits wiring fault.
+    reason_ = locked_mode() ? Reason::PositionUnknown : Reason::LimitSwitchConflict;
+    o.new_state = state_;
+    o.transitioned = true;
+    o.reason = reason_;
+    push(o, Action::StopMotor);
+    push(o, Action::SetLedFault);
+    push(o, Action::EmitTelemetryStateChanged);
+    return o;
+}
+
 // ---------- main transition logic --------------------------------------------
 
-Outputs StateMachine::handle(Event ev) noexcept {
+Outputs StateMachine::handle(Event ev, OpenOrigin origin) noexcept {
+    if (locked_mode()) {
+        return handle_locked(ev, origin);
+    }
     Outputs o{};
     o.new_state = state_;
 
@@ -237,6 +286,15 @@ Outputs StateMachine::handle(Event ev) noexcept {
             }
             break;
 
+        case State::Unlocking:
+        case State::Locking:
+        case State::ClosedInsecure:
+        case State::PreClose:
+        case State::Verifying:
+        case State::Calibrating:
+        case State::Lockdown:
+            break;  // unreachable without a lock layout
+
         case State::Faulted:
         case State::Initializing:
             // Faulted ignores everything except FaultCleared (handled
@@ -268,6 +326,20 @@ std::string_view to_string(State s) noexcept {
             return "StoppedClose";
         case State::Faulted:
             return "Faulted";
+        case State::Unlocking:
+            return "Unlocking";
+        case State::Locking:
+            return "Locking";
+        case State::ClosedInsecure:
+            return "ClosedInsecure";
+        case State::PreClose:
+            return "PreClose";
+        case State::Verifying:
+            return "Verifying";
+        case State::Calibrating:
+            return "Calibrating";
+        case State::Lockdown:
+            return "Lockdown";
     }
     return "?";
 }
@@ -296,6 +368,58 @@ std::string_view to_string(Event e) noexcept {
             return "MotorTimeout";
         case Event::FaultCleared:
             return "FaultCleared";
+        case Event::LocksReleased:
+            return "LocksReleased";
+        case Event::LocksEngaged:
+            return "LocksEngaged";
+        case Event::LockFailed:
+            return "LockFailed";
+        case Event::LockDropped:
+            return "LockDropped";
+        case Event::OperatorMoving:
+            return "OperatorMoving";
+        case Event::OperatorNoResponse:
+            return "OperatorNoResponse";
+        case Event::OperatorDirectionWrong:
+            return "OperatorDirectionWrong";
+        case Event::OperatorCollision:
+            return "OperatorCollision";
+        case Event::OperatorReversed:
+            return "OperatorReversed";
+        case Event::KeyOverrideOn:
+            return "KeyOverrideOn";
+        case Event::KeyOverrideOff:
+            return "KeyOverrideOff";
+        case Event::LocalReset:
+            return "LocalReset";
+        case Event::CurrentOverrun:
+            return "CurrentOverrun";
+        case Event::BeginVerify:
+            return "BeginVerify";
+        case Event::VerifyPassed:
+            return "VerifyPassed";
+        case Event::VerifyFailed:
+            return "VerifyFailed";
+        case Event::BeginCalibrate:
+            return "BeginCalibrate";
+        case Event::CalibrateDone:
+            return "CalibrateDone";
+        case Event::CalibrateFailed:
+            return "CalibrateFailed";
+        case Event::LockdownOn:
+            return "LockdownOn";
+        case Event::LockdownOff:
+            return "LockdownOff";
+        case Event::GateForced:
+            return "GateForced";
+        case Event::BatteryCritical:
+            return "BatteryCritical";
+        case Event::BoltsRested:
+            return "BoltsRested";
+        case Event::LockFeedbackFault:
+            return "LockFeedbackFault";
+        case Event::PermitFault:
+            return "PermitFault";
     }
     return "?";
 }
@@ -324,6 +448,26 @@ std::string_view to_string(Action a) noexcept {
             return "SetLedFault";
         case Action::EmitTelemetryStateChanged:
             return "EmitTelemetryStateChanged";
+        case Action::ReleaseLocks:
+            return "ReleaseLocks";
+        case Action::EngageLocks:
+            return "EngageLocks";
+        case Action::RetractBolts:
+            return "RetractBolts";
+        case Action::SetPermit:
+            return "SetPermit";
+        case Action::ClearPermit:
+            return "ClearPermit";
+        case Action::RunVerifyPulse:
+            return "RunVerifyPulse";
+        case Action::RunCalibration:
+            return "RunCalibration";
+        case Action::RaiseAlert:
+            return "RaiseAlert";
+        case Action::PersistLockdown:
+            return "PersistLockdown";
+        case Action::RestBolts:
+            return "RestBolts";
     }
     return "?";
 }
@@ -342,6 +486,38 @@ std::string_view to_string(Reason r) noexcept {
             return "LimitSwitchConflict";
         case Reason::UnexpectedEvent:
             return "UnexpectedEvent";
+        case Reason::LockJam:
+            return "LockJam";
+        case Reason::LockIncomplete:
+            return "LockIncomplete";
+        case Reason::LockFeedback:
+            return "LockFeedback";
+        case Reason::OperatorFault:
+            return "OperatorFault";
+        case Reason::OperatorCollision:
+            return "OperatorCollision";
+        case Reason::GateTypeMismatch:
+            return "GateTypeMismatch";
+        case Reason::CalibrationFailed:
+            return "CalibrationFailed";
+        case Reason::BatteryReserve:
+            return "BatteryReserve";
+        case Reason::ForcedEntry:
+            return "ForcedEntry";
+        case Reason::CurrentAnomaly:
+            return "CurrentAnomaly";
+        case Reason::Lockdown:
+            return "Lockdown";
+        case Reason::KeyOverride:
+            return "KeyOverride";
+        case Reason::Watchdog:
+            return "Watchdog";
+        case Reason::PermitFault:
+            return "PermitFault";
+        case Reason::PositionUnknown:
+            return "PositionUnknown";
+        case Reason::Busy:
+            return "Busy";
     }
     return "?";
 }

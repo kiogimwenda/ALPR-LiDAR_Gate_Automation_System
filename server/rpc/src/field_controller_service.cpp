@@ -127,7 +127,15 @@ Status FieldControllerServiceImpl::Control(
             case ControlEnvelope::kFault:
                 bus_.publish_fault(default_site_id_, env.fault());
                 break;
-            case ControlEnvelope::kCommand:  // server-only payload; firmware shouldn't send it
+            case ControlEnvelope::kOpenRequest:  // v2 payloads: handled from programme step 4's
+            case ControlEnvelope::kEvents:       // server phase, ignored until then so
+            case ControlEnvelope::kStats:        // firmware keeps its events unacked
+            case ControlEnvelope::kVerify:
+            case ControlEnvelope::kCalibration:
+                break;
+            case ControlEnvelope::kEventsAck:  // server-only payload
+            case ControlEnvelope::kOpenReply:  // server-only payload
+            case ControlEnvelope::kCommand:    // server-only payload; firmware shouldn't send it
             case ControlEnvelope::PAYLOAD_NOT_SET:
                 break;
         }

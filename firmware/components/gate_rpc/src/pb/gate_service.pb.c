@@ -24,7 +24,7 @@ PB_BIND(gate_v1_VehicleDetection, gate_v1_VehicleDetection, AUTO)
 PB_BIND(gate_v1_DetectionFrame, gate_v1_DetectionFrame, AUTO)
 
 
-PB_BIND(gate_v1_AuthorizeRequest, gate_v1_AuthorizeRequest, AUTO)
+PB_BIND(gate_v1_AuthorizeRequest, gate_v1_AuthorizeRequest, 2)
 
 
 PB_BIND(gate_v1_AuthDecision, gate_v1_AuthDecision, AUTO)
@@ -33,7 +33,7 @@ PB_BIND(gate_v1_AuthDecision, gate_v1_AuthDecision, AUTO)
 PB_BIND(gate_v1_Telemetry, gate_v1_Telemetry, AUTO)
 
 
-PB_BIND(gate_v1_GateCommand, gate_v1_GateCommand, AUTO)
+PB_BIND(gate_v1_GateCommand, gate_v1_GateCommand, 2)
 
 
 PB_BIND(gate_v1_CommandAck, gate_v1_CommandAck, AUTO)
@@ -81,7 +81,112 @@ PB_BIND(gate_v1_ListAllowlistResponse, gate_v1_ListAllowlistResponse, AUTO)
 PB_BIND(gate_v1_DeleteAllowlistRequest, gate_v1_DeleteAllowlistRequest, AUTO)
 
 
+PB_BIND(gate_v1_LockTimings, gate_v1_LockTimings, AUTO)
+
+
+PB_BIND(gate_v1_GateConfig, gate_v1_GateConfig, AUTO)
+
+
+PB_BIND(gate_v1_OpenRequest, gate_v1_OpenRequest, AUTO)
+
+
+PB_BIND(gate_v1_OpenReply, gate_v1_OpenReply, AUTO)
+
+
+PB_BIND(gate_v1_OpenRequestRecord, gate_v1_OpenRequestRecord, AUTO)
+
+
+PB_BIND(gate_v1_ControllerEvent, gate_v1_ControllerEvent, AUTO)
+
+
+PB_BIND(gate_v1_EventBatch, gate_v1_EventBatch, AUTO)
+
+
+PB_BIND(gate_v1_EventAck, gate_v1_EventAck, AUTO)
+
+
+PB_BIND(gate_v1_ControllerStats, gate_v1_ControllerStats, AUTO)
+
+
+PB_BIND(gate_v1_VerifyReport, gate_v1_VerifyReport, AUTO)
+
+
+PB_BIND(gate_v1_GateCalibration, gate_v1_GateCalibration, AUTO)
+
+
+PB_BIND(gate_v1_Alert, gate_v1_Alert, AUTO)
+
+
+PB_BIND(gate_v1_VehicleAppearance, gate_v1_VehicleAppearance, AUTO)
+
+
+PB_BIND(gate_v1_BlocklistEntry, gate_v1_BlocklistEntry, AUTO)
+
+
+PB_BIND(gate_v1_UpsertBlocklistRequest, gate_v1_UpsertBlocklistRequest, AUTO)
+
+
+PB_BIND(gate_v1_ListBlocklistRequest, gate_v1_ListBlocklistRequest, AUTO)
+
+
+PB_BIND(gate_v1_ListBlocklistResponse, gate_v1_ListBlocklistResponse, AUTO)
+
+
+PB_BIND(gate_v1_VehicleAccess, gate_v1_VehicleAccess, AUTO)
+
+
+PB_BIND(gate_v1_SetVehicleAccessRequest, gate_v1_SetVehicleAccessRequest, AUTO)
+
+
+PB_BIND(gate_v1_GuestPass, gate_v1_GuestPass, AUTO)
+
+
+PB_BIND(gate_v1_ListGuestPassesRequest, gate_v1_ListGuestPassesRequest, AUTO)
+
+
+PB_BIND(gate_v1_ListGuestPassesResponse, gate_v1_ListGuestPassesResponse, AUTO)
+
+
+PB_BIND(gate_v1_RevokeGuestPassRequest, gate_v1_RevokeGuestPassRequest, AUTO)
+
+
+PB_BIND(gate_v1_GetGateConfigRequest, gate_v1_GetGateConfigRequest, AUTO)
+
+
+PB_BIND(gate_v1_GateConfigRecord, gate_v1_GateConfigRecord, AUTO)
+
+
+PB_BIND(gate_v1_SetGateConfigRequest, gate_v1_SetGateConfigRequest, AUTO)
+
+
+PB_BIND(gate_v1_SetLaneConfigRequest, gate_v1_SetLaneConfigRequest, AUTO)
+
+
+PB_BIND(gate_v1_GateOpRequest, gate_v1_GateOpRequest, AUTO)
+
+
+PB_BIND(gate_v1_GateOpStatus, gate_v1_GateOpStatus, AUTO)
+
+
 PB_BIND(gate_v1_ControlEnvelope, gate_v1_ControlEnvelope, 2)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -54,7 +54,11 @@ bool filter_matches(const DashboardSubscription& filter, const std::string& site
             return filter.include_ota();
         case DashboardEvent::kCommand:
         case DashboardEvent::kAck:
+        case DashboardEvent::kOpenRequest:
+        case DashboardEvent::kAlert:
             return true;  // Always show guard actions when filtering.
+        case DashboardEvent::kStats:
+            return filter.include_telemetry();
         case DashboardEvent::PAYLOAD_NOT_SET:
             return false;
     }

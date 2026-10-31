@@ -385,6 +385,17 @@ Boot: if mid-travel, stay in the present `init_unknown` fault. Never self-drive 
 
 `docs/diagrams/05-gate-state-machine.mmd` is updated with the code.
 
+### 8.6 Accepted implementation deviations (step 4, phase 1)
+
+- Extra events: `BoltsRested`, `LockFeedbackFault`, `PermitFault`. Extra actions: `PersistLockdown`, `RestBolts`. Extra reasons: `PermitFault`, `PositionUnknown`, `Busy`. `kMaxActionsPerStep` is 8, not 6 (the state-by-event test proves no step fills it).
+- `RetractBolts` is emitted on every close from `Open`; the sequencer confirms at once if bolts are already retracted.
+- A beam trip during `PreClose` cancels the close.
+- A cancelled `PreClose` from a stopped state goes to `Unlocking`. Stop or key-on during a mid-travel `Unlocking` ends stopped.
+- Lockdown during `Opening` closes on reaching `Open`, including after a reversal, unless an RTE cycle is in progress. `KeyOverrideOff` retries a pending lockdown close, the one exception to no auto-resume.
+- `ClosedInsecure` follows the limits: a hand move goes to `StoppedOpen`, and a hand return to `ClosedInsecure`.
+- Key-on clears proven-lock status in every state, so a later close re-proves. Faults and key-on during lock sequences rest the bolts.
+- `StoppedOpen` and `StoppedClose` report `GATE_STATE_STOPPED` on legacy firmware too; the app shows it as "Unknown", as before.
+
 ## 9. Single open-request path
 
 ### 9.1 Model

@@ -32,6 +32,21 @@ CommandTracker::Verdict CommandTracker::on_gate_event(sm::State s, sm::Reason r,
     if (transitioned && s == terminal_ok_) {
         return resolve(true, "");
     }
+    // A close that ends latched down is also a completed close; a close
+    // that ends with an unproven lock is shut but not secured.
+    if (transitioned && terminal_ok_ == sm::State::Closed) {
+        if (s == sm::State::Lockdown) {
+            return resolve(true, "");
+        }
+        if (s == sm::State::ClosedInsecure) {
+            return resolve(false, sm::to_string(r).data());
+        }
+        // The operator reversed by itself on a beam or collision.
+        if (s == sm::State::Opening &&
+            (r == sm::Reason::SafetyBeamObstacle || r == sm::Reason::OperatorCollision)) {
+            return resolve(false, sm::to_string(r).data());
+        }
+    }
     // Rule 2 — hard failure: the gate faulted while the command ran.
     if (transitioned && s == sm::State::Faulted) {
         return resolve(false, sm::to_string(r).data());
@@ -49,6 +64,10 @@ CommandTracker::Verdict CommandTracker::on_gate_event(sm::State s, sm::Reason r,
     // a Reason (a close rejected outright by the safety-beam latch).
     if (!transitioned && r == sm::Reason::SafetyBeamObstacle) {
         return resolve(false, "rejected: safety beam obstacle");
+    }
+    if (!transitioned && (r == sm::Reason::Lockdown || r == sm::Reason::BatteryReserve ||
+                          r == sm::Reason::KeyOverride || r == sm::Reason::Busy)) {
+        return resolve(false, sm::to_string(r).data());
     }
     // Intermediate transitions (Opening, Closing, …) leave the command
     // pending — the deadline is the backstop.

@@ -7,6 +7,8 @@
 
 add_executable(test_state_machine
     state_machine_test.cpp
+    state_machine_locked_test.cpp
+    lock_sequencer_test.cpp
 )
 
 target_link_libraries(test_state_machine

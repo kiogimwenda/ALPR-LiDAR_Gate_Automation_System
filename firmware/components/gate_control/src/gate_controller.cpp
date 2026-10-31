@@ -265,6 +265,17 @@ void GateController::execute(const Outputs& out) {
                 relay_open_.set(false);
                 relay_close_.set(false);
                 break;
+            case Action::ReleaseLocks:
+            case Action::EngageLocks:
+            case Action::RetractBolts:
+            case Action::SetPermit:
+            case Action::ClearPermit:
+            case Action::RunVerifyPulse:
+            case Action::RunCalibration:
+            case Action::RaiseAlert:
+            case Action::PersistLockdown:
+            case Action::RestBolts:
+                break;  // never emitted with LockLayout::None (rev 2)
             case Action::SetLedClosed:
                 led_.render(drivers::StatusLed::Pattern::kOff);
                 break;

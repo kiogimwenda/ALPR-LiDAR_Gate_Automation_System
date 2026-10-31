@@ -57,6 +57,56 @@ enum GateState {
   GATE_STATE_CLOSING  = 4;  // Auto-close timer expired, motor reversing
   GATE_STATE_FAULT    = 5;  // Limit switch stuck, motor timeout, beam blocked
   GATE_STATE_LOCKDOWN = 6;  // Force-close override active
+  // v2 lock-sequenced states (docs/design/gate-system-v2.md 8.5). Never
+  // reported by legacy firmware (capabilities == 0).
+  GATE_STATE_UNLOCKING       = 7;
+  GATE_STATE_LOCKING         = 8;
+  GATE_STATE_CLOSED_INSECURE = 9;   // Shut, at least one lock unproven
+  GATE_STATE_VERIFYING       = 10;
+  GATE_STATE_CALIBRATING     = 11;
+  GATE_STATE_PRE_CLOSE       = 12;
+  GATE_STATE_STOPPED         = 13;  // Paused mid-travel; direction in reason
+}
+
+enum GateType {
+  GATE_TYPE_UNSPECIFIED = 0;
+  GATE_TYPE_SLIDING     = 1;
+  GATE_TYPE_SINGLE_LEAF = 2;
+  GATE_TYPE_DUAL_LEAF   = 3;
+}
+
+enum LockLayout {
+  LOCK_LAYOUT_NONE = 0;  // Rev 2 boards: no lock hardware
+  LOCK_LAYOUT_4    = 1;  // Sliding, single leaf: 2 bolts + 2 maglocks
+  LOCK_LAYOUT_5    = 2;  // Dual leaf: 2 bolts + 3 maglocks
+}
+
+enum LaneMode {
+  LANE_MODE_SHARED   = 0;
+  LANE_MODE_TWO_LANE = 1;
+}
+
+enum GateSide {
+  GATE_SIDE_UNSPECIFIED = 0;
+  GATE_SIDE_ENTRY       = 1;
+  GATE_SIDE_EXIT        = 2;
+}
+
+enum OpenSource {
+  OPEN_SOURCE_UNSPECIFIED = 0;
+  OPEN_SOURCE_PLATE       = 1;
+  OPEN_SOURCE_APP         = 2;
+  OPEN_SOURCE_RTE         = 3;
+  OPEN_SOURCE_GUARD       = 4;
+  OPEN_SOURCE_GUEST       = 5;
+  OPEN_SOURCE_SCHEDULE    = 6;  // Reserved
+}
+
+enum ConfigStatus {
+  CONFIG_UNVERIFIED = 0;
+  CONFIG_VERIFIED   = 1;
+  CONFIG_CALIBRATED = 2;
+  CONFIG_MISMATCH   = 3;
 }
 
 // AuthVerdict — final fusion engine decision per
@@ -67,6 +117,7 @@ enum AuthVerdict {
   AUTH_VERDICT_DENIED         = 2;  // Hard deny — log + alert
   AUTH_VERDICT_LOW_CONFIDENCE = 3;  // Below threshold — alert guard
   AUTH_VERDICT_MANUAL_REVIEW  = 4;  // Allowlist hit but class mismatch
+  AUTH_VERDICT_REVIEW_MISMATCH = 5; // Pass/plate OK, appearance mismatch: guard alert
 }
 
 // DenyReason — only meaningful when verdict == DENIED or LOW_CONFIDENCE.
@@ -81,6 +132,9 @@ enum DenyReason {
   DENY_REASON_CLASS_MISMATCH   = 7;
   DENY_REASON_NO_PLATE_FOUND   = 8;
   DENY_REASON_DUPLICATE_ENTRY  = 9;  // Anti-tailgating
+  DENY_REASON_PASS_EXPIRED     = 10;
+  DENY_REASON_PASS_USED        = 11;
+  DENY_REASON_WRONG_GATE       = 12;
 }
 
 // CommandKind — every imperative the server sends to the field PCB.
@@ -95,6 +149,14 @@ enum CommandKind {
   COMMAND_KIND_REBOOT       = 7;
   COMMAND_KIND_BEGIN_OTA    = 8;
   COMMAND_KIND_LED_PATTERN  = 9;  // Visual feedback (auth flash, fault blink)
+  // v2: sent only to firmware advertising the matching capability.
+  COMMAND_KIND_CONFIGURE     = 10;
+  COMMAND_KIND_VERIFY_TYPE   = 11;
+  COMMAND_KIND_CALIBRATE     = 12;
+  COMMAND_KIND_LOCKDOWN_ON   = 13;
+  COMMAND_KIND_LOCKDOWN_OFF  = 14;
+  COMMAND_KIND_REQUEST_STATS = 15;
+  COMMAND_KIND_CLEAR_FAULT   = 16;
 }
 
 // LedPattern — visual feedback patterns the firmware can render on the auth
@@ -186,6 +248,9 @@ message DetectionFrame {
   repeated VehicleDetection vehicles          = 5;
   string                    camera_image_uri  = 6;  // Optional URI to JPEG snapshot
   string                    lidar_pcd_uri     = 7;  // Optional URI to point cloud
+  GateSide                  side              = 8;
+  string                    camera_id         = 9;
+  VehicleAppearance         appearance        = 10;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +264,7 @@ message AuthorizeRequest {
   string         site_id            = 2;  // Multi-tenant key
   bool           override_allowlist = 3;  // Guard manual approval
   string         actor              = 4;  // "auto" / username for audit
+  string         force_reason       = 5;  // Admin-only forced open (spec 17.5)
 }
 
 // Final decision delivered to firmware and dashboard.
@@ -214,6 +280,10 @@ message AuthDecision {
   string                    reason_text    = 9;  // Human-readable for UI
   uint64                    frame_id       = 10; // Backref to DetectionFrame
   string                    actor          = 11;
+  GateSide                  side           = 12;
+  string                    pass_id        = 13;
+  repeated string           alerts         = 14;
+  string                    force_reason   = 15;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +308,21 @@ message Telemetry {
   string                    firmware_version  = 13;  // SemVer string
   string                    firmware_sha256   = 14;  // Hex digest of running image
   uint64                    seq               = 15;  // Monotonic counter
+  uint32                    capabilities      = 16;  // Bitset: 1 locks, 2 operator_profile,
+                                                     // 4 event_log, 8 verify, 16 stats,
+                                                     // 32 current. 0 = legacy
+  uint32                    config_version    = 17;
+  ConfigStatus              config_status     = 18;
+  uint32                    lock_state_mask   = 19;  // 3 bits per lock: driven, feedback, fault
+  uint32                    op_status         = 20;  // Decoded operator status enum
+  uint32                    position_permille_a = 21;
+  uint32                    position_permille_b = 22;
+  float                     batt_v            = 23;
+  bool                      mains_ok          = 24;
+  uint32                    reason            = 25;
+  uint32                    pending_events    = 26;
+  uint32                    limit_extra_mask  = 27;  // Leaf B limits, beam 2
+  uint32                    hardware_rev      = 28;
 }
 
 // Server → firmware command.
@@ -251,6 +336,12 @@ message GateCommand {
   uint32                    relay_index = 7;  // 0-3, default 0 (leaf 1)
   string                    actor       = 8;  // For audit log
   bytes                     signature   = 9;  // Optional ed25519 over hash
+  OpenSource                source      = 10;
+  GateSide                  side        = 11;
+  string                    request_id  = 12;
+  GateConfig                config      = 13; // COMMAND_KIND_CONFIGURE
+  bytes                     nonce       = 14; // VERIFY_TYPE, CALIBRATE
+  google.protobuf.Timestamp expires_ts  = 15; // Refused after this
 }
 
 // Firmware → server acknowledgement of a command. Sent immediately on receipt
@@ -292,6 +383,7 @@ message OtaManifest {
   google.protobuf.Timestamp built_ts        = 6;
   string                    release_notes   = 7;  // URL or short text
   uint32                    min_uptime_sec  = 8;  // Refuse update if uptime < this (production safety)
+  uint32                    hardware_rev    = 9;
 }
 
 message OtaChunk {
@@ -336,6 +428,9 @@ message DashboardEvent {
     OtaProgress   ota        = 6;
     GateCommand   command    = 7;
     CommandAck    ack        = 8;
+    OpenRequestRecord open_request = 9;
+    ControllerStats stats    = 10;
+    Alert         alert      = 11;
   }
 }
 
@@ -371,6 +466,7 @@ message Allowlistentry {
   string                notes            = 8;
   string                added_by         = 9;
   google.protobuf.Timestamp added_ts     = 10;
+  repeated string       gate_ids         = 11;  // Empty = all gates
 }
 
 message UpsertAllowlistRequest {
@@ -397,6 +493,263 @@ message ListAllowlistResponse {
 message DeleteAllowlistRequest {
   string site_id = 1;
   repeated string plate_texts = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Gate system v2 (docs/design/gate-system-v2.md section 17)
+// ---------------------------------------------------------------------------
+
+message LockTimings {
+  uint32 mag_release_ms  = 1;
+  uint32 bolt_retract_ms = 2;
+  uint32 pre_move_ms     = 3;
+  uint32 settle_ms       = 4;
+  uint32 mag_bond_ms     = 5;
+  uint32 bolt_extend_ms  = 6;
+  uint32 retries         = 7;
+}
+
+message GateConfig {
+  uint32      version          = 1;
+  GateType    type             = 2;
+  LockLayout  lock_layout      = 3;
+  LaneMode    lane_mode        = 4;
+  uint32      leaf_count       = 5;
+  uint32      auto_close_s     = 6;
+  uint32      offline_close_s  = 7;
+  uint32      bolt_hold_open_s = 8;
+  uint32      maglock_shed_s   = 9;
+  reserved 10;
+  LockTimings timings          = 11;
+}
+
+message OpenRequest {
+  string                    request_id     = 1;
+  string                    gate_id        = 2;
+  GateSide                  side           = 3;
+  OpenSource                source         = 4;
+  google.protobuf.Timestamp ts             = 5;
+  bool                      offline_served = 6;
+}
+
+message OpenReply {
+  enum Status {
+    UNSPECIFIED    = 0;
+    GRANTED        = 1;
+    QUEUED         = 2;
+    DENIED         = 3;
+    ALREADY_SERVED = 4;
+  }
+  string request_id     = 1;
+  Status status         = 2;
+  uint32 queue_position = 3;
+}
+
+message OpenRequestRecord {
+  OpenRequest request      = 1;
+  string      actor        = 2;
+  string      decision_id  = 3;
+  uint32      queued_ms    = 4;
+  string      preempted_by = 5;
+  string      outcome      = 6;
+}
+
+message ControllerEvent {
+  uint64     seq         = 1;
+  uint32     boot_id     = 2;
+  uint64     uptime_ms   = 3;
+  int64      unix_ms     = 4;
+  uint32     kind        = 5;
+  OpenSource source      = 6;
+  GateSide   side        = 7;
+  uint32     result      = 8;
+  GateState  state_after = 9;
+  bytes      request_id  = 10;  // 16 bytes binary
+}
+
+message EventBatch {
+  repeated ControllerEvent events = 1;
+  uint32                   dropped = 2;
+}
+
+message EventAck {
+  uint32 boot_id  = 1;
+  uint64 last_seq = 2;
+}
+
+// 30 s / on-demand controller detail (spec section 16).
+message ControllerStats {
+  repeated uint32 cpu_load_pct     = 1;  // One per core
+  string          link             = 2;
+  uint32          link_speed_mbps  = 3;
+  string          ip               = 4;
+  uint32          reconnects       = 5;
+  string          reset_reason     = 6;
+  uint32          outputs_mask     = 7;
+  uint32          cycles_operator  = 8;
+  repeated uint32 cycles_lock      = 9;
+  repeated uint32 cycles_relay     = 10;
+  uint32          last_run_open_ms = 11;
+  uint32          last_run_close_ms = 12;
+  uint32          expected_run_open_ms = 13;
+  uint32          expected_run_close_ms = 14;
+  repeated uint32 motor_mean_ma    = 15;
+  repeated uint32 motor_peak_ma    = 16;
+  float           core_temp_c      = 17;
+  float           board_temp_c     = 18;
+  float           rail_12v         = 19;
+  uint32          on_battery_s     = 20;
+}
+
+message VerifyReport {
+  string   command_id      = 1;
+  GateType observed        = 2;
+  bool     passed          = 3;
+  string   detail          = 4;
+  uint32   limits_released = 5;
+  uint32   motor_channels  = 6;
+}
+
+message GateCalibration {
+  uint32          open_ms_a        = 1;
+  uint32          close_ms_a       = 2;
+  uint32          open_ms_b        = 3;
+  uint32          close_ms_b       = 4;
+  repeated uint32 current_curve_ma = 5;
+  uint32          unlock_ms        = 6;
+  uint32          lock_ms          = 7;
+}
+
+message Alert {
+  string        ref       = 1;
+  string        kind      = 2;
+  FaultSeverity severity  = 3;
+  string        gate_id   = 4;
+  string        plate     = 5;
+  string        message   = 6;
+  string        image_uri = 7;
+}
+
+message VehicleAppearance {
+  string make          = 1;
+  string model         = 2;
+  uint32 year_from     = 3;
+  uint32 year_to       = 4;
+  string colour        = 5;
+  float  conf          = 6;
+  string embedding_ref = 7;
+}
+
+message BlocklistEntry {
+  string                    plate_text = 1;
+  string                    reason     = 2;
+  string                    added_by   = 3;
+  google.protobuf.Timestamp added_ts   = 4;
+}
+
+message UpsertBlocklistRequest {
+  string                  site_id = 1;
+  repeated BlocklistEntry entries = 2;
+}
+
+message ListBlocklistRequest {
+  string site_id    = 1;
+  uint32 page_size  = 2;
+  string page_token = 3;
+}
+
+message ListBlocklistResponse {
+  repeated BlocklistEntry entries         = 1;
+  string                  next_page_token = 2;
+}
+
+enum VehicleAccessMode {
+  VEHICLE_ACCESS_UNSPECIFIED = 0;
+  VEHICLE_ACCESS_ALLOW       = 1;
+  VEHICLE_ACCESS_BLOCK       = 2;
+}
+
+message VehicleAccess {
+  string            site_id    = 1;
+  string            plate_text = 2;
+  VehicleAccessMode mode       = 3;
+  string            reason     = 4;
+}
+
+message SetVehicleAccessRequest {
+  VehicleAccess access = 1;
+}
+
+message GuestPass {
+  enum Kind {
+    UNSPECIFIED  = 0;
+    SINGLE_VISIT = 1;
+    UNTIL        = 2;
+  }
+  string                    pass_id         = 1;
+  string                    site_id         = 2;
+  string                    plate_text      = 3;
+  string                    guest_name      = 4;
+  string                    host            = 5;
+  repeated string           gate_ids        = 6;
+  Kind                      kind            = 7;
+  google.protobuf.Timestamp valid_from      = 8;
+  google.protobuf.Timestamp valid_until     = 9;
+  uint32                    entries_used    = 10;
+  string                    status          = 11;
+  string                    expected_make   = 12;
+  string                    expected_model  = 13;
+  string                    expected_colour = 14;
+  string                    created_by      = 15;
+}
+
+message ListGuestPassesRequest {
+  string site_id    = 1;
+  uint32 page_size  = 2;
+  string page_token = 3;
+}
+
+message ListGuestPassesResponse {
+  repeated GuestPass passes          = 1;
+  string             next_page_token = 2;
+}
+
+message RevokeGuestPassRequest {
+  string pass_id = 1;
+}
+
+message GetGateConfigRequest {
+  string gate_id = 1;
+}
+
+// Server-side view of a gate's configuration.
+message GateConfigRecord {
+  string                    gate_id     = 1;
+  GateConfig                config      = 2;
+  ConfigStatus              status      = 3;
+  GateCalibration           calibration = 4;
+  google.protobuf.Timestamp updated_ts  = 5;
+  string                    updated_by  = 6;
+}
+
+message SetGateConfigRequest {
+  string     gate_id = 1;
+  GateConfig config  = 2;
+}
+
+message SetLaneConfigRequest {
+  string   gate_id   = 1;
+  LaneMode lane_mode = 2;
+}
+
+message GateOpRequest {
+  string gate_id = 1;
+}
+
+message GateOpStatus {
+  string       gate_id = 1;
+  ConfigStatus status  = 2;
+  string       detail  = 3;
 }
 
 // ---------------------------------------------------------------------------
@@ -431,6 +784,13 @@ message ControlEnvelope {
     CommandAck ack       = 2;
     FaultEvent fault     = 3;
     GateCommand command  = 4;  // Only ever populated by server
+    OpenRequest     open_request = 5;
+    EventBatch      events       = 6;
+    EventAck        events_ack   = 7;  // Server to firmware
+    ControllerStats stats        = 8;
+    VerifyReport    verify       = 9;
+    GateCalibration calibration  = 10;
+    OpenReply       open_reply   = 11; // Server to firmware
   }
 }
 
@@ -447,4 +807,16 @@ service AdminService {
   rpc UpsertAllowlist (UpsertAllowlistRequest) returns (UpsertAllowlistResponse);
   rpc ListAllowlist   (ListAllowlistRequest)   returns (ListAllowlistResponse);
   rpc DeleteAllowlist (DeleteAllowlistRequest) returns (UpsertAllowlistResponse);
+  rpc UpsertBlocklist (UpsertBlocklistRequest) returns (UpsertAllowlistResponse);
+  rpc ListBlocklist   (ListBlocklistRequest)   returns (ListBlocklistResponse);
+  rpc DeleteBlocklist (DeleteAllowlistRequest) returns (UpsertAllowlistResponse);
+  rpc SetVehicleAccess (SetVehicleAccessRequest) returns (VehicleAccess);
+  rpc CreateGuestPass (GuestPass)               returns (GuestPass);
+  rpc ListGuestPasses (ListGuestPassesRequest)  returns (ListGuestPassesResponse);
+  rpc RevokeGuestPass (RevokeGuestPassRequest)  returns (GuestPass);
+  rpc GetGateConfig   (GetGateConfigRequest)    returns (GateConfigRecord);
+  rpc SetGateConfig   (SetGateConfigRequest)    returns (GateConfigRecord);
+  rpc VerifyGateType  (GateOpRequest)           returns (GateOpStatus);
+  rpc CalibrateGate   (GateOpRequest)           returns (GateOpStatus);
+  rpc SetLaneConfig   (SetLaneConfigRequest)    returns (GateConfigRecord);
 }

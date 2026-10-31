@@ -10,6 +10,8 @@
 idf_component_register(
     SRCS
         "src/state_machine.cpp"
+        "src/state_machine_locked.cpp"
+        "src/lock_sequencer.cpp"
     INCLUDE_DIRS
         "include"
 )
