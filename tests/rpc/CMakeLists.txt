@@ -28,3 +28,8 @@ add_executable(test_rpc_access access_control_test.cpp)
 target_link_libraries(test_rpc_access PRIVATE gate_rpc Catch2::Catch2WithMain)
 target_compile_features(test_rpc_access PRIVATE cxx_std_20)
 catch_discover_tests(test_rpc_access)
+
+add_executable(test_rpc_arbiter gate_arbiter_test.cpp)
+target_link_libraries(test_rpc_arbiter PRIVATE gate_rpc Catch2::Catch2WithMain)
+target_compile_features(test_rpc_arbiter PRIVATE cxx_std_20)
+catch_discover_tests(test_rpc_arbiter)

@@ -12,6 +12,7 @@ idf_component_register(
         "src/state_machine.cpp"
         "src/state_machine_locked.cpp"
         "src/lock_sequencer.cpp"
+        "src/event_ring.cpp"
     INCLUDE_DIRS
         "include"
 )
