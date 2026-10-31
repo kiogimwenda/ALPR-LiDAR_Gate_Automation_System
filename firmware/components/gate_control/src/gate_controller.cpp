@@ -43,6 +43,13 @@ GateController::GateController(const Config& cfg)
             .green_gpio = cfg.pins.led_green,
             .yellow_gpio = cfg.pins.led_yellow}),
       sm_(cfg.sm) {
+    if (cfg.sm.lock_layout != sm::LockLayout::None) {
+        configASSERT(cfg.lock_io != nullptr && cfg.actuator != nullptr);
+        auto sup = cfg.supervisor;
+        sup.layout = cfg.sm.lock_layout;
+        sup.profile = cfg.sm.profile;
+        supervisor_.emplace(sup, *cfg.lock_io, *cfg.actuator);
+    }
     queue_ = xQueueCreate(kQueueDepth, sizeof(Event));
     configASSERT(queue_ != nullptr);
 
@@ -177,34 +184,13 @@ void GateController::pump_task_entry(void* arg) {
 }
 
 void GateController::pump_task() {
+    const TickType_t wait =
+        pdMS_TO_TICKS(supervisor_ ? sm::StatusDecoder::kSampleMs : cfg_.heartbeat_period_ms);
     for (;;) {
         Event ev;
-        if (xQueueReceive(queue_, &ev, pdMS_TO_TICKS(cfg_.heartbeat_period_ms)) == pdTRUE) {
-            const Outputs out = sm_.handle(ev);
-            ESP_LOGD(kTag, "event %.*s -> state %.*s (transitioned=%d)",
-                     static_cast<int>(sm::to_string(ev).size()), sm::to_string(ev).data(),
-                     static_cast<int>(sm::to_string(out.new_state).size()),
-                     sm::to_string(out.new_state).data(), out.transitioned ? 1 : 0);
-            execute(out);
-            manage_timers(out);
-            apply_policies(out);
-
-            // Surface both transitions and reasoned rejections to the
-            // RPC layer — a close refused by the beam latch does not
-            // change state, but a pending CommandAck must hear it.
-            if (listener_ && (out.transitioned || out.reason != sm::Reason::None)) {
-                listener_(out.new_state, out.reason, out.transitioned);
-            }
-
-            // FaultCleared lands the machine back in Initializing; the
-            // header contract says the driver layer must re-verify the
-            // physical position before any motion is possible.
-            if (ev == Event::FaultCleared && out.transitioned &&
-                out.new_state == State::Initializing) {
-                ESP_LOGI(kTag, "fault cleared — re-resolving gate position");
-                resolve_boot_position();
-            }
-        } else {
+        if (xQueueReceive(queue_, &ev, wait) == pdTRUE) {
+            process(ev);
+        } else if (!supervisor_) {
             // Queue timeout — heartbeat. Confirms the pump is alive and
             // gives the serial console a periodic state snapshot until
             // real telemetry lands in Phase 4.5.4.
@@ -214,6 +200,57 @@ void GateController::pump_task() {
                      sm::to_string(reason()).data(), beam_.is_blocked() ? "blocked" : "clear",
                      limit_open_.is_active() ? 1 : 0, limit_closed_.is_active() ? 1 : 0);
         }
+        supervise();
+    }
+}
+
+void GateController::process(Event ev) {
+    const std::uint64_t now_ms = esp_timer_get_time() / 1000;
+    if (supervisor_) {
+        if (!sm::GateSupervisor::admits(ev)) {
+            ESP_LOGW(kTag, "verify and calibration are not implemented yet: refused");
+            return;
+        }
+        supervisor_->observe(ev, now_ms);
+    }
+    const Outputs out = sm_.handle(ev);
+    ESP_LOGD(kTag, "event %.*s -> state %.*s (transitioned=%d)",
+             static_cast<int>(sm::to_string(ev).size()), sm::to_string(ev).data(),
+             static_cast<int>(sm::to_string(out.new_state).size()),
+             sm::to_string(out.new_state).data(), out.transitioned ? 1 : 0);
+    execute(out);
+    manage_timers(out);
+    apply_policies(out);
+
+    // Surface both transitions and reasoned rejections to the
+    // RPC layer — a close refused by the beam latch does not
+    // change state, but a pending CommandAck must hear it.
+    if (listener_ && (out.transitioned || out.reason != sm::Reason::None)) {
+        listener_(out.new_state, out.reason, out.transitioned);
+    }
+
+    // FaultCleared lands the machine back in Initializing; the
+    // header contract says the driver layer must re-verify the
+    // physical position before any motion is possible.
+    if (ev == Event::FaultCleared && out.transitioned && out.new_state == State::Initializing) {
+        ESP_LOGI(kTag, "fault cleared — re-resolving gate position");
+        resolve_boot_position();
+    }
+}
+
+// Runs at most every sample period however busy the queue is.
+void GateController::supervise() {
+    if (!supervisor_) {
+        return;
+    }
+    const std::uint64_t now_ms = esp_timer_get_time() / 1000;
+    if (now_ms < next_sample_ms_) {
+        return;
+    }
+    next_sample_ms_ = now_ms + sm::StatusDecoder::kSampleMs;
+    const auto events = supervisor_->tick(now_ms, cfg_.read_status && cfg_.read_status());
+    for (std::size_t i = 0; i < events.count; ++i) {
+        post(events.items[i]);
     }
 }
 
@@ -232,7 +269,13 @@ void GateController::resolve_boot_position() {
 
     Outputs out;
     if (closed_active && !open_active) {
-        out = sm_.init_closed();
+        const bool proven = !supervisor_ || supervisor_->locks_proven();
+        out = sm_.init_closed(proven);
+        if (supervisor_ && proven) {
+            supervisor_->assume_engaged();
+        } else if (supervisor_) {
+            supervisor_->start_relock(esp_timer_get_time() / 1000);
+        }
     } else if (open_active && !closed_active) {
         out = sm_.init_open();
     } else {
@@ -240,16 +283,23 @@ void GateController::resolve_boot_position() {
                  closed_active ? 1 : 0,
                  (open_active && closed_active) ? "both limits asserted: wiring fault"
                                                 : "mid-travel: operator must reset");
-        out = sm_.init_unknown();
+        out = (supervisor_ && open_active && closed_active) ? sm_.init_limit_conflict()
+                                                            : sm_.init_unknown();
     }
     execute(out);
     manage_timers(out);
 }
 
 void GateController::execute(const Outputs& out) {
+    if (supervisor_) {
+        supervisor_->apply(out, esp_timer_get_time() / 1000);
+    }
     for (std::uint8_t i = 0; i < out.count; ++i) {
         switch (out.actions[i]) {
             case Action::DriveMotorOpen:
+                if (supervisor_) {
+                    break;
+                }
                 // Break-before-make: the opposing contactor is dropped
                 // before the driving one is picked so both coils are
                 // never energised together, whatever order the state
@@ -258,10 +308,16 @@ void GateController::execute(const Outputs& out) {
                 relay_open_.set(true);
                 break;
             case Action::DriveMotorClose:
+                if (supervisor_) {
+                    break;
+                }
                 relay_open_.set(false);
                 relay_close_.set(true);
                 break;
             case Action::StopMotor:
+                if (supervisor_) {
+                    break;
+                }
                 relay_open_.set(false);
                 relay_close_.set(false);
                 break;
@@ -345,7 +401,8 @@ void GateController::apply_policies(const Outputs& out) {
     // break during Closing; policy says drive back open so the gate
     // moves away from whatever tripped the beam. Opening with the beam
     // still blocked is legal by design.
-    if (cfg_.reverse_on_beam && out.transitioned && out.new_state == State::StoppedClose &&
+    if (cfg_.reverse_on_beam && cfg_.sm.profile != sm::ActuatorProfile::Operator &&
+        out.transitioned && out.new_state == State::StoppedClose &&
         out.reason == sm::Reason::SafetyBeamObstacle) {
         ESP_LOGW(kTag, "beam break during close — reversing to open (reverse_on_beam policy)");
         post(Event::CommandOpen);

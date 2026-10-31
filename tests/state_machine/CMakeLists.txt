@@ -10,6 +10,7 @@ add_executable(test_state_machine
     state_machine_locked_test.cpp
     lock_sequencer_test.cpp
     event_ring_test.cpp
+    gate_supervisor_test.cpp
 )
 
 target_link_libraries(test_state_machine

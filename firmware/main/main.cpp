@@ -87,6 +87,10 @@ extern "C" void app_main(void) {
         .relays_active_high = kRelaysActiveHigh,
         .reverse_on_beam = true,  // UL 325-style entrapment protection
         .heartbeat_period_ms = 5'000,
+        .lock_io = nullptr,  // rev 2: no locks, legacy relay path
+        .actuator = nullptr,
+        .read_status = {},
+        .supervisor = {},
     }};
 
     // REBOOT commands ack over the stream first, then restart 1.5 s

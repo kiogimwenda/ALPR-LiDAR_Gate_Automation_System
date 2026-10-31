@@ -84,8 +84,7 @@ void GateArbiter::pump(std::uint64_t now_ms) {
         return;
     }
     while (!current_ && !occupied_) {  // rule 1
-        const bool entry_ready =
-            !entry_.empty() && now_ms - entry_.front().since >= cfg_.simultaneity_window_ms;
+        const bool entry_ready = !entry_.empty();
         const bool exit_first = !exit_.empty() && !(exit_streak_ >= cfg_.max_exit_streak &&
                                                     !entry_.empty());  // rules 2, 7
         if (exit_first) {
@@ -137,7 +136,13 @@ bool GateArbiter::remove(std::deque<Waiter>& q, const std::string& id, std::uint
 }
 
 void GateArbiter::mark_served_offline(const std::string& request_id, std::uint64_t now_ms) {
-    served_.insert(request_id);
+    if (served_.insert(request_id).second) {
+        served_order_.push_back(request_id);
+        if (served_order_.size() > kMaxServed) {
+            served_.erase(served_order_.front());
+            served_order_.pop_front();
+        }
+    }
     if (!remove(exit_, request_id, now_ms) && !remove(entry_, request_id, now_ms) && current_ &&
         current_->waiter.request.request_id == request_id) {
         current_.reset();

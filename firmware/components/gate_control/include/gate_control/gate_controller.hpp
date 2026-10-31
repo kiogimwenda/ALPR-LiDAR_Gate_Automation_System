@@ -57,11 +57,13 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <functional>
+#include <optional>
 
 #include "gate_drivers/limit_switch.hpp"
 #include "gate_drivers/relay.hpp"
 #include "gate_drivers/safety_beam.hpp"
 #include "gate_drivers/status_led.hpp"
+#include "gate_state_machine/gate_supervisor.hpp"
 #include "gate_state_machine/state_machine.hpp"
 
 namespace gate::control {
@@ -89,6 +91,12 @@ public:
         bool relays_active_high = true;  // false for opto-isolated relay modules
         bool reverse_on_beam = true;
         std::uint32_t heartbeat_period_ms = 5'000;
+        // Required with a lock layout, unused with LockLayout::None.
+        // Rev 3 board code supplies these; they must outlive the controller.
+        state_machine::LockIo* lock_io = nullptr;
+        state_machine::GateActuator* actuator = nullptr;
+        std::function<bool()> read_status;  // operator Status opto
+        state_machine::GateSupervisor::Config supervisor{};
     };
 
     // Constructing configures every GPIO and creates (but does not
@@ -153,6 +161,8 @@ private:
     void execute(const Outputs& out);
     void manage_timers(const Outputs& out);
     void apply_policies(const Outputs& out);
+    void process(Event ev);
+    void supervise();
 
     Config cfg_;
 
@@ -164,6 +174,7 @@ private:
     drivers::StatusLed led_;
 
     state_machine::StateMachine sm_;
+    std::optional<state_machine::GateSupervisor> supervisor_;
     std::atomic<State> state_snapshot_{State::Initializing};
     std::atomic<state_machine::Reason> reason_snapshot_{state_machine::Reason::None};
     TransitionListener listener_;
@@ -173,6 +184,7 @@ private:
     esp_timer_handle_t watchdog_timer_ = nullptr;
     esp_timer_handle_t autoclose_timer_ = nullptr;
     bool started_ = false;
+    std::uint64_t next_sample_ms_ = 0;
 };
 
 }  // namespace gate::control

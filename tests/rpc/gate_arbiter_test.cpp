@@ -33,24 +33,31 @@ struct Rig {
 
 }  // namespace
 
-TEST_CASE("entry then exit inside the window: exit goes first, both logged", "[arbiter]") {
+TEST_CASE("waiting entry and exit: exit goes first, both logged", "[arbiter]") {
     Rig r;
-    CHECK(r.entry("e", 0).status() == OpenReply::QUEUED);
-    CHECK(r.exit("x", 300).status() == OpenReply::GRANTED);
+    r.exit("x0", 0);
+    CHECK(r.entry("e", 100).status() == OpenReply::QUEUED);
+    r.exit("x", 300);
     r.a.vehicle_cleared(5'000);
-    REQUIRE(r.grants == std::vector<std::string>{"x", "e"});
-    REQUIRE(r.audits.size() == 2);
-    CHECK(r.audits[1].preempted_by == "x");
-    CHECK(r.audits[1].queued_ms == 5'000);
+    r.a.vehicle_cleared(6'000);
+    REQUIRE(r.grants == std::vector<std::string>{"x0", "x", "e"});
+    CHECK(r.audits[2].preempted_by == "x");
+    CHECK(r.audits[2].queued_ms == 5'900);
 }
 
-TEST_CASE("lone entry is granted after the window", "[arbiter]") {
+TEST_CASE("lone entry is granted at once", "[arbiter]") {
     Rig r;
-    r.entry("e", 0);
-    r.a.tick(499);
-    CHECK(r.grants.empty());
-    r.a.tick(500);
-    CHECK(r.grants.size() == 1);
+    CHECK(r.entry("e", 0).status() == OpenReply::GRANTED);
+}
+
+TEST_CASE("served ids stay bounded, newest remembered", "[arbiter]") {
+    Rig r;
+    for (std::size_t i = 0; i <= GateArbiter::kMaxServed; ++i) {
+        r.a.mark_served_offline("s" + std::to_string(i), 0);
+    }
+    CHECK(r.exit("s" + std::to_string(GateArbiter::kMaxServed), 1).status() ==
+          OpenReply::ALREADY_SERVED);
+    CHECK(r.exit("s0", 1).status() == OpenReply::GRANTED);
 }
 
 TEST_CASE("occupied throat holds grants until clear", "[arbiter]") {
@@ -94,15 +101,17 @@ TEST_CASE("no starvation after three exits", "[arbiter]") {
 
 TEST_CASE("queued entry is revalidated at grant", "[arbiter]") {
     Rig r;
+    r.a.set_occupied(true, 0);
     r.entry("e", 0);
     r.valid = false;
-    r.a.tick(600);
+    r.a.set_occupied(false, 600);
     CHECK(r.grants.empty());
     CHECK(r.audits[0].outcome == "refused");
 }
 
 TEST_CASE("repeat plate read refreshes, not duplicates", "[arbiter]") {
     Rig r;
+    r.a.set_occupied(true, 0);
     r.entry("a", 0, "KDA");
     CHECK(r.entry("b", 100, "KDA").status() == OpenReply::QUEUED);
     CHECK(r.a.waiting() == 1);

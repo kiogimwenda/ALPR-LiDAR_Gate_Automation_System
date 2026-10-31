@@ -396,6 +396,13 @@ Boot: if mid-travel, stay in the present `init_unknown` fault. Never self-drive 
 - Key-on clears proven-lock status in every state, so a later close re-proves. Faults and key-on during lock sequences rest the bolts.
 - `StoppedOpen` and `StoppedClose` report `GATE_STATE_STOPPED` on legacy firmware too; the app shows it as "Unknown", as before.
 
+- An entry with no exit waiting is granted at once, with no simultaneity wait. So an exit arriving within 500 ms after an entry grant waits behind it, which supersedes the first row of §10.5.
+
+- Inside `reversal_guard_ms`, `ClearPermit` and `RestBolts` are deferred as well as `stop()`, and the bolt-hold timer waits. Human stop, key override and `PermitFault` go at once.
+- A drive that beats a queued `BoltsRested` re-proves the bolts before permit and motion; a failed re-proof faults with `OperatorFault`.
+- `BeginVerify` and `BeginCalibrate` are refused by the controller until implemented. `RunVerifyPulse` and `RunCalibration` report failure and never move the gate.
+- Relock retries wait while key sense is active.
+
 ## 9. Single open-request path
 
 ### 9.1 Model
@@ -1095,6 +1102,11 @@ No field deployment before B3, B5, B8, B9, B10, B13, B14, B15, B16, B17, B18, B1
 | Enable `GateCommand` signature, or record why not | User, architect | **Before first field use** |
 | Check app mapping for new `GateState` values | App, step 6 | Before firmware rollout |
 | RS-485 auto-direction turnaround | Board, step 5 | Before board freeze |
+
+**Release gates (step 4):**
+- Server dedupe on `(gate_id, boot_id, seq)` before `EventBatch` is enabled.
+- Arbiter rule 6 LiDAR expiry and auto-close hold-off before the arbiter goes live.
+- `gate_controller` host tests and bench test B3 before any locked layout is enabled.
 
 ## 24. Open questions
 

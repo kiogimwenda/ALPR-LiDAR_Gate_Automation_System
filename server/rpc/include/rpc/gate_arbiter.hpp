@@ -19,7 +19,6 @@ class GateArbiter {
 public:
     struct Config {
         gate::v1::LaneMode lane_mode = gate::v1::LANE_MODE_SHARED;
-        std::uint32_t simultaneity_window_ms = 500;
         std::uint32_t pass_timeout_ms = 30'000;
         std::uint32_t entry_ttl_ms = 120'000;
         std::uint32_t max_exit_streak = 3;
@@ -36,6 +35,7 @@ public:
         std::string preempted_by;
         std::string outcome;  // granted, abandoned, expired, served_offline, refused
     };
+    static constexpr std::size_t kMaxServed = 256;
     using GrantFn = std::function<void(const Request&)>;
     using AuditFn = std::function<void(const Audit&)>;
     // Rule 8: a queued entry is rechecked against block and lockdown.
@@ -77,6 +77,7 @@ private:
     std::deque<Waiter> exit_;
     std::optional<Current> current_;
     std::set<std::string> served_;
+    std::deque<std::string> served_order_;  // evicts the oldest past kMaxServed
     std::uint32_t exit_streak_ = 0;
     bool occupied_ = false;
 };
