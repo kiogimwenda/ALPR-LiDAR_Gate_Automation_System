@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "gate_state_machine/rte_authority.hpp"
 #include "gate_state_machine/served_guard.hpp"
+#include "gate_state_machine/stored_config.hpp"
 
 namespace sm = gate::state_machine;
 using sm::EventRing;
@@ -131,7 +133,7 @@ struct RteRig {
     FakeFlash flash;
     EventRing ring{flash};
     sm::ServedGuard guard;
-    sm::RteAuthority rte{{}, ring, guard};
+    sm::RteAuthority rte{{}, &ring, guard};
     std::uint64_t now = 1;
     const sm::ServedGuard::Id id{7, 7};
     RteRig() { ring.mount(); }
@@ -168,8 +170,14 @@ TEST_CASE("RTE online waits for the server, then falls back", "[rte]") {
     r.step(false, true, 40);
     SECTION("granted: no local open") {
         r.rte.on_reply(sm::RteAuthority::Reply::Granted, r.now);
-        CHECK(r.step(false, true, 3'000) == Out::None);
+        r.rte.confirm_motion();
+        CHECK(r.step(false, true, 5'000) == Out::None);
         CHECK(r.ring.pending(16).empty());
+    }
+    SECTION("a grant whose command never arrives still opens") {
+        r.rte.on_reply(sm::RteAuthority::Reply::Granted, r.now);
+        CHECK(r.step(false, true, 2'500) == Out::None);
+        CHECK(r.step(false, true, 1'000) == Out::OpenLocal);
     }
     SECTION("silence: local after the grant timeout") {
         CHECK(r.step(false, true, 1'600) == Out::OpenLocal);
@@ -196,4 +204,56 @@ TEST_CASE("RTE hold, stuck and rate limit", "[rte]") {
     CHECK(q.step(true, false, 100) == Out::None);  // inside 3 s
     q.step(false, false, 3'000);
     CHECK(q.step(true, false, 100) == Out::OpenLocal);
+}
+
+TEST_CASE("request ids round trip between text and binary", "[served_guard]") {
+    const char* text = "00112233-4455-6677-8899-aabbccddeeff";
+    const auto id = sm::ServedGuard::parse_uuid(text);
+    char out[37];
+    sm::ServedGuard::format_uuid(id, out);
+    CHECK(std::string{out} == text);
+    CHECK(sm::ServedGuard::parse_uuid("not-a-uuid") == sm::ServedGuard::Id{});
+    CHECK(sm::ServedGuard::parse_uuid("") == sm::ServedGuard::Id{});
+}
+
+TEST_CASE("a missing event log never stops the exit", "[rte]") {
+    sm::ServedGuard guard;
+    sm::RteAuthority rte{{}, nullptr, guard};
+    const sm::ServedGuard::Id id{5};
+    sm::RteAuthority::Output last = Out::None;
+    for (std::uint64_t t = 20; t < 200; t += 20) {
+        const auto o = rte.tick(t, true, false, id, {});
+        last = o != Out::None ? o : last;
+    }
+    CHECK(last == Out::OpenLocal);
+    CHECK(guard.check(id, 0, 0, false) == sm::ServedGuard::Verdict::AlreadyServed);
+}
+
+TEST_CASE("local close retries past a blocked beam until shut", "[rte]") {
+    sm::LocalCloser c;
+    c.arm(0, 30'000);
+    CHECK_FALSE(c.tick(29'000, false));
+    CHECK(c.tick(30'000, false));  // refused by the beam
+    CHECK_FALSE(c.tick(35'000, false));
+    CHECK(c.tick(40'000, false));
+    CHECK_FALSE(c.tick(50'000, true));
+    CHECK_FALSE(c.armed());
+}
+
+TEST_CASE("an incoming config merges over the stored one", "[config]") {
+    sm::StoredConfig base;
+    base.offline_close_s = 40;
+    base.bolt_hold_open_s = 20;
+    base.auto_close_s = 90;
+    sm::StoredConfig in;
+    in.version = 3;
+    in.offline_close_s = 0;
+    in.bolt_hold_open_s = 0;
+    in.maglock_shed_s = 0;
+    in.auto_close_s = 0;  // off is a real value
+    const auto out = sm::merge_config(base, in);
+    CHECK(out.version == 3);
+    CHECK(out.offline_close_s == 40);
+    CHECK(out.bolt_hold_open_s == 20);
+    CHECK(out.auto_close_s == 0);
 }

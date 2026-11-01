@@ -27,6 +27,7 @@ public:
     static constexpr std::uint32_t kCapStats = 16;
     static constexpr std::int64_t kOpenExpirySeconds = 10;
     static constexpr std::uint32_t kEventOfflineOpen = 1;
+    static constexpr std::uint64_t kConfigResendMs = 30'000;
 
     // `store` may be null (tests of a lone service): audit and pass
     // bookkeeping are then skipped.
@@ -43,6 +44,9 @@ public:
     void publish_alerts(const gate::v1::AuthDecision& d);
 
     [[nodiscard]] bool supports(const std::string& gate_id, gate::v1::CommandKind kind);
+    // Spec 13.1: type, layout and lane change only when shut.
+    [[nodiscard]] bool configurable(const std::string& gate_id);
+    void publish_config(const std::string& gate_id, const gate::v1::GateConfig& cfg);
     [[nodiscard]] bool locked(const std::string& gate_id);
     [[nodiscard]] bool hold_auto_close(const std::string& gate_id);
     void vehicle_left(const std::string& gate_id, const std::string& plate);
@@ -57,6 +61,7 @@ private:
         bool beam_clear = true;
         bool beam_tripped = false;  // since the current grant
         gate::v1::GateState state = gate::v1::GATE_STATE_UNKNOWN;
+        std::uint64_t config_sent_ms = 0;
     };
 
     Gate& gate_locked(const std::string& gate_id);

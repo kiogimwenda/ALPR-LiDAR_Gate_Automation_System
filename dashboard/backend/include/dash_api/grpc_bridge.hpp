@@ -62,6 +62,8 @@ public:
     // The bridge stamps site_id/actor defaults; the server stamps
     // command_id and issued_ts (DashboardServiceImpl::IssueCommand).
     RpcResult issue_command(gate::v1::GateCommand cmd, gate::v1::CommandAck& ack);
+    RpcResult get_gate_config(const std::string& gate_id, gate::v1::GateConfigRecord& out);
+    RpcResult set_gate_config(gate::v1::SetGateConfigRequest req, gate::v1::GateConfigRecord& out);
     RpcResult list_allowlist(std::uint32_t page_size, const std::string& page_token,
                              gate::v1::ListAllowlistResponse& out);
     RpcResult upsert_allowlist(gate::v1::UpsertAllowlistRequest req,

@@ -17,7 +17,14 @@ namespace {
 // Versioned via a 1-row schema_version table. New migrations append a new
 // `upgrade_to_N` block. We never write down-migrations — operators roll
 // forward with backups, not by executing speculative SQL.
-constexpr int kSchemaVersion = 2;
+constexpr int kSchemaVersion = 3;
+
+constexpr const char* kUpgradeTo3 = R"sql(
+CREATE TABLE gate_configs (
+    gate_id TEXT PRIMARY KEY, config BLOB NOT NULL, version INTEGER NOT NULL,
+    status INTEGER NOT NULL DEFAULT 0, updated_by TEXT NOT NULL, updated_ts INTEGER NOT NULL
+);
+)sql";
 
 constexpr const char* kUpgradeTo2 = R"sql(
 ALTER TABLE blocklist ADD COLUMN added_by TEXT NOT NULL DEFAULT '';
@@ -213,7 +220,10 @@ void run_migrations(sqlite3* db, const std::string& path) {
     // v0 -> v1 needs no DDL: IF NOT EXISTS already made the v1 schema.
     exec(db, "BEGIN IMMEDIATE");
     try {
-        exec(db, kUpgradeTo2);
+        if (current < 2) {
+            exec(db, kUpgradeTo2);
+        }
+        exec(db, kUpgradeTo3);
         exec(db, "DELETE FROM schema_version");
         auto s = prepare(db, "INSERT INTO schema_version(version) VALUES (?)");
         bind_int(s.get(), 1, kSchemaVersion);
@@ -771,6 +781,72 @@ void AllowlistStore::guest_pass_settle(const std::string& command_id, bool opene
         exec(db, "ROLLBACK");
         throw;
     }
+}
+
+gate::v1::GateConfigRecord AllowlistStore::gate_config_save(const std::string& gate_id,
+                                                            gate::v1::GateConfig cfg,
+                                                            const std::string& updated_by,
+                                                            std::time_t now_unix) {
+    std::lock_guard lk{impl_->mu};
+    auto* db = impl_->db;
+    auto v = prepare(db, "SELECT version, status, config FROM gate_configs WHERE gate_id=?");
+    bind_text(v.get(), 1, gate_id);
+    int version = 1;
+    int status = gate::v1::CONFIG_VERIFIED;  // nothing to verify yet
+    gate::v1::GateConfig prior;
+    if (sqlite3_step(v.get()) == SQLITE_ROW) {
+        version = sqlite3_column_int(v.get(), 0) + 1;
+        status = sqlite3_column_int(v.get(), 1);
+        prior.ParseFromArray(sqlite3_column_blob(v.get(), 2), sqlite3_column_bytes(v.get(), 2));
+    }
+    // Spec 13.1: only type, layout and lane need a fresh verify.
+    if (cfg.type() != prior.type() || cfg.lock_layout() != prior.lock_layout() ||
+        cfg.lane_mode() != prior.lane_mode()) {
+        status = gate::v1::CONFIG_UNVERIFIED;
+    }
+    cfg.set_version(static_cast<std::uint32_t>(version));
+    std::string blob;
+    cfg.SerializeToString(&blob);
+    auto s = prepare(db, R"sql(
+        INSERT INTO gate_configs (gate_id, config, version, status, updated_by, updated_ts)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(gate_id) DO UPDATE SET config=excluded.config, version=excluded.version,
+            status=excluded.status, updated_by=excluded.updated_by, updated_ts=excluded.updated_ts
+    )sql");
+    bind_text(s.get(), 1, gate_id);
+    sqlite3_bind_blob(s.get(), 2, blob.data(), static_cast<int>(blob.size()), SQLITE_TRANSIENT);
+    bind_int(s.get(), 3, version);
+    bind_int(s.get(), 4, status);
+    bind_text(s.get(), 5, updated_by);
+    bind_int64(s.get(), 6, now_unix);
+    if (sqlite3_step(s.get()) != SQLITE_DONE)
+        throw_db(db, "gate_config_save");
+    gate::v1::GateConfigRecord rec;
+    rec.set_gate_id(gate_id);
+    *rec.mutable_config() = std::move(cfg);
+    rec.set_status(static_cast<gate::v1::ConfigStatus>(status));
+    rec.mutable_updated_ts()->set_seconds(now_unix);
+    rec.set_updated_by(updated_by);
+    return rec;
+}
+
+std::optional<gate::v1::GateConfigRecord> AllowlistStore::gate_config_get(
+    const std::string& gate_id) const {
+    std::lock_guard lk{impl_->mu};
+    auto s = prepare(impl_->db,
+                     "SELECT config, status, updated_by, updated_ts FROM gate_configs "
+                     "WHERE gate_id=?");
+    bind_text(s.get(), 1, gate_id);
+    if (sqlite3_step(s.get()) != SQLITE_ROW)
+        return std::nullopt;
+    gate::v1::GateConfigRecord rec;
+    rec.set_gate_id(gate_id);
+    rec.mutable_config()->ParseFromArray(sqlite3_column_blob(s.get(), 0),
+                                         sqlite3_column_bytes(s.get(), 0));
+    rec.set_status(static_cast<gate::v1::ConfigStatus>(sqlite3_column_int(s.get(), 1)));
+    rec.set_updated_by(column_text(s.get(), 2));
+    rec.mutable_updated_ts()->set_seconds(sqlite3_column_int64(s.get(), 3));
+    return rec;
 }
 
 bool AllowlistStore::controller_event_insert(const std::string& gate_id,

@@ -11,6 +11,7 @@
 #include "auth/allowlist_store.hpp"
 #include "gate_service.grpc.pb.h"
 #include "rpc/access_control.hpp"
+#include "rpc/gate_dispatch.hpp"
 
 namespace gate::rpc {
 
@@ -49,12 +50,19 @@ public:
                                  const gate::v1::RevokeGuestPassRequest* req,
                                  gate::v1::GuestPass* resp) override;
 
+    grpc::Status GetGateConfig(grpc::ServerContext* ctx, const gate::v1::GetGateConfigRequest* req,
+                               gate::v1::GateConfigRecord* resp) override;
+    grpc::Status SetGateConfig(grpc::ServerContext* ctx, const gate::v1::SetGateConfigRequest* req,
+                               gate::v1::GateConfigRecord* resp) override;
+    void use_dispatch(GateDispatch* d) { dispatch_ = d; }
+
     // Per-RPC role checks from the mTLS client identity (access_control.hpp).
     void set_enforce_roles(bool on) { policy_.set_enforced(on); }
 
 private:
     AccessPolicy policy_;
     gate::auth::AllowlistStore& store_;
+    GateDispatch* dispatch_ = nullptr;
 };
 
 }  // namespace gate::rpc

@@ -21,6 +21,7 @@ public:
         std::uint32_t stuck_hold_ms = 10'000;
         std::uint32_t grant_timeout_ms = 1'500;
         std::uint32_t queue_max_ms = 20'000;
+        std::uint32_t confirm_ms = 3'000;  // a grant must show motion by then
     };
     enum class Output : std::uint8_t {
         None,
@@ -31,7 +32,8 @@ public:
     };
     enum class Reply : std::uint8_t { Granted, Queued, Denied, AlreadyServed };
 
-    RteAuthority(Config cfg, EventRing& ring, ServedGuard& guard) noexcept
+    // `ring` may be null: the exit still opens, unlogged (spec 9.4).
+    RteAuthority(Config cfg, EventRing* ring, ServedGuard& guard) noexcept
         : cfg_(cfg), ring_(ring), guard_(guard) {}
 
     // `fresh_id` is used if this sample starts a new request.
@@ -55,9 +57,14 @@ public:
         } else if (r == Reply::Denied) {
             deadline_ = now_ms;  // the exit always opens
         } else {
-            waiting_ = false;  // the granted command carries the id
+            // Not served until the gate moves: a lost command must not
+            // lose the exit.
+            deadline_ = now_ms + cfg_.confirm_ms;
         }
     }
+
+    // The gate is opening or open: whatever was asked for has happened.
+    void confirm_motion() noexcept { waiting_ = false; }
 
     [[nodiscard]] const ServedGuard::Id& id() const noexcept { return id_; }
 
@@ -111,12 +118,14 @@ private:
         r.kind = kEventOfflineOpen;
         r.request_id = id_;
         guard_.mark_served(id_);
-        ring_.append(r);  // before the command runs
+        if (ring_ != nullptr) {
+            ring_->append(r);  // before the command runs
+        }
         return Output::OpenLocal;
     }
 
     Config cfg_;
-    EventRing& ring_;
+    EventRing* ring_;
     ServedGuard& guard_;
     ServedGuard::Id id_{};
     std::uint64_t down_since_ = 0;
@@ -128,6 +137,33 @@ private:
     bool waiting_ = false;
     bool fired_reset_ = false;
     bool stuck_ = false;
+};
+
+// Local auto-close after an offline exit. Retries until the gate is shut
+// or closing, because the beam can refuse any one attempt.
+class LocalCloser {
+public:
+    static constexpr std::uint32_t kRetryMs = 10'000;
+
+    void arm(std::uint64_t now_ms, std::uint32_t delay_ms) noexcept { at_ = now_ms + delay_ms; }
+    void cancel() noexcept { at_ = 0; }
+    [[nodiscard]] bool armed() const noexcept { return at_ != 0; }
+
+    // True when the caller should post a close now.
+    bool tick(std::uint64_t now_ms, bool shut_or_closing) noexcept {
+        if (at_ == 0 || now_ms < at_) {
+            return false;
+        }
+        if (shut_or_closing) {
+            at_ = 0;
+            return false;
+        }
+        at_ = now_ms + kRetryMs;
+        return true;
+    }
+
+private:
+    std::uint64_t at_ = 0;
 };
 
 }  // namespace gate::state_machine

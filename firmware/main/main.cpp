@@ -6,6 +6,7 @@
 // keeps the main task alive — actual application logic lands in Phase 4.5.
 
 #include <cstdio>
+#include <driver/temperature_sensor.h>
 #include <esp_chip_info.h>
 #include <esp_idf_version.h>
 #include <esp_log.h>
@@ -23,6 +24,7 @@
 #include "gate_drivers/version.hpp"
 #include "gate_ota/ota_updater.hpp"
 #include "gate_rpc/control_client.hpp"
+#include "rte_service.hpp"
 
 #if CONFIG_GATE_TLS_ENABLE
 // Site PKI, embedded by EMBED_TXTFILES (NUL-terminated PEM text).
@@ -75,13 +77,17 @@ extern "C" void app_main(void) {
     // Faulted awaiting an operator reset. Static storage: the drivers'
     // esp_timers capture `this`, so the controller must live for the
     // whole firmware lifetime.
+    static gate::app::Persist persist;
+    persist.init();
+    const gate::app::StoredConfig stored = persist.load_config();
+
     using gate::control::GateController;
     static GateController gate_ctrl{GateController::Config{
         .sm =
             {
                 .gate_type = gate::state_machine::GateType::Sliding,
                 .motor_timeout_ms = 30'000,
-                .auto_close_ms = 0,  // auto-close policy arrives with remote config (4.5.4)
+                .auto_close_ms = stored.auto_close_s * 1000,
             },
         .pins = {},  // DevKitC-1 reference wiring (see gate_controller.hpp)
         .relays_active_high = kRelaysActiveHigh,
@@ -128,6 +134,12 @@ extern "C" void app_main(void) {
     // slip past the notify wiring below.
     using gate::rpc::ControlClient;
     using gate::state_machine::State;
+    static gate::app::RteService rte_service{persist};
+    static temperature_sensor_handle_t tsens = nullptr;
+    const temperature_sensor_config_t tsens_cfg = TEMPERATURE_SENSOR_CONFIG_DEFAULT(-10, 80);
+    if (temperature_sensor_install(&tsens_cfg, &tsens) == ESP_OK) {
+        (void)temperature_sensor_enable(tsens);
+    }
     static ControlClient control_client{
         ControlClient::Config{
             .host = CONFIG_GATE_SERVER_HOST,
@@ -142,6 +154,18 @@ extern "C" void app_main(void) {
         },
         [](gate_v1_Telemetry& t) {
             t.gate_state = gate::rpc::to_wire_state(gate_ctrl.state());
+            const gate::app::StoredConfig cfg = persist.load_cached();
+            t.capabilities = rte_service.enabled() ? gate::app::kCapEventLog : 0;
+            t.config_version = cfg.version;
+            t.config_status = static_cast<gate_v1_ConfigStatus>(cfg.status);
+            t.reason = static_cast<std::uint32_t>(gate_ctrl.reason());
+            t.pending_events = rte_service.pending();
+            t.hardware_rev = 2;
+            t.mains_ok = true;  // rev 2 has no mains sense
+            float celsius = 0.0F;
+            if (tsens != nullptr && temperature_sensor_get_celsius(tsens, &celsius) == ESP_OK) {
+                t.core_temp_c = celsius;
+            }
             t.limit_open = gate_ctrl.limit_open_active();
             t.limit_closed = gate_ctrl.limit_closed_active();
             t.safety_beam_clear = !gate_ctrl.beam_blocked();
@@ -149,6 +173,9 @@ extern "C" void app_main(void) {
         [](const gate_v1_GateCommand& cmd) -> ControlClient::DispatchResult {
             switch (cmd.kind) {
                 case gate_v1_CommandKind_COMMAND_KIND_OPEN_GATE:
+                    if (const char* refused = rte_service.admit_open(cmd)) {
+                        return {.error = refused};  // late grant or expired: no motion
+                    }
                     gate_ctrl.command_open();
                     return {.accepted = true, .terminal_ok = State::Open};
                 case gate_v1_CommandKind_COMMAND_KIND_CLOSE_GATE:
@@ -161,6 +188,26 @@ extern "C" void app_main(void) {
                     // Wire values 0–5 mirror StatusLed::Pattern by design.
                     gate_ctrl.show_led_pattern(
                         static_cast<gate::drivers::StatusLed::Pattern>(cmd.led_pattern));
+                    return {.accepted = true, .completed_now = true};
+                case gate_v1_CommandKind_COMMAND_KIND_CONFIGURE: {
+                    const State st = gate_ctrl.state();
+                    if (st != State::Closed && st != State::ClosedInsecure) {
+                        return {.error = "gate must be closed to configure"};
+                    }
+                    if (!cmd.has_config ||
+                        cmd.config.lock_layout != gate_v1_LockLayout_LOCK_LAYOUT_NONE) {
+                        return {.error = "rev 2 hardware has no locks"};
+                    }
+                    if (!persist.save_config(cmd.config)) {
+                        return {.error = "config not saved"};
+                    }
+                    return {.accepted = true, .completed_now = true};  // applies on reboot
+                }
+                case gate_v1_CommandKind_COMMAND_KIND_LOCKDOWN_ON:
+                    gate_ctrl.lockdown_on();
+                    return {.accepted = true, .completed_now = true};
+                case gate_v1_CommandKind_COMMAND_KIND_LOCKDOWN_OFF:
+                    gate_ctrl.lockdown_off();
                     return {.accepted = true, .completed_now = true};
                 case gate_v1_CommandKind_COMMAND_KIND_CLEAR_FAULT:
                     gate_ctrl.clear_fault();
@@ -219,7 +266,26 @@ extern "C" void app_main(void) {
         [](State s, gate::state_machine::Reason r, bool transitioned) {
             control_client.notify_gate_event(s, r, transitioned);
         });
+    gate_ctrl.restore_lockdown(persist.load_lockdown());
+    gate_ctrl.set_lockdown_writer([](bool latched) { persist.save_lockdown(latched); });
     ESP_ERROR_CHECK(gate_ctrl.start());
+
+    control_client.set_rte_handlers([](const gate_v1_OpenReply& r) { rte_service.on_reply(r); },
+                                    [](const gate_v1_EventAck& a) { rte_service.on_event_ack(a); });
+    rte_service.start(
+        CONFIG_GATE_RTE_GPIO, stored.offline_close_s,
+        gate::app::RteService::Hooks{
+            .link_up = [] { return control_client.connected(); },
+            .send =
+                [](const gate_v1_ControlEnvelope& e) { return control_client.send_envelope(e); },
+            .open = [] { gate_ctrl.command_rte(); },
+            .close = [] { gate_ctrl.command_close(); },
+            .local_reset = [] { gate_ctrl.local_reset(); },
+            .wire_state =
+                [] {
+                    return static_cast<std::uint8_t>(gate::rpc::to_wire_state(gate_ctrl.state()));
+                },
+        });
 
     // Bring up the W5500 ethernet driver. DHCP completion gates the
     // Control stream: the client connects on got-ip and backs off

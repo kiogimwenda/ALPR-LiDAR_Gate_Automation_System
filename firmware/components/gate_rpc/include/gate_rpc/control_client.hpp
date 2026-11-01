@@ -64,10 +64,7 @@ namespace gate::rpc {
 // instance per connect → stream → pump cycle.
 struct ControlSession;
 
-// Map the on-device state machine's state onto the wire enum. The
-// proto has no mid-travel "stopped" value (a server-side modelling
-// question deferred to 4.5.4), so Stopped* reports as UNKNOWN rather
-// than lying with OPENING/CLOSING.
+// Map the on-device state machine's state onto the wire enum (spec 8.5).
 gate_v1_GateState to_wire_state(gate::state_machine::State s) noexcept;
 
 class ControlClient {
@@ -124,6 +121,12 @@ public:
     ControlClient(ControlClient&&) = delete;
     ControlClient& operator=(ControlClient&&) = delete;
 
+    // Server replies for the RTE service. Set before start(); they run
+    // on the gate_rpc task and must not block.
+    using OpenReplyHandler = std::function<void(const gate_v1_OpenReply&)>;
+    using EventAckHandler = std::function<void(const gate_v1_EventAck&)>;
+    void set_rte_handlers(OpenReplyHandler reply, EventAckHandler ack);
+
     // Spawn the client task. ESP_ERR_INVALID_STATE on a second call.
     esp_err_t start();
 
@@ -173,6 +176,8 @@ private:
     Config cfg_;
     TelemetryFiller filler_;
     CommandDispatcher dispatcher_;
+    OpenReplyHandler open_reply_handler_;
+    EventAckHandler event_ack_handler_;
     TaskHandle_t task_ = nullptr;
     EventGroupHandle_t net_events_ = nullptr;
     QueueHandle_t out_queue_ = nullptr;

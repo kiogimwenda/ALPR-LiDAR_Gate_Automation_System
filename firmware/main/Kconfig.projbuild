@@ -7,7 +7,13 @@ menu "Gate Firmware Configuration"
             Site-unique gate name; carried in every Telemetry message
             and echoed by the server in audit logs and the dashboard.
 
-    config GATE_SERVER_HOST
+    config GATE_RTE_GPIO
+    int "Exit button GPIO (-1 = none, rev 2 boards)"
+    default -1
+    help
+        Normally-open button to ground, with the internal pull-up.
+
+config GATE_SERVER_HOST
         string "Inference server host or IPv4"
         default "192.168.1.10"
         help

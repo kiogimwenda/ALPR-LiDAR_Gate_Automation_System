@@ -439,6 +439,10 @@ def main():
                 ("operator commands a gate", "guard1",
                  "/api/gates/gate-e2e-02/command", "POST", {"kind": "CLOSE_GATE"}, 200),
                 ("operator cannot manage users", "guard1", "/api/users", "GET", None, 403),
+                ("viewer cannot configure a gate", "viewer1",
+                 "/api/gates/gate-e2e-02/config", "PUT", {"autoCloseS": 5}, 403),
+                ("operator cannot configure a gate", "guard1",
+                 "/api/gates/gate-e2e-02/config", "PUT", {"autoCloseS": 5}, 403),
             ]
             for desc, who, path, method, body, want in checks:
                 code, resp = api(path, method, body, as_token=tokens[who])

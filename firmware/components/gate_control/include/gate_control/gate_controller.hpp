@@ -121,6 +121,15 @@ public:
     void command_close();
     void command_stop();
     void clear_fault();
+    // Exit button: carries the local authority past lockdown and reserve.
+    void command_rte();
+    void local_reset();
+    void lockdown_on();
+    void lockdown_off();
+    // The persisted latch; call before start().
+    void restore_lockdown(bool latched);
+    // Called from the pump when the latch changes, to write NVS.
+    void set_lockdown_writer(std::function<void(bool)> writer);
 
     // Snapshot of the last committed state/reason, updated by the pump
     // task after every transition. Safe from any task; feeds the
@@ -156,12 +165,16 @@ private:
     static void pump_task_entry(void* arg);
     void pump_task();
 
-    void post(Event ev);
+    struct QueuedEvent {
+        Event ev;
+        state_machine::OpenOrigin origin;
+    };
+    void post(Event ev, state_machine::OpenOrigin origin = state_machine::OpenOrigin::Remote);
     void resolve_boot_position();
     void execute(const Outputs& out);
     void manage_timers(const Outputs& out);
     void apply_policies(const Outputs& out);
-    void process(Event ev);
+    void process(Event ev, state_machine::OpenOrigin origin);
     void supervise();
 
     Config cfg_;
@@ -178,6 +191,7 @@ private:
     std::atomic<State> state_snapshot_{State::Initializing};
     std::atomic<state_machine::Reason> reason_snapshot_{state_machine::Reason::None};
     TransitionListener listener_;
+    std::function<void(bool)> lockdown_writer_;
 
     QueueHandle_t queue_ = nullptr;
     TaskHandle_t task_ = nullptr;

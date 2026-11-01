@@ -19,12 +19,17 @@ endif()
 idf_component_register(
     SRCS
         "main.cpp"
+        "rte_service.cpp"
     INCLUDE_DIRS
         "."
     EMBED_TXTFILES
         ${GATE_TLS_EMBED}
     REQUIRES
         # System components used by main:
+        esp_driver_gpio
+        esp_driver_tsens
+        esp_partition
+        nvs_flash
         app_update        # esp_ota_ops — rollback mark-valid handshake
         esp_system        # esp_get_idf_version, esp_chip_info, esp_restart
         esp_timer         # reboot one-shot

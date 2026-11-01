@@ -410,6 +410,7 @@ Boot: if mid-travel, stay in the present `init_unknown` fault. Never self-drive 
 - `LATCH_OPEN` and `PULSE_RELAY` are refused on gates with the locks capability. The backend limits `LATCH_OPEN` to admins; a direct gRPC caller on a legacy gate with TLS off is not limited.
 - An OPEN with no side joins the entry queue, because a resident's app open should not jump waiting vehicles. Exit-side opens must say so; the app does not send a side yet.
 - Guest claims live in `guest_pass_reservations`, taken at dispatch rather than in fusion, and lapse after 300 s. A vehicle that loses the race gets an AUTHORIZED decision then a DENIED reply.
+- `EventBatch` carries one record per envelope, not 16. `gate_configs` lives in the auth DB. Config applies on reboot, and rev 2 firmware refuses any lock layout.
 
 **Blocking enablement of v2 features:**
 - Rule 6 has no LiDAR feed or firmware signal.
@@ -419,7 +420,9 @@ Boot: if mid-travel, stay in the present `init_unknown` fault. Never self-drive 
 - `kEventOfflineOpen` agreed with firmware event kinds.
 - `SetGateConfig`, `SetLaneConfig`, `VerifyGateType`, `CalibrateGate`.
 - History DB migration (§19.2).
-- `RteAuthority` is not wired to an input or the Control stream. Telemetry, persisted config and lockdown, verify and calibration are not implemented in firmware.
+- Verify and calibration are not implemented, so a type, layout or lane change leaves a gate UNVERIFIED with automatic opens refused and no way to clear it. `RteService` and `Persist` glue have no host or bench test, only their pure parts.
+- Before enabling RTE, measure the `gate_rte` stack on target; 6 KB is an estimate.
+- RTE needs a factory reflash: the `evlog` partition cannot arrive by OTA. Its input lacks end-of-line supervision (`RTE_LINE_FAULT`).
 
 ## 9. Single open-request path
 

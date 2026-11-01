@@ -10,6 +10,7 @@
 
 #include "auth/allowlist_store.hpp"
 #include "fusion/fusion_engine.hpp"
+#include "rpc/admin_service.hpp"
 #include "rpc/dashboard_service.hpp"
 
 namespace v1 = gate::v1;
@@ -284,6 +285,80 @@ TEST_CASE("locked gates refuse bypass commands; force and sides", "[dispatch]") 
     CHECK(next[0].request_id() == "second");
 }
 
+TEST_CASE("SetGateConfig needs a closed, capable gate and bumps the version", "[config]") {
+    Rig r;
+    gate::rpc::AdminServiceImpl svc{r.store};
+    svc.use_dispatch(&r.d);
+    grpc::ServerContext ctx;
+    v1::SetGateConfigRequest q;
+    q.set_gate_id("g");
+    q.mutable_config()->set_auto_close_s(30);
+    q.set_updated_by("ian");
+    v1::GateConfigRecord out;
+
+    r.telemetry(4, v1::GATE_STATE_OPEN);
+    CHECK(svc.SetGateConfig(&ctx, &q, &out).error_code() == grpc::StatusCode::FAILED_PRECONDITION);
+    r.telemetry(0, v1::GATE_STATE_CLOSED);
+    CHECK(svc.SetGateConfig(&ctx, &q, &out).error_code() ==
+          grpc::StatusCode::FAILED_PRECONDITION);  // legacy firmware
+    r.telemetry(4, v1::GATE_STATE_CLOSED);
+    REQUIRE(svc.SetGateConfig(&ctx, &q, &out).ok());
+    CHECK(out.config().version() == 1);
+    REQUIRE(svc.SetGateConfig(&ctx, &q, &out).ok());
+    CHECK(out.config().version() == 2);
+    const auto cmds = r.commands();
+    REQUIRE(cmds.size() == 2);
+    CHECK(cmds[1].kind() == v1::COMMAND_KIND_CONFIGURE);
+    v1::GetGateConfigRequest g;
+    g.set_gate_id("g");
+    REQUIRE(svc.GetGateConfig(&ctx, &g, &out).ok());
+    CHECK(out.config().auto_close_s() == 30);
+    CHECK(out.updated_by() == "ian");
+}
+
+TEST_CASE("config bounds, unverified block and catch-up", "[config]") {
+    Rig r;
+    gate::rpc::AdminServiceImpl svc{r.store};
+    svc.use_dispatch(&r.d);
+    grpc::ServerContext ctx;
+    r.telemetry(4, v1::GATE_STATE_CLOSED);
+    v1::GateConfigRecord out;
+    v1::SetGateConfigRequest q;
+    q.set_gate_id("g");
+    q.set_updated_by("ian");
+    q.mutable_config()->set_bolt_hold_open_s(61);
+    CHECK(svc.SetGateConfig(&ctx, &q, &out).error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+    q.mutable_config()->set_bolt_hold_open_s(45);
+    q.clear_updated_by();
+    CHECK(svc.SetGateConfig(&ctx, &q, &out).error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+    q.set_updated_by("ian");
+
+    // Timers alone stay verified and keep automatic opens.
+    REQUIRE(svc.SetGateConfig(&ctx, &q, &out).ok());
+    CHECK(out.status() == v1::CONFIG_VERIFIED);
+
+    // A type change blocks them.
+    q.mutable_config()->set_type(v1::GATE_TYPE_DUAL_LEAF);
+    REQUIRE(svc.SetGateConfig(&ctx, &q, &out).ok());
+    CHECK(out.status() == v1::CONFIG_UNVERIFIED);
+    v1::AuthDecision d;
+    d.set_decision_id("d");
+    d.set_gate_id("g");
+    (void)r.commands();
+    CHECK(r.d.submit_decision(d, v1::OPEN_SOURCE_PLATE).status() == v1::OpenReply::DENIED);
+    CHECK(r.commands().empty());
+    CHECK(r.d.submit("g", rte("x")).status() == v1::OpenReply::GRANTED);  // the exit still works
+
+    // A gate behind on version gets the config once it reports closed.
+    (void)r.commands();
+    r.telemetry(4, v1::GATE_STATE_CLOSED);
+    const auto c = r.commands();
+    REQUIRE(c.size() == 1);
+    CHECK(c[0].kind() == v1::COMMAND_KIND_CONFIGURE);
+    r.telemetry(4, v1::GATE_STATE_CLOSED);
+    CHECK(r.commands().empty());  // throttled
+}
+
 TEST_CASE("pass respects gate, expiry and revocation", "[guest]") {
     Rig r;
     const auto now = std::time(nullptr);
@@ -358,7 +433,7 @@ TEST_CASE("auth DB migrates a copied v1 DB, keeps rows, backs up first", "[migra
         CHECK(store.blocklist_list("s", 10, "").entries.at(0).reason() == "r");
         CHECK(store.lookup("s", "KFAM")->owner_name() == "Ian");
     }
-    CHECK(version_of(copy) == 2);
+    CHECK(version_of(copy) == 3);
     CHECK(std::filesystem::exists(backup));
     CHECK(version_of(backup) == 1);
     CHECK(version_of(v1_path) == 1);

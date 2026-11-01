@@ -117,6 +117,13 @@ public:
     // Confirmed open: counts the entry. Otherwise frees the claim.
     void guest_pass_settle(const std::string& command_id, bool opened);
 
+    // Stores `cfg` as version previous + 1, status unverified.
+    gate::v1::GateConfigRecord gate_config_save(const std::string& gate_id,
+                                                gate::v1::GateConfig cfg,
+                                                const std::string& updated_by,
+                                                std::time_t now_unix);
+    std::optional<gate::v1::GateConfigRecord> gate_config_get(const std::string& gate_id) const;
+
     // Idempotent on (gate_id, boot_id, seq). True when newly stored.
     bool controller_event_insert(const std::string& gate_id, const gate::v1::ControllerEvent& e);
     void open_audit_insert(const gate::v1::OpenRequestRecord& r, std::time_t now_unix);

@@ -1,0 +1,370 @@
+// rte_service.cpp — see the header.
+
+#include "rte_service.hpp"
+
+#include <cstdio>
+#include <cstring>
+#include <driver/gpio.h>
+#include <esp_log.h>
+#include <esp_random.h>
+#include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <nvs.h>
+#include <nvs_flash.h>
+#include <sys/time.h>
+
+namespace gate::app {
+
+namespace sm = gate::state_machine;
+
+namespace {
+
+constexpr const char* kTag = "rte";
+constexpr const char* kNs = "gate";
+constexpr std::uint32_t kPollMs = 20;
+constexpr std::uint32_t kStackBytes = 6144;  // ring scans and nanopb encode run here
+constexpr std::uint64_t kSyncPeriodMs = 1'000;
+constexpr std::int64_t kMinValidUnix = 1'700'000'000;
+
+class PartitionFlash final : public sm::FlashIo {
+public:
+    explicit PartitionFlash(const esp_partition_t* p) noexcept : p_(p) {}
+    void read(std::size_t o, std::uint8_t* out, std::size_t n) override {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_partition_read(p_, o, out, n));
+    }
+    void program(std::size_t o, const std::uint8_t* d, std::size_t n) override {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_partition_write(p_, o, d, n));
+    }
+    void erase_sector(std::size_t s) override {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_partition_erase_range(p_, s * sm::EventRing::kSectorSize,
+                                                                sm::EventRing::kSectorSize));
+    }
+
+private:
+    const esp_partition_t* p_;
+};
+
+struct Nvs {
+    nvs_handle_t h = 0;
+    bool ok = false;
+    explicit Nvs(nvs_open_mode_t mode) { ok = nvs_open(kNs, mode, &h) == ESP_OK; }
+    ~Nvs() {
+        if (ok) {
+            nvs_close(h);
+        }
+    }
+};
+
+std::int64_t unix_ms_now() {
+    timeval tv{};
+    gettimeofday(&tv, nullptr);
+    return tv.tv_sec < kMinValidUnix ? 0 : tv.tv_sec * 1000LL + tv.tv_usec / 1000;
+}
+
+}  // namespace
+
+void Persist::init() {
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+}
+
+bool Persist::load_lockdown() {
+    Nvs n(NVS_READONLY);
+    std::uint8_t v = 0;
+    return n.ok && nvs_get_u8(n.h, "lockdown", &v) == ESP_OK && v != 0;
+}
+
+void Persist::save_lockdown(bool latched) {
+    Nvs n(NVS_READWRITE);
+    if (n.ok && nvs_set_u8(n.h, "lockdown", latched ? 1 : 0) == ESP_OK) {
+        (void)nvs_commit(n.h);
+    }
+}
+
+StoredConfig Persist::load_config() {
+    StoredConfig c;
+    Nvs n(NVS_READONLY);
+    std::size_t len = sizeof(c);
+    if (n.ok && (nvs_get_blob(n.h, "config", &c, &len) != ESP_OK || len != sizeof(c))) {
+        c = StoredConfig{};
+    }
+    const std::lock_guard<std::mutex> lk{mu_};
+    cached_ = c;
+    return c;
+}
+
+StoredConfig Persist::load_cached() {
+    const std::lock_guard<std::mutex> lk{mu_};
+    return cached_;
+}
+
+bool Persist::save_config(const gate_v1_GateConfig& in) {
+    StoredConfig incoming;
+    incoming.version = in.version;
+    incoming.status = gate_v1_ConfigStatus_CONFIG_UNVERIFIED;
+    incoming.type = in.type;
+    incoming.lane_mode = in.lane_mode;
+    incoming.auto_close_s = in.auto_close_s;
+    incoming.offline_close_s = in.offline_close_s;
+    incoming.bolt_hold_open_s = in.bolt_hold_open_s;
+    incoming.maglock_shed_s = in.maglock_shed_s;
+    const StoredConfig c = sm::merge_config(load_cached(), incoming);
+    Nvs n(NVS_READWRITE);
+    if (!n.ok || nvs_set_blob(n.h, "config", &c, sizeof(c)) != ESP_OK ||
+        nvs_commit(n.h) != ESP_OK) {
+        return false;
+    }
+    const std::lock_guard<std::mutex> lk{mu_};
+    cached_ = c;
+    return true;
+}
+
+std::uint32_t Persist::next_boot_id() {
+    Nvs n(NVS_READWRITE);
+    std::uint32_t id = 0;
+    if (n.ok) {
+        (void)nvs_get_u32(n.h, "boot_id", &id);
+        ++id;
+        (void)nvs_set_u32(n.h, "boot_id", id);
+        (void)nvs_commit(n.h);
+    }
+    return id;
+}
+
+void Persist::load_served(sm::ServedGuard::Persisted& p) {
+    Nvs n(NVS_READONLY);
+    std::size_t len = sizeof(p);
+    if (n.ok && (nvs_get_blob(n.h, "served", &p, &len) != ESP_OK || len != sizeof(p))) {
+        p = {};
+    }
+}
+
+void Persist::save_served(const sm::ServedGuard::Persisted& p) {
+    Nvs n(NVS_READWRITE);
+    if (n.ok && nvs_set_blob(n.h, "served", &p, sizeof(p)) == ESP_OK) {
+        (void)nvs_commit(n.h);
+    }
+}
+
+void RteService::start(int gpio, std::uint32_t offline_close_s, Hooks hooks) {
+    hooks_ = std::move(hooks);
+    offline_close_ms_ = (offline_close_s != 0 ? offline_close_s : 30U) * 1000U;
+    sm::ServedGuard::Persisted served;
+    persist_.load_served(served);
+    guard_.restore(served);
+
+    const esp_partition_t* part = esp_partition_find_first(static_cast<esp_partition_type_t>(0x40),
+                                                           ESP_PARTITION_SUBTYPE_ANY, "evlog");
+    if (gpio < 0) {
+        ESP_LOGW(kTag, "exit button disabled: no GPIO");
+        return;
+    }
+    gpio_ = gpio;
+    gpio_config_t io = {};
+    io.pin_bit_mask = 1ULL << gpio;
+    io.mode = GPIO_MODE_INPUT;
+    io.pull_up_en = GPIO_PULLUP_ENABLE;
+    ESP_ERROR_CHECK(gpio_config(&io));
+
+    if (part != nullptr) {
+        flash_ = std::make_unique<PartitionFlash>(part);
+        ring_ = std::make_unique<sm::EventRing>(*flash_);
+        ring_->mount();
+        boot_id_ = persist_.next_boot_id();
+        // NVS lost: resume above anything already in the ring.
+        if (const auto top = ring_->highest_boot_id(); boot_id_ <= top) {
+            boot_id_ = top + 1;
+        }
+        ring_ready_.store(true);
+    } else {
+        ESP_LOGE(kTag, "no evlog partition: exits open but go unlogged");
+    }
+    authority_ =
+        std::make_unique<sm::RteAuthority>(sm::RteAuthority::Config{}, ring_.get(), guard_);
+    xTaskCreate(&RteService::task_entry, "gate_rte", kStackBytes, this, 4, nullptr);
+}
+
+void RteService::task_entry(void* arg) {
+    static_cast<RteService*>(arg)->task();
+}
+
+void RteService::task() {
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(kPollMs));
+        const std::uint64_t now = esp_timer_get_time() / 1000;
+        const bool pressed = gpio_get_level(static_cast<gpio_num_t>(gpio_)) == 0;
+        const bool link = hooks_.link_up();
+
+        sm::ServedGuard::Id fresh{};
+        esp_fill_random(fresh.data(), fresh.size());
+        fresh[6] = static_cast<std::uint8_t>((fresh[6] & 0x0F) | 0x40);
+        fresh[8] = static_cast<std::uint8_t>((fresh[8] & 0x3F) | 0x80);
+
+        sm::EventRecord base;
+        base.boot_id = boot_id_;
+        base.uptime_ms = now;
+        base.unix_ms = unix_ms_now();
+        base.source = gate_v1_OpenSource_OPEN_SOURCE_RTE;
+        base.side = gate_v1_GateSide_GATE_SIDE_EXIT;
+        base.state_after = hooks_.wire_state();
+
+        sm::RteAuthority::Output out = sm::RteAuthority::Output::None;
+        sm::ServedGuard::Persisted served;
+        sm::ServedGuard::Id id{};
+        {
+            const std::lock_guard<std::mutex> lk{mu_};
+            const std::uint8_t st = base.state_after;
+            if (st == gate_v1_GateState_GATE_STATE_OPENING ||
+                st == gate_v1_GateState_GATE_STATE_OPEN ||
+                st == gate_v1_GateState_GATE_STATE_UNLOCKING) {
+                authority_->confirm_motion();
+            }
+            out = authority_->tick(now, pressed, link, fresh, base);
+            id = authority_->id();
+            served = guard_.persisted();
+        }
+
+        using Out = sm::RteAuthority::Output;
+        if (out == Out::SendRequest) {
+            out_env_ = gate_v1_ControlEnvelope_init_zero;
+            out_env_.which_payload = gate_v1_ControlEnvelope_open_request_tag;
+            auto& q = out_env_.payload.open_request;
+            sm::ServedGuard::format_uuid(id, q.request_id);
+            std::snprintf(q.gate_id, sizeof(q.gate_id), "%s", CONFIG_GATE_ID);
+            q.side = gate_v1_GateSide_GATE_SIDE_EXIT;
+            q.source = gate_v1_OpenSource_OPEN_SOURCE_RTE;
+            (void)hooks_.send(out_env_);  // a lost send falls back on the timeout
+        } else if (out == Out::OpenLocal) {
+            persist_.save_served(served);
+            hooks_.open();
+            closer_.arm(now, offline_close_ms_);
+            if (ring_ == nullptr) {
+                send_unlogged_alert();
+            }
+        } else if (out == Out::LocalReset) {
+            hooks_.local_reset();
+        } else if (out == Out::Stuck) {
+            ESP_LOGE(kTag, "RTE_STUCK: button held, input ignored until released");
+        }
+
+        // Local auto-close; the state machine's beam guard still applies.
+        const std::uint8_t st = hooks_.wire_state();
+        const bool shut = st == gate_v1_GateState_GATE_STATE_CLOSED ||
+                          st == gate_v1_GateState_GATE_STATE_CLOSED_INSECURE ||
+                          st == gate_v1_GateState_GATE_STATE_LOCKDOWN ||
+                          st == gate_v1_GateState_GATE_STATE_CLOSING ||
+                          st == gate_v1_GateState_GATE_STATE_LOCKING;
+        if (closer_.tick(now, shut)) {
+            hooks_.close();
+        }
+        if (now >= next_sync_) {
+            next_sync_ = now + kSyncPeriodMs;
+            sync_events(now);
+        }
+    }
+}
+
+// One record per envelope, resent until acked: freed only on ack.
+void RteService::sync_events(std::uint64_t) {
+    if (ring_ == nullptr) {
+        return;
+    }
+    ring_->ack(acked_.load());
+    const auto batch = ring_->pending(1);
+    pending_.store(static_cast<std::uint32_t>(ring_->pending(sm::EventRing::kCapacity).size()));
+    if (batch.empty() || !hooks_.link_up()) {
+        return;
+    }
+    const auto& r = batch.front();
+    out_env_ = gate_v1_ControlEnvelope_init_zero;
+    out_env_.which_payload = gate_v1_ControlEnvelope_events_tag;
+    auto& b = out_env_.payload.events;
+    b.dropped = ring_->dropped();
+    b.events_count = 1;
+    auto& e = b.events[0];
+    e.seq = r.seq;
+    e.boot_id = r.boot_id;
+    e.uptime_ms = r.uptime_ms;
+    e.unix_ms = r.unix_ms;
+    e.kind = r.kind;
+    e.source = static_cast<gate_v1_OpenSource>(r.source);
+    e.side = static_cast<gate_v1_GateSide>(r.side);
+    e.result = r.result;
+    e.state_after = static_cast<gate_v1_GateState>(r.state_after);
+    e.request_id.size = static_cast<pb_size_t>(r.request_id.size());
+    std::memcpy(e.request_id.bytes, r.request_id.data(), r.request_id.size());
+    (void)hooks_.send(out_env_);
+}
+
+void RteService::send_unlogged_alert() {
+    out_env_ = gate_v1_ControlEnvelope_init_zero;
+    out_env_.which_payload = gate_v1_ControlEnvelope_fault_tag;
+    auto& f = out_env_.payload.fault;
+    std::snprintf(f.gate_id, sizeof(f.gate_id), "%s", CONFIG_GATE_ID);
+    f.severity = gate_v1_FaultSeverity_FAULT_SEVERITY_ERROR;
+    std::snprintf(f.code, sizeof(f.code), "EVENT_LOG_MISSING");
+    std::snprintf(f.description, sizeof(f.description), "exit opened with no event log");
+    ESP_LOGE(kTag, "exit opened with no event log");
+    (void)hooks_.send(out_env_);
+}
+
+const char* RteService::admit_open(const gate_v1_GateCommand& cmd) {
+    const auto id = sm::ServedGuard::parse_uuid(cmd.request_id);
+    const std::int64_t now = unix_ms_now();
+    const std::int64_t expires = cmd.has_expires_ts ? cmd.expires_ts.seconds * 1000LL : 0;
+    sm::ServedGuard::Persisted served;
+    {
+        const std::lock_guard<std::mutex> lk{mu_};
+        switch (guard_.check(id, expires, now, now != 0)) {
+            case sm::ServedGuard::Verdict::AlreadyServed:
+                return "already served";
+            case sm::ServedGuard::Verdict::Expired:
+                return "open command expired";
+            case sm::ServedGuard::Verdict::Accept:
+                break;
+        }
+        if (id == sm::ServedGuard::Id{}) {
+            return nullptr;  // no id: older server
+        }
+        guard_.mark_served(id);
+        served = guard_.persisted();
+    }
+    persist_.save_served(served);
+    return nullptr;
+}
+
+void RteService::on_reply(const gate_v1_OpenReply& r) {
+    using Reply = sm::RteAuthority::Reply;
+    const std::uint64_t now = esp_timer_get_time() / 1000;
+    const std::lock_guard<std::mutex> lk{mu_};
+    if (authority_ == nullptr || sm::ServedGuard::parse_uuid(r.request_id) != authority_->id()) {
+        return;
+    }
+    switch (r.status) {
+        case gate_v1_OpenReply_Status_GRANTED:
+            authority_->on_reply(Reply::Granted, now);
+            break;
+        case gate_v1_OpenReply_Status_QUEUED:
+            authority_->on_reply(Reply::Queued, now);
+            break;
+        case gate_v1_OpenReply_Status_DENIED:
+            authority_->on_reply(Reply::Denied, now);
+            break;
+        case gate_v1_OpenReply_Status_ALREADY_SERVED:
+            authority_->on_reply(Reply::AlreadyServed, now);
+            break;
+        default:
+            break;
+    }
+}
+
+void RteService::on_event_ack(const gate_v1_EventAck& a) {
+    acked_.store(static_cast<std::uint32_t>(a.last_seq));
+}
+
+}  // namespace gate::app

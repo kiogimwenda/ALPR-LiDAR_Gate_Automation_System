@@ -19,6 +19,42 @@ public:
     };
     enum class Verdict : std::uint8_t { Accept, AlreadyServed, Expired };
 
+    // UUID text <-> the ring's binary id. Anything else parses to the
+    // zero id, which check() treats as a legacy command.
+    static Id parse_uuid(const char* text) noexcept {
+        Id out{};
+        std::size_t n = 0;
+        int high = -1;
+        for (const char* p = text; *p != '\0'; ++p) {
+            if (*p == '-') {
+                continue;
+            }
+            const int v = nibble(*p);
+            if (v < 0 || n >= out.size()) {
+                return Id{};
+            }
+            if (high < 0) {
+                high = v;
+            } else {
+                out[n++] = static_cast<std::uint8_t>(high << 4 | v);
+                high = -1;
+            }
+        }
+        return n == out.size() && high < 0 ? out : Id{};
+    }
+    static void format_uuid(const Id& id, char* out /* 37 bytes */) noexcept {
+        static constexpr char kHex[] = "0123456789abcdef";
+        std::size_t o = 0;
+        for (std::size_t i = 0; i < id.size(); ++i) {
+            if (i == 4 || i == 6 || i == 8 || i == 10) {
+                out[o++] = '-';
+            }
+            out[o++] = kHex[id[i] >> 4];
+            out[o++] = kHex[id[i] & 15];
+        }
+        out[o] = '\0';
+    }
+
     // expires_unix_ms 0 = none. With an unsynced clock the expiry cannot
     // be judged, and arrival on the live stream is the only check.
     [[nodiscard]] Verdict check(const Id& id, std::int64_t expires_unix_ms,
@@ -41,6 +77,15 @@ public:
     void restore(const Persisted& p) noexcept { p_ = p; }
 
 private:
+    static int nibble(char c) noexcept {
+        if (c >= '0' && c <= '9') {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f') {
+            return c - 'a' + 10;
+        }
+        return c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+    }
     [[nodiscard]] bool seen(const Id& id) const noexcept {
         if (id == Id{}) {
             return false;  // legacy command: no request id

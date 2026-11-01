@@ -61,6 +61,7 @@ Server::Server(gate::auth::AllowlistStore& store, gate::fusion::FusionEngine& fu
       admin_(store),
       dashboard_(bus, fusion, cfg_.default_site_id),
       field_(bus, fusion, cfg_.default_site_id) {
+    admin_.use_dispatch(&dispatch_);
     dashboard_.use_dispatch(&dispatch_);
     field_.use_dispatch(&dispatch_);
     dashboard_.set_subscribe_poll_interval(cfg_.subscribe_poll_interval);

@@ -733,8 +733,9 @@ message GateConfigRecord {
 }
 
 message SetGateConfigRequest {
-  string     gate_id = 1;
-  GateConfig config  = 2;
+  string     gate_id    = 1;
+  GateConfig config     = 2;
+  string     updated_by = 3;  // Username, set by the backend from the session
 }
 
 message SetLaneConfigRequest {

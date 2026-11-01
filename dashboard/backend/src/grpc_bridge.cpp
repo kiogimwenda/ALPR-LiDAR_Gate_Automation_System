@@ -76,6 +76,20 @@ GrpcBridge::RpcResult GrpcBridge::issue_command(gate::v1::GateCommand cmd,
     return to_result(dash_stub_->IssueCommand(&with_deadline(ctx), cmd, &ack));
 }
 
+GrpcBridge::RpcResult GrpcBridge::get_gate_config(const std::string& gate_id,
+                                                  gate::v1::GateConfigRecord& out) {
+    gate::v1::GetGateConfigRequest req;
+    req.set_gate_id(gate_id);
+    grpc::ClientContext ctx;
+    return to_result(admin_stub_->GetGateConfig(&with_deadline(ctx), req, &out));
+}
+
+GrpcBridge::RpcResult GrpcBridge::set_gate_config(gate::v1::SetGateConfigRequest req,
+                                                  gate::v1::GateConfigRecord& out) {
+    grpc::ClientContext ctx;
+    return to_result(admin_stub_->SetGateConfig(&with_deadline(ctx), req, &out));
+}
+
 GrpcBridge::RpcResult GrpcBridge::list_allowlist(std::uint32_t page_size,
                                                  const std::string& page_token,
                                                  gate::v1::ListAllowlistResponse& out) {

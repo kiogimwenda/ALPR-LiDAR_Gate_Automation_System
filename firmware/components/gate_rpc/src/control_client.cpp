@@ -135,6 +135,16 @@ void ControlSession::handle_message(const std::uint8_t* data, std::size_t len) {
                      env.payload.command.actor);
             owner->handle_command(env.payload.command);
             break;
+        case gate_v1_ControlEnvelope_open_reply_tag:
+            if (owner->open_reply_handler_) {
+                owner->open_reply_handler_(env.payload.open_reply);
+            }
+            break;
+        case gate_v1_ControlEnvelope_events_ack_tag:
+            if (owner->event_ack_handler_) {
+                owner->event_ack_handler_(env.payload.events_ack);
+            }
+            break;
         case gate_v1_ControlEnvelope_telemetry_tag:
         case gate_v1_ControlEnvelope_ack_tag:
         case gate_v1_ControlEnvelope_fault_tag:
@@ -418,6 +428,11 @@ void ControlClient::send_telemetry() {
     }
     last_wire_state_.store(t.gate_state, std::memory_order_relaxed);
     send_envelope(env);
+}
+
+void ControlClient::set_rte_handlers(OpenReplyHandler reply, EventAckHandler ack) {
+    open_reply_handler_ = std::move(reply);
+    event_ack_handler_ = std::move(ack);
 }
 
 void ControlClient::send_ack_received(const gate_v1_GateCommand& cmd) {

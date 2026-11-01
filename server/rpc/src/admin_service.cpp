@@ -198,6 +198,47 @@ Status AdminServiceImpl::RevokeGuestPass(ServerContext* ctx,
     return Status::OK;
 }
 
+Status AdminServiceImpl::GetGateConfig(ServerContext* ctx,
+                                       const gate::v1::GetGateConfigRequest* req,
+                                       gate::v1::GateConfigRecord* resp) {
+    GATE_ADMIN_GUARD("GetGateConfig");
+    auto rec = store_.gate_config_get(req->gate_id());
+    if (!rec) {
+        return {StatusCode::NOT_FOUND, "gate has no stored config"};
+    }
+    *resp = std::move(*rec);
+    return Status::OK;
+}
+
+// Admin-only at the backend (AdminFilter), like every Admin RPC.
+Status AdminServiceImpl::SetGateConfig(ServerContext* ctx,
+                                       const gate::v1::SetGateConfigRequest* req,
+                                       gate::v1::GateConfigRecord* resp) {
+    GATE_ADMIN_GUARD("SetGateConfig");
+    if (req->gate_id().empty() || dispatch_ == nullptr) {
+        return {StatusCode::INVALID_ARGUMENT, "gate_id is required"};
+    }
+    if (!dispatch_->configurable(req->gate_id())) {
+        return {StatusCode::FAILED_PRECONDITION, "gate must be closed to configure"};
+    }
+    if (!dispatch_->supports(req->gate_id(), gate::v1::COMMAND_KIND_CONFIGURE)) {
+        return {StatusCode::FAILED_PRECONDITION, "gate firmware lacks this capability"};
+    }
+    const auto& c = req->config();
+    // 60 s is a planning ceiling on solenoid duty until the bolt is chosen.
+    if (c.bolt_hold_open_s() > 60 || c.offline_close_s() > 600 || c.auto_close_s() > 3'600 ||
+        (c.offline_close_s() != 0 && c.offline_close_s() < 5) ||
+        (c.bolt_hold_open_s() != 0 && c.bolt_hold_open_s() < 5)) {
+        return {StatusCode::INVALID_ARGUMENT, "config value out of bounds"};
+    }
+    if (req->updated_by().empty()) {
+        return {StatusCode::INVALID_ARGUMENT, "updated_by is required"};
+    }
+    *resp = store_.gate_config_save(req->gate_id(), c, req->updated_by(), std::time(nullptr));
+    dispatch_->publish_config(req->gate_id(), resp->config());
+    return Status::OK;
+}
+
 #undef GATE_ADMIN_GUARD
 
 }  // namespace gate::rpc

@@ -120,6 +120,23 @@ OpenReply GateDispatch::submit(const std::string& gate_id, GateArbiter::Request 
 
 OpenReply GateDispatch::submit_decision(const gate::v1::AuthDecision& d,
                                         gate::v1::OpenSource source) {
+    // Spec 13.1: no automatic open on an unverified config.
+    if (store_ != nullptr && d.side() != gate::v1::GATE_SIDE_EXIT) {
+        const auto cfg = store_->gate_config_get(d.gate_id());
+        if (cfg && cfg->status() == gate::v1::CONFIG_UNVERIFIED) {
+            OpenReply refused;
+            refused.set_request_id(d.decision_id());
+            refused.set_status(OpenReply::DENIED);
+            GateArbiter::Request a;
+            a.request_id = d.decision_id();
+            a.side = gate::v1::GATE_SIDE_ENTRY;
+            a.source = source;
+            a.decision_id = d.decision_id();
+            const std::lock_guard<std::mutex> lk{mu_};
+            audit(d.gate_id(), {a, 0, "", "config_unverified"});
+            return refused;
+        }
+    }
     GateArbiter::Request r;
     r.request_id = d.decision_id();
     r.side = d.side() == gate::v1::GATE_SIDE_UNSPECIFIED ? gate::v1::GATE_SIDE_ENTRY : d.side();
@@ -175,6 +192,23 @@ void GateDispatch::on_telemetry(const gate::v1::Telemetry& t) {
         t.gate_state() == gate::v1::GATE_STATE_CLOSED && g.state != gate::v1::GATE_STATE_CLOSED;
     g.beam_tripped = !t.safety_beam_clear();
     g.state = t.gate_state();
+    // A gate offline at PUT time catches up once it reports, closed.
+    if (store_ != nullptr && t.capabilities() != 0 &&
+        (t.gate_state() == gate::v1::GATE_STATE_CLOSED ||
+         t.gate_state() == gate::v1::GATE_STATE_CLOSED_INSECURE) &&
+        (g.config_sent_ms == 0 || now - g.config_sent_ms >= kConfigResendMs)) {
+        const auto cfg = store_->gate_config_get(t.gate_id());
+        if (cfg && cfg->config().version() > t.config_version()) {
+            g.config_sent_ms = now;
+            gate::v1::GateCommand c;
+            c.set_command_id(gate::fusion::generate_uuidv4());
+            c.mutable_issued_ts()->set_seconds(std::time(nullptr));
+            c.set_gate_id(t.gate_id());
+            c.set_kind(gate::v1::COMMAND_KIND_CONFIGURE);
+            *c.mutable_config() = cfg->config();
+            bus_.publish_command(site_id_, std::move(c));
+        }
+    }
     if (cleared || shut) {
         g.arbiter->vehicle_cleared(now);
     } else {
@@ -226,6 +260,8 @@ bool GateDispatch::supports(const std::string& gate_id, gate::v1::CommandKind ki
     std::uint32_t need = 0;
     switch (kind) {
         case gate::v1::COMMAND_KIND_CONFIGURE:
+            need = kCapLocks | kCapEventLog;  // v2 firmware, rev 2 board included
+            break;
         case gate::v1::COMMAND_KIND_LOCKDOWN_ON:
         case gate::v1::COMMAND_KIND_LOCKDOWN_OFF:
         case gate::v1::COMMAND_KIND_CLEAR_FAULT:
@@ -243,6 +279,22 @@ bool GateDispatch::supports(const std::string& gate_id, gate::v1::CommandKind ki
     }
     const std::lock_guard<std::mutex> lk{mu_};
     return (gate_locked(gate_id).capabilities & need) != 0;
+}
+
+bool GateDispatch::configurable(const std::string& gate_id) {
+    const std::lock_guard<std::mutex> lk{mu_};
+    const auto st = gate_locked(gate_id).state;
+    return st == gate::v1::GATE_STATE_CLOSED || st == gate::v1::GATE_STATE_CLOSED_INSECURE;
+}
+
+void GateDispatch::publish_config(const std::string& gate_id, const gate::v1::GateConfig& cfg) {
+    gate::v1::GateCommand c;
+    c.set_command_id(gate::fusion::generate_uuidv4());
+    c.mutable_issued_ts()->set_seconds(std::time(nullptr));
+    c.set_gate_id(gate_id);
+    c.set_kind(gate::v1::COMMAND_KIND_CONFIGURE);
+    *c.mutable_config() = cfg;
+    bus_.publish_command(site_id_, std::move(c));
 }
 
 bool GateDispatch::locked(const std::string& gate_id) {

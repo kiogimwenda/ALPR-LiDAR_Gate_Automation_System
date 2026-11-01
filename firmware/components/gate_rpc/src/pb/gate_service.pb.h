@@ -501,6 +501,7 @@ typedef struct _gate_v1_OpenRequestRecord {
     pb_callback_t outcome;
 } gate_v1_OpenRequestRecord;
 
+typedef PB_BYTES_ARRAY_T(16) gate_v1_ControllerEvent_request_id_t;
 typedef struct _gate_v1_ControllerEvent {
     uint64_t seq;
     uint32_t boot_id;
@@ -511,11 +512,12 @@ typedef struct _gate_v1_ControllerEvent {
     gate_v1_GateSide side;
     uint32_t result;
     gate_v1_GateState state_after;
-    pb_callback_t request_id; /* 16 bytes binary */
+    gate_v1_ControllerEvent_request_id_t request_id; /* 16 bytes binary */
 } gate_v1_ControllerEvent;
 
 typedef struct _gate_v1_EventBatch {
-    pb_callback_t events;
+    pb_size_t events_count;
+    gate_v1_ControllerEvent events[1];
     uint32_t dropped;
 } gate_v1_EventBatch;
 
@@ -726,6 +728,7 @@ typedef struct _gate_v1_SetGateConfigRequest {
     pb_callback_t gate_id;
     bool has_config;
     gate_v1_GateConfig config;
+    pb_callback_t updated_by; /* Username, set by the backend from the session */
 } gate_v1_SetGateConfigRequest;
 
 typedef struct _gate_v1_SetLaneConfigRequest {
@@ -955,8 +958,8 @@ extern "C" {
 #define gate_v1_OpenRequest_init_default         {"", "", _gate_v1_GateSide_MIN, _gate_v1_OpenSource_MIN, false, google_protobuf_Timestamp_init_default, 0}
 #define gate_v1_OpenReply_init_default           {"", _gate_v1_OpenReply_Status_MIN, 0}
 #define gate_v1_OpenRequestRecord_init_default   {false, gate_v1_OpenRequest_init_default, {{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, {{NULL}, NULL}}
-#define gate_v1_ControllerEvent_init_default     {0, 0, 0, 0, 0, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, 0, _gate_v1_GateState_MIN, {{NULL}, NULL}}
-#define gate_v1_EventBatch_init_default          {{{NULL}, NULL}, 0}
+#define gate_v1_ControllerEvent_init_default     {0, 0, 0, 0, 0, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, 0, _gate_v1_GateState_MIN, {0, {0}}}
+#define gate_v1_EventBatch_init_default          {0, {gate_v1_ControllerEvent_init_default}, 0}
 #define gate_v1_EventAck_init_default            {0, 0}
 #define gate_v1_ControllerStats_init_default     {{{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0}
 #define gate_v1_VerifyReport_init_default        {{{NULL}, NULL}, _gate_v1_GateType_MIN, 0, {{NULL}, NULL}, 0, 0}
@@ -975,7 +978,7 @@ extern "C" {
 #define gate_v1_RevokeGuestPassRequest_init_default {{{NULL}, NULL}}
 #define gate_v1_GetGateConfigRequest_init_default {{{NULL}, NULL}}
 #define gate_v1_GateConfigRecord_init_default    {{{NULL}, NULL}, false, gate_v1_GateConfig_init_default, _gate_v1_ConfigStatus_MIN, false, gate_v1_GateCalibration_init_default, false, google_protobuf_Timestamp_init_default, {{NULL}, NULL}}
-#define gate_v1_SetGateConfigRequest_init_default {{{NULL}, NULL}, false, gate_v1_GateConfig_init_default}
+#define gate_v1_SetGateConfigRequest_init_default {{{NULL}, NULL}, false, gate_v1_GateConfig_init_default, {{NULL}, NULL}}
 #define gate_v1_SetLaneConfigRequest_init_default {{{NULL}, NULL}, _gate_v1_LaneMode_MIN}
 #define gate_v1_GateOpRequest_init_default       {{{NULL}, NULL}}
 #define gate_v1_GateOpStatus_init_default        {{{NULL}, NULL}, _gate_v1_ConfigStatus_MIN, {{NULL}, NULL}}
@@ -1010,8 +1013,8 @@ extern "C" {
 #define gate_v1_OpenRequest_init_zero            {"", "", _gate_v1_GateSide_MIN, _gate_v1_OpenSource_MIN, false, google_protobuf_Timestamp_init_zero, 0}
 #define gate_v1_OpenReply_init_zero              {"", _gate_v1_OpenReply_Status_MIN, 0}
 #define gate_v1_OpenRequestRecord_init_zero      {false, gate_v1_OpenRequest_init_zero, {{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, {{NULL}, NULL}}
-#define gate_v1_ControllerEvent_init_zero        {0, 0, 0, 0, 0, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, 0, _gate_v1_GateState_MIN, {{NULL}, NULL}}
-#define gate_v1_EventBatch_init_zero             {{{NULL}, NULL}, 0}
+#define gate_v1_ControllerEvent_init_zero        {0, 0, 0, 0, 0, _gate_v1_OpenSource_MIN, _gate_v1_GateSide_MIN, 0, _gate_v1_GateState_MIN, {0, {0}}}
+#define gate_v1_EventBatch_init_zero             {0, {gate_v1_ControllerEvent_init_zero}, 0}
 #define gate_v1_EventAck_init_zero               {0, 0}
 #define gate_v1_ControllerStats_init_zero        {{{NULL}, NULL}, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, {{NULL}, NULL}, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0, {{NULL}, NULL}, {{NULL}, NULL}, 0, 0, 0, 0}
 #define gate_v1_VerifyReport_init_zero           {{{NULL}, NULL}, _gate_v1_GateType_MIN, 0, {{NULL}, NULL}, 0, 0}
@@ -1030,7 +1033,7 @@ extern "C" {
 #define gate_v1_RevokeGuestPassRequest_init_zero {{{NULL}, NULL}}
 #define gate_v1_GetGateConfigRequest_init_zero   {{{NULL}, NULL}}
 #define gate_v1_GateConfigRecord_init_zero       {{{NULL}, NULL}, false, gate_v1_GateConfig_init_zero, _gate_v1_ConfigStatus_MIN, false, gate_v1_GateCalibration_init_zero, false, google_protobuf_Timestamp_init_zero, {{NULL}, NULL}}
-#define gate_v1_SetGateConfigRequest_init_zero   {{{NULL}, NULL}, false, gate_v1_GateConfig_init_zero}
+#define gate_v1_SetGateConfigRequest_init_zero   {{{NULL}, NULL}, false, gate_v1_GateConfig_init_zero, {{NULL}, NULL}}
 #define gate_v1_SetLaneConfigRequest_init_zero   {{{NULL}, NULL}, _gate_v1_LaneMode_MIN}
 #define gate_v1_GateOpRequest_init_zero          {{{NULL}, NULL}}
 #define gate_v1_GateOpStatus_init_zero           {{{NULL}, NULL}, _gate_v1_ConfigStatus_MIN, {{NULL}, NULL}}
@@ -1349,6 +1352,7 @@ extern "C" {
 #define gate_v1_GateConfigRecord_updated_by_tag  6
 #define gate_v1_SetGateConfigRequest_gate_id_tag 1
 #define gate_v1_SetGateConfigRequest_config_tag  2
+#define gate_v1_SetGateConfigRequest_updated_by_tag 3
 #define gate_v1_SetLaneConfigRequest_gate_id_tag 1
 #define gate_v1_SetLaneConfigRequest_lane_mode_tag 2
 #define gate_v1_GateOpRequest_gate_id_tag        1
@@ -1742,14 +1746,14 @@ X(a, STATIC,   SINGULAR, UENUM,    source,            6) \
 X(a, STATIC,   SINGULAR, UENUM,    side,              7) \
 X(a, STATIC,   SINGULAR, UINT32,   result,            8) \
 X(a, STATIC,   SINGULAR, UENUM,    state_after,       9) \
-X(a, CALLBACK, SINGULAR, BYTES,    request_id,       10)
-#define gate_v1_ControllerEvent_CALLBACK pb_default_field_callback
+X(a, STATIC,   SINGULAR, BYTES,    request_id,       10)
+#define gate_v1_ControllerEvent_CALLBACK NULL
 #define gate_v1_ControllerEvent_DEFAULT NULL
 
 #define gate_v1_EventBatch_FIELDLIST(X, a) \
-X(a, CALLBACK, REPEATED, MESSAGE,  events,            1) \
+X(a, STATIC,   REPEATED, MESSAGE,  events,            1) \
 X(a, STATIC,   SINGULAR, UINT32,   dropped,           2)
-#define gate_v1_EventBatch_CALLBACK pb_default_field_callback
+#define gate_v1_EventBatch_CALLBACK NULL
 #define gate_v1_EventBatch_DEFAULT NULL
 #define gate_v1_EventBatch_events_MSGTYPE gate_v1_ControllerEvent
 
@@ -1930,7 +1934,8 @@ X(a, CALLBACK, SINGULAR, STRING,   updated_by,        6)
 
 #define gate_v1_SetGateConfigRequest_FIELDLIST(X, a) \
 X(a, CALLBACK, SINGULAR, STRING,   gate_id,           1) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  config,            2)
+X(a, STATIC,   OPTIONAL, MESSAGE,  config,            2) \
+X(a, CALLBACK, SINGULAR, STRING,   updated_by,        3)
 #define gate_v1_SetGateConfigRequest_CALLBACK pb_default_field_callback
 #define gate_v1_SetGateConfigRequest_DEFAULT NULL
 #define gate_v1_SetGateConfigRequest_config_MSGTYPE gate_v1_GateConfig
@@ -2106,8 +2111,6 @@ extern const pb_msgdesc_t gate_v1_ControlEnvelope_msg;
 /* gate_v1_ListAllowlistResponse_size depends on runtime parameters */
 /* gate_v1_DeleteAllowlistRequest_size depends on runtime parameters */
 /* gate_v1_OpenRequestRecord_size depends on runtime parameters */
-/* gate_v1_ControllerEvent_size depends on runtime parameters */
-/* gate_v1_EventBatch_size depends on runtime parameters */
 /* gate_v1_ControllerStats_size depends on runtime parameters */
 /* gate_v1_VerifyReport_size depends on runtime parameters */
 /* gate_v1_GateCalibration_size depends on runtime parameters */
@@ -2134,7 +2137,9 @@ extern const pb_msgdesc_t gate_v1_ControlEnvelope_msg;
 #define gate_v1_BoundingBox3D_size               37
 #define gate_v1_BoundingBox_size                 24
 #define gate_v1_CommandAck_size                  192
+#define gate_v1_ControllerEvent_size             75
 #define gate_v1_EventAck_size                    17
+#define gate_v1_EventBatch_size                  84
 #define gate_v1_FaultEvent_ContextEntry_size     74
 #define gate_v1_FaultEvent_size                  534
 #define gate_v1_GateCommand_size                 438

@@ -50,7 +50,7 @@ GateController::GateController(const Config& cfg)
         sup.profile = cfg.sm.profile;
         supervisor_.emplace(sup, *cfg.lock_io, *cfg.actuator);
     }
-    queue_ = xQueueCreate(kQueueDepth, sizeof(Event));
+    queue_ = xQueueCreate(kQueueDepth, sizeof(QueuedEvent));
     configASSERT(queue_ != nullptr);
 
     esp_timer_create_args_t targs = {};
@@ -147,6 +147,26 @@ void GateController::command_stop() {
 void GateController::clear_fault() {
     post(Event::FaultCleared);
 }
+void GateController::command_rte() {
+    post(Event::CommandOpen, sm::OpenOrigin::Rte);
+}
+void GateController::local_reset() {
+    post(Event::LocalReset);
+}
+void GateController::lockdown_on() {
+    post(Event::LockdownOn);
+}
+void GateController::lockdown_off() {
+    post(Event::LockdownOff);
+}
+void GateController::restore_lockdown(bool latched) {
+    configASSERT(!started_);
+    sm_.restore_lockdown(latched);
+}
+void GateController::set_lockdown_writer(std::function<void(bool)> writer) {
+    configASSERT(!started_);
+    lockdown_writer_ = std::move(writer);
+}
 
 sm::State GateController::state() const {
     return state_snapshot_.load(std::memory_order_relaxed);
@@ -187,9 +207,9 @@ void GateController::pump_task() {
     const TickType_t wait =
         pdMS_TO_TICKS(supervisor_ ? sm::StatusDecoder::kSampleMs : cfg_.heartbeat_period_ms);
     for (;;) {
-        Event ev;
-        if (xQueueReceive(queue_, &ev, wait) == pdTRUE) {
-            process(ev);
+        QueuedEvent item;
+        if (xQueueReceive(queue_, &item, wait) == pdTRUE) {
+            process(item.ev, item.origin);
         } else if (!supervisor_) {
             // Queue timeout — heartbeat. Confirms the pump is alive and
             // gives the serial console a periodic state snapshot until
@@ -204,7 +224,7 @@ void GateController::pump_task() {
     }
 }
 
-void GateController::process(Event ev) {
+void GateController::process(Event ev, sm::OpenOrigin origin) {
     const std::uint64_t now_ms = esp_timer_get_time() / 1000;
     if (supervisor_) {
         if (!sm::GateSupervisor::admits(ev)) {
@@ -213,7 +233,7 @@ void GateController::process(Event ev) {
         }
         supervisor_->observe(ev, now_ms);
     }
-    const Outputs out = sm_.handle(ev);
+    const Outputs out = sm_.handle(ev, origin);
     ESP_LOGD(kTag, "event %.*s -> state %.*s (transitioned=%d)",
              static_cast<int>(sm::to_string(ev).size()), sm::to_string(ev).data(),
              static_cast<int>(sm::to_string(out.new_state).size()),
@@ -232,7 +252,8 @@ void GateController::process(Event ev) {
     // FaultCleared lands the machine back in Initializing; the
     // header contract says the driver layer must re-verify the
     // physical position before any motion is possible.
-    if (ev == Event::FaultCleared && out.transitioned && out.new_state == State::Initializing) {
+    if ((ev == Event::FaultCleared || ev == Event::LocalReset) && out.transitioned &&
+        out.new_state == State::Initializing) {
         ESP_LOGI(kTag, "fault cleared — re-resolving gate position");
         resolve_boot_position();
     }
@@ -256,8 +277,9 @@ void GateController::supervise() {
 
 // ---------- helpers -----------------------------------------------------------
 
-void GateController::post(Event ev) {
-    if (xQueueSend(queue_, &ev, 0) != pdTRUE) {
+void GateController::post(Event ev, sm::OpenOrigin origin) {
+    const QueuedEvent item{ev, origin};
+    if (xQueueSend(queue_, &item, 0) != pdTRUE) {
         ESP_LOGW(kTag, "event queue full — dropped %.*s",
                  static_cast<int>(sm::to_string(ev).size()), sm::to_string(ev).data());
     }
@@ -328,8 +350,12 @@ void GateController::execute(const Outputs& out) {
             case Action::ClearPermit:
             case Action::RunVerifyPulse:
             case Action::RunCalibration:
-            case Action::RaiseAlert:
             case Action::PersistLockdown:
+                if (lockdown_writer_) {
+                    lockdown_writer_(sm_.lockdown_latched());
+                }
+                break;
+            case Action::RaiseAlert:
             case Action::RestBolts:
                 break;  // never emitted with LockLayout::None (rev 2)
             case Action::SetLedClosed:
