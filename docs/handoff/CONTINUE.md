@@ -78,6 +78,13 @@
 >     an embedding gallery so similar vehicles are recognised next time;
 >   - RTX 20+.
 >
+> **Status 2026-11-01:** steps 1-3 done; spec docs/design/gate-system-v2.md
+> reviewed. Step 4 committed through 2D-part-1 (9c58671, 58be16b, 59dc01d,
+> bbd1ddc and the following commit); the last two commits await senior
+> review. Enablement blockers: spec sections 8.6 and 23.6. Left in step 4:
+> wire RTE, telemetry, persisted config/lockdown, SetGateConfig, verify and
+> calibrate, VirtualOperator, power and current models, e2e tests.
+>
 > **Spec decisions 2026-10-31** (docs/design/gate-system-v2.md, unreviewed):
 > mechanical release on every bolt; keyed override outside for outages; 24 V
 > locks; exit button beats lockdown; force-open of a blocklisted vehicle is
