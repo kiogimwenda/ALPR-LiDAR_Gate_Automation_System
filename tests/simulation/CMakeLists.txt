@@ -28,3 +28,17 @@ target_link_libraries(test_virtual_gate
 )
 
 catch_discover_tests(test_virtual_gate)
+
+# In-process end to end: firmware core + virtual operator + real dispatcher.
+add_executable(test_v2_stack
+    v2_stack_test.cpp
+)
+
+target_link_libraries(test_v2_stack
+    PRIVATE
+        gate_sim_core
+        gate_rpc
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_v2_stack)

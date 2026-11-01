@@ -14,7 +14,8 @@
 
 #include "gate_rpc/control_client.hpp"
 #include "gate_state_machine/event_ring.hpp"
-#include "gate_state_machine/rte_authority.hpp"
+#include "gate_state_machine/gate_persist.hpp"
+#include "gate_state_machine/rte_core.hpp"
 #include "gate_state_machine/served_guard.hpp"
 #include "gate_state_machine/stored_config.hpp"
 
@@ -24,19 +25,26 @@ inline constexpr std::uint32_t kCapEventLog = 4;
 
 using state_machine::StoredConfig;
 
+class NvsKv final : public state_machine::KvStore {
+public:
+    bool get(const char* key, void* out, std::size_t len) override;
+    bool set(const char* key, const void* data, std::size_t len) override;
+};
+
 class Persist {
 public:
     void init();
-    [[nodiscard]] bool load_lockdown();
-    void save_lockdown(bool latched);
+    [[nodiscard]] bool load_lockdown() { return store_.load_lockdown(); }
+    void save_lockdown(bool latched) { (void)store_.save_lockdown(latched); }
     [[nodiscard]] StoredConfig load_config();
     [[nodiscard]] StoredConfig load_cached();  // thread-safe, no flash access
     bool save_config(const gate_v1_GateConfig& c);
-    [[nodiscard]] std::uint32_t next_boot_id();
-    void load_served(state_machine::ServedGuard::Persisted& p);
-    void save_served(const state_machine::ServedGuard::Persisted& p);
+    [[nodiscard]] std::uint32_t next_boot_id() { return store_.next_boot_id(); }
+    [[nodiscard]] state_machine::GatePersist& store() { return store_; }
 
 private:
+    NvsKv kv_;
+    state_machine::GatePersist store_{kv_};
     std::mutex mu_;
     StoredConfig cached_{};
 };
@@ -71,15 +79,13 @@ private:
 
     Persist& persist_;
     Hooks hooks_;
-    std::mutex mu_;  // guards guard_ and authority_
-    state_machine::ServedGuard guard_;
+    std::mutex mu_;  // guards core_
     std::unique_ptr<state_machine::FlashIo> flash_;
     std::unique_ptr<state_machine::EventRing> ring_;
-    std::unique_ptr<state_machine::RteAuthority> authority_;
+    std::unique_ptr<state_machine::RteCore> core_;
     int gpio_ = -1;
     std::uint32_t boot_id_ = 0;
     std::uint32_t offline_close_ms_ = 30'000;
-    state_machine::LocalCloser closer_;
     gate_v1_ControlEnvelope out_env_ = gate_v1_ControlEnvelope_init_zero;  // too big for the stack
     std::uint64_t next_sync_ = 0;
     std::atomic<bool> ring_ready_{false};

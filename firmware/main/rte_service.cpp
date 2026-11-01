@@ -73,26 +73,19 @@ void Persist::init() {
     ESP_ERROR_CHECK(err);
 }
 
-bool Persist::load_lockdown() {
+bool NvsKv::get(const char* key, void* out, std::size_t len) {
     Nvs n(NVS_READONLY);
-    std::uint8_t v = 0;
-    return n.ok && nvs_get_u8(n.h, "lockdown", &v) == ESP_OK && v != 0;
+    std::size_t size = len;
+    return n.ok && nvs_get_blob(n.h, key, out, &size) == ESP_OK && size == len;
 }
 
-void Persist::save_lockdown(bool latched) {
+bool NvsKv::set(const char* key, const void* data, std::size_t len) {
     Nvs n(NVS_READWRITE);
-    if (n.ok && nvs_set_u8(n.h, "lockdown", latched ? 1 : 0) == ESP_OK) {
-        (void)nvs_commit(n.h);
-    }
+    return n.ok && nvs_set_blob(n.h, key, data, len) == ESP_OK && nvs_commit(n.h) == ESP_OK;
 }
 
 StoredConfig Persist::load_config() {
-    StoredConfig c;
-    Nvs n(NVS_READONLY);
-    std::size_t len = sizeof(c);
-    if (n.ok && (nvs_get_blob(n.h, "config", &c, &len) != ESP_OK || len != sizeof(c))) {
-        c = StoredConfig{};
-    }
+    const StoredConfig c = store_.load_config();
     const std::lock_guard<std::mutex> lk{mu_};
     cached_ = c;
     return c;
@@ -113,54 +106,22 @@ bool Persist::save_config(const gate_v1_GateConfig& in) {
     incoming.offline_close_s = in.offline_close_s;
     incoming.bolt_hold_open_s = in.bolt_hold_open_s;
     incoming.maglock_shed_s = in.maglock_shed_s;
-    const StoredConfig c = sm::merge_config(load_cached(), incoming);
-    Nvs n(NVS_READWRITE);
-    if (!n.ok || nvs_set_blob(n.h, "config", &c, sizeof(c)) != ESP_OK ||
-        nvs_commit(n.h) != ESP_OK) {
+    StoredConfig merged;
+    if (!store_.save_config(load_cached(), incoming, merged)) {
         return false;
     }
     const std::lock_guard<std::mutex> lk{mu_};
-    cached_ = c;
+    cached_ = merged;
     return true;
-}
-
-std::uint32_t Persist::next_boot_id() {
-    Nvs n(NVS_READWRITE);
-    std::uint32_t id = 0;
-    if (n.ok) {
-        (void)nvs_get_u32(n.h, "boot_id", &id);
-        ++id;
-        (void)nvs_set_u32(n.h, "boot_id", id);
-        (void)nvs_commit(n.h);
-    }
-    return id;
-}
-
-void Persist::load_served(sm::ServedGuard::Persisted& p) {
-    Nvs n(NVS_READONLY);
-    std::size_t len = sizeof(p);
-    if (n.ok && (nvs_get_blob(n.h, "served", &p, &len) != ESP_OK || len != sizeof(p))) {
-        p = {};
-    }
-}
-
-void Persist::save_served(const sm::ServedGuard::Persisted& p) {
-    Nvs n(NVS_READWRITE);
-    if (n.ok && nvs_set_blob(n.h, "served", &p, sizeof(p)) == ESP_OK) {
-        (void)nvs_commit(n.h);
-    }
 }
 
 void RteService::start(int gpio, std::uint32_t offline_close_s, Hooks hooks) {
     hooks_ = std::move(hooks);
     offline_close_ms_ = (offline_close_s != 0 ? offline_close_s : 30U) * 1000U;
-    sm::ServedGuard::Persisted served;
-    persist_.load_served(served);
-    guard_.restore(served);
-
     const esp_partition_t* part = esp_partition_find_first(static_cast<esp_partition_type_t>(0x40),
                                                            ESP_PARTITION_SUBTYPE_ANY, "evlog");
     if (gpio < 0) {
+        core_ = std::make_unique<sm::RteCore>(persist_.store(), nullptr, offline_close_ms_);
         ESP_LOGW(kTag, "exit button disabled: no GPIO");
         return;
     }
@@ -184,8 +145,7 @@ void RteService::start(int gpio, std::uint32_t offline_close_s, Hooks hooks) {
     } else {
         ESP_LOGE(kTag, "no evlog partition: exits open but go unlogged");
     }
-    authority_ =
-        std::make_unique<sm::RteAuthority>(sm::RteAuthority::Config{}, ring_.get(), guard_);
+    core_ = std::make_unique<sm::RteCore>(persist_.store(), ring_.get(), offline_close_ms_);
     xTaskCreate(&RteService::task_entry, "gate_rte", kStackBytes, this, 4, nullptr);
 }
 
@@ -213,21 +173,13 @@ void RteService::task() {
         base.side = gate_v1_GateSide_GATE_SIDE_EXIT;
         base.state_after = hooks_.wire_state();
 
-        sm::RteAuthority::Output out = sm::RteAuthority::Output::None;
-        sm::ServedGuard::Persisted served;
-        sm::ServedGuard::Id id{};
+        sm::RteCore::Step step;
         {
             const std::lock_guard<std::mutex> lk{mu_};
-            const std::uint8_t st = base.state_after;
-            if (st == gate_v1_GateState_GATE_STATE_OPENING ||
-                st == gate_v1_GateState_GATE_STATE_OPEN ||
-                st == gate_v1_GateState_GATE_STATE_UNLOCKING) {
-                authority_->confirm_motion();
-            }
-            out = authority_->tick(now, pressed, link, fresh, base);
-            id = authority_->id();
-            served = guard_.persisted();
+            step = core_->tick({now, pressed, link, base.state_after, fresh, base});
         }
+        const auto out = step.output;
+        const auto id = step.id;
 
         using Out = sm::RteAuthority::Output;
         if (out == Out::SendRequest) {
@@ -240,9 +192,7 @@ void RteService::task() {
             q.source = gate_v1_OpenSource_OPEN_SOURCE_RTE;
             (void)hooks_.send(out_env_);  // a lost send falls back on the timeout
         } else if (out == Out::OpenLocal) {
-            persist_.save_served(served);
             hooks_.open();
-            closer_.arm(now, offline_close_ms_);
             if (ring_ == nullptr) {
                 send_unlogged_alert();
             }
@@ -252,14 +202,8 @@ void RteService::task() {
             ESP_LOGE(kTag, "RTE_STUCK: button held, input ignored until released");
         }
 
-        // Local auto-close; the state machine's beam guard still applies.
-        const std::uint8_t st = hooks_.wire_state();
-        const bool shut = st == gate_v1_GateState_GATE_STATE_CLOSED ||
-                          st == gate_v1_GateState_GATE_STATE_CLOSED_INSECURE ||
-                          st == gate_v1_GateState_GATE_STATE_LOCKDOWN ||
-                          st == gate_v1_GateState_GATE_STATE_CLOSING ||
-                          st == gate_v1_GateState_GATE_STATE_LOCKING;
-        if (closer_.tick(now, shut)) {
+        // Retries past a blocked beam; the state machine still guards.
+        if (step.post_close) {
             hooks_.close();
         }
         if (now >= next_sync_) {
@@ -317,50 +261,39 @@ const char* RteService::admit_open(const gate_v1_GateCommand& cmd) {
     const auto id = sm::ServedGuard::parse_uuid(cmd.request_id);
     const std::int64_t now = unix_ms_now();
     const std::int64_t expires = cmd.has_expires_ts ? cmd.expires_ts.seconds * 1000LL : 0;
-    sm::ServedGuard::Persisted served;
-    {
-        const std::lock_guard<std::mutex> lk{mu_};
-        switch (guard_.check(id, expires, now, now != 0)) {
-            case sm::ServedGuard::Verdict::AlreadyServed:
-                return "already served";
-            case sm::ServedGuard::Verdict::Expired:
-                return "open command expired";
-            case sm::ServedGuard::Verdict::Accept:
-                break;
-        }
-        if (id == sm::ServedGuard::Id{}) {
-            return nullptr;  // no id: older server
-        }
-        guard_.mark_served(id);
-        served = guard_.persisted();
+    const std::lock_guard<std::mutex> lk{mu_};
+    switch (core_->admit_open(id, expires, now, now != 0)) {
+        case sm::ServedGuard::Verdict::AlreadyServed:
+            return "already served";
+        case sm::ServedGuard::Verdict::Expired:
+            return "open command expired";
+        case sm::ServedGuard::Verdict::Accept:
+            break;
     }
-    persist_.save_served(served);
     return nullptr;
 }
 
 void RteService::on_reply(const gate_v1_OpenReply& r) {
     using Reply = sm::RteAuthority::Reply;
-    const std::uint64_t now = esp_timer_get_time() / 1000;
-    const std::lock_guard<std::mutex> lk{mu_};
-    if (authority_ == nullptr || sm::ServedGuard::parse_uuid(r.request_id) != authority_->id()) {
-        return;
-    }
+    Reply reply{};
     switch (r.status) {
         case gate_v1_OpenReply_Status_GRANTED:
-            authority_->on_reply(Reply::Granted, now);
+            reply = Reply::Granted;
             break;
         case gate_v1_OpenReply_Status_QUEUED:
-            authority_->on_reply(Reply::Queued, now);
+            reply = Reply::Queued;
             break;
         case gate_v1_OpenReply_Status_DENIED:
-            authority_->on_reply(Reply::Denied, now);
+            reply = Reply::Denied;
             break;
         case gate_v1_OpenReply_Status_ALREADY_SERVED:
-            authority_->on_reply(Reply::AlreadyServed, now);
+            reply = Reply::AlreadyServed;
             break;
         default:
-            break;
+            return;
     }
+    const std::lock_guard<std::mutex> lk{mu_};
+    core_->on_reply(reply, sm::ServedGuard::parse_uuid(r.request_id), esp_timer_get_time() / 1000);
 }
 
 void RteService::on_event_ack(const gate_v1_EventAck& a) {

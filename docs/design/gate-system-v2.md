@@ -420,7 +420,7 @@ Boot: if mid-travel, stay in the present `init_unknown` fault. Never self-drive 
 - `kEventOfflineOpen` agreed with firmware event kinds.
 - `SetGateConfig`, `SetLaneConfig`, `VerifyGateType`, `CalibrateGate`.
 - History DB migration (§19.2).
-- Verify and calibration are not implemented, so a type, layout or lane change leaves a gate UNVERIFIED with automatic opens refused and no way to clear it. `RteService` and `Persist` glue have no host or bench test, only their pure parts.
+- Verify and calibration are not implemented, so a type, layout or lane change leaves a gate UNVERIFIED with automatic opens refused and no way to clear it. `RteCore` and `GatePersist` are host-tested; the thin ESP glue (GPIO, tasks, NVS calls, encoding) has no bench test.
 - Before enabling RTE, measure the `gate_rte` stack on target; 6 KB is an estimate.
 - RTE needs a factory reflash: the `evlog` partition cannot arrive by OTA. Its input lacks end-of-line supervision (`RTE_LINE_FAULT`).
 
