@@ -294,6 +294,21 @@ std::uint64_t EventBroadcaster::publish_ack(std::string site_id, std::string gat
     return publish(std::move(site_id), std::move(gate_id), std::move(e));
 }
 
+std::uint64_t EventBroadcaster::publish_open_request(std::string site_id,
+                                                     gate::v1::OpenRequestRecord r) {
+    DashboardEvent e;
+    std::string gate_id = r.request().gate_id();
+    *e.mutable_open_request() = std::move(r);
+    return publish(std::move(site_id), std::move(gate_id), std::move(e));
+}
+
+std::uint64_t EventBroadcaster::publish_alert(std::string site_id, gate::v1::Alert a) {
+    DashboardEvent e;
+    std::string gate_id = a.gate_id();
+    *e.mutable_alert() = std::move(a);
+    return publish(std::move(site_id), std::move(gate_id), std::move(e));
+}
+
 std::unique_ptr<EventBroadcaster::Subscription> EventBroadcaster::subscribe(
     DashboardSubscription filter) {
     if (impl_->stopped.load())

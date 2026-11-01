@@ -29,6 +29,26 @@ public:
                                  const gate::v1::DeleteAllowlistRequest* req,
                                  gate::v1::UpsertAllowlistResponse* resp) override;
 
+    grpc::Status UpsertBlocklist(grpc::ServerContext* ctx,
+                                 const gate::v1::UpsertBlocklistRequest* req,
+                                 gate::v1::UpsertAllowlistResponse* resp) override;
+    grpc::Status ListBlocklist(grpc::ServerContext* ctx, const gate::v1::ListBlocklistRequest* req,
+                               gate::v1::ListBlocklistResponse* resp) override;
+    grpc::Status DeleteBlocklist(grpc::ServerContext* ctx,
+                                 const gate::v1::DeleteAllowlistRequest* req,
+                                 gate::v1::UpsertAllowlistResponse* resp) override;
+    grpc::Status SetVehicleAccess(grpc::ServerContext* ctx,
+                                  const gate::v1::SetVehicleAccessRequest* req,
+                                  gate::v1::VehicleAccess* resp) override;
+    grpc::Status CreateGuestPass(grpc::ServerContext* ctx, const gate::v1::GuestPass* req,
+                                 gate::v1::GuestPass* resp) override;
+    grpc::Status ListGuestPasses(grpc::ServerContext* ctx,
+                                 const gate::v1::ListGuestPassesRequest* req,
+                                 gate::v1::ListGuestPassesResponse* resp) override;
+    grpc::Status RevokeGuestPass(grpc::ServerContext* ctx,
+                                 const gate::v1::RevokeGuestPassRequest* req,
+                                 gate::v1::GuestPass* resp) override;
+
     // Per-RPC role checks from the mTLS client identity (access_control.hpp).
     void set_enforce_roles(bool on) { policy_.set_enforced(on); }
 

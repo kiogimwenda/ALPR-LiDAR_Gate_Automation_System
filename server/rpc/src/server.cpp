@@ -57,9 +57,12 @@ std::shared_ptr<grpc::ServerCredentials> make_credentials(const TlsConfig& tls, 
 Server::Server(gate::auth::AllowlistStore& store, gate::fusion::FusionEngine& fusion,
                gate::dash::EventBroadcaster& bus, ServerConfig cfg)
     : cfg_(std::move(cfg)),
+      dispatch_(bus, &store, &fusion, cfg_.default_site_id),
       admin_(store),
       dashboard_(bus, fusion, cfg_.default_site_id),
       field_(bus, fusion, cfg_.default_site_id) {
+    dashboard_.use_dispatch(&dispatch_);
+    field_.use_dispatch(&dispatch_);
     dashboard_.set_subscribe_poll_interval(cfg_.subscribe_poll_interval);
     field_.set_subscribe_poll_interval(cfg_.subscribe_poll_interval);
     // Roles are enforceable only when every caller presents a verified

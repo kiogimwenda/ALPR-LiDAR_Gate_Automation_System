@@ -88,7 +88,39 @@ public:
     // Add or replace blocklist entries. `reason` is free-form text shown
     // in DENIED audit logs.
     std::uint32_t blocklist_upsert(const std::string& site_id, std::string_view plate_text,
-                                   std::string_view reason);
+                                   std::string_view reason, std::string_view added_by = "");
+    struct BlockPage {
+        std::vector<gate::v1::BlocklistEntry> entries;
+        std::string next_token;
+    };
+    BlockPage blocklist_list(const std::string& site_id, std::uint32_t page_size,
+                             std::string_view page_token) const;
+
+    // Guest passes. `gate_ids` empty means every gate. Status moves
+    // active -> used (single visit, on confirmed open) or revoked.
+    gate::v1::GuestPass guest_pass_create(gate::v1::GuestPass pass, std::time_t now_unix);
+    std::vector<gate::v1::GuestPass> guest_pass_list(const std::string& site_id) const;
+    std::optional<gate::v1::GuestPass> guest_pass_revoke(const std::string& pass_id);
+    // The pass admitting this plate at this gate now. A used single
+    // visit still admits exits until valid_until or 24 h after issue.
+    std::optional<gate::v1::GuestPass> guest_pass_find(const std::string& site_id,
+                                                       std::string_view plate_text,
+                                                       const std::string& gate_id,
+                                                       gate::v1::GateSide side,
+                                                       std::time_t now_unix) const;
+    // Atomically claims the pass for `command_id`. False when it is used,
+    // revoked, outside its validity, or a single visit already claimed.
+    // A claim unsettled after kReservationTtlS lapses.
+    static constexpr std::int64_t kReservationTtlS = 300;
+    bool guest_pass_reserve(const std::string& pass_id, const std::string& command_id,
+                            std::time_t now_unix);
+    // Confirmed open: counts the entry. Otherwise frees the claim.
+    void guest_pass_settle(const std::string& command_id, bool opened);
+
+    // Idempotent on (gate_id, boot_id, seq). True when newly stored.
+    bool controller_event_insert(const std::string& gate_id, const gate::v1::ControllerEvent& e);
+    void open_audit_insert(const gate::v1::OpenRequestRecord& r, std::time_t now_unix);
+    [[nodiscard]] std::size_t open_audit_count(const std::string& gate_id) const;
 
     // Remove blocklist entries; returns the number actually removed.
     std::size_t blocklist_remove(const std::string& site_id,

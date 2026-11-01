@@ -21,7 +21,10 @@ using grpc::StatusCode;
 DashboardServiceImpl::DashboardServiceImpl(gate::dash::EventBroadcaster& bus,
                                            gate::fusion::FusionEngine& fusion,
                                            std::string default_site_id)
-    : bus_(bus), fusion_(fusion), default_site_id_(std::move(default_site_id)) {}
+    : bus_(bus),
+      fusion_(fusion),
+      default_site_id_(std::move(default_site_id)),
+      own_dispatch_(bus, nullptr, &fusion, default_site_id_) {}
 
 void DashboardServiceImpl::set_subscribe_poll_interval(std::chrono::milliseconds dt) {
     subscribe_poll_ = dt;
@@ -76,6 +79,17 @@ Status DashboardServiceImpl::IssueCommand(ServerContext* ctx, const GateCommand*
         return {StatusCode::INVALID_ARGUMENT, "command kind must be set"};
     }
 
+    if (!dispatch_->supports(req->gate_id(), req->kind())) {
+        return {StatusCode::FAILED_PRECONDITION, "gate firmware lacks this capability"};
+    }
+
+    // On a locked gate these would open around the arbiter.
+    if ((req->kind() == gate::v1::COMMAND_KIND_LATCH_OPEN ||
+         req->kind() == gate::v1::COMMAND_KIND_PULSE_RELAY) &&
+        dispatch_->locked(req->gate_id())) {
+        return {StatusCode::FAILED_PRECONDITION, "not allowed on a locked gate"};
+    }
+
     // Stamp issued_ts and a fresh command_id if the dashboard didn't
     // already supply one (most clients won't).
     GateCommand command{*req};
@@ -107,8 +121,25 @@ Status DashboardServiceImpl::IssueCommand(ServerContext* ctx, const GateCommand*
             break;  // Non-latch commands don't touch override state.
     }
 
-    // Publish the command itself (fan-out so other dashboards see it).
-    bus_.publish_command(default_site_id_, std::move(command));
+    // Every open goes through the arbiter; it publishes when the lane
+    // allows. Anything else fans out directly.
+    if (command.kind() == gate::v1::COMMAND_KIND_OPEN_GATE) {
+        GateArbiter::Request open;
+        open.request_id =
+            command.request_id().empty() ? command.command_id() : command.request_id();
+        // No side means the entry queue: an unlabelled app open must
+        // not jump ahead of waiting vehicles as an exit would.
+        open.side = command.side() == gate::v1::GATE_SIDE_UNSPECIFIED ? gate::v1::GATE_SIDE_ENTRY
+                                                                      : command.side();
+        open.source = command.source() == gate::v1::OPEN_SOURCE_UNSPECIFIED
+                          ? gate::v1::OPEN_SOURCE_APP
+                          : command.source();
+        open.command_id = command.command_id();
+        open.actor = command.actor();
+        (void)dispatch_->submit(gate_id, std::move(open));
+    } else {
+        bus_.publish_command(default_site_id_, std::move(command));
+    }
 
     // Synthesize a "received" ack — completion comes from firmware later
     // via the FieldControllerService stream and arrives on the dashboard
@@ -137,9 +168,15 @@ Status DashboardServiceImpl::Authorize(ServerContext* ctx, const AuthorizeReques
     if (req->frame().gate_id().empty()) {
         return {StatusCode::INVALID_ARGUMENT, "frame.gate_id is required"};
     }
+    // No path sets a verified admin role yet, and an actor string proves
+    // nothing, so force is refused until the backend endpoint exists.
+    if (!req->force_reason().empty()) {
+        return {StatusCode::PERMISSION_DENIED, "force_reason is not available"};
+    }
     *resp = fusion_.decide(*req);
     AuthDecision copy{*resp};
     bus_.publish_decision(req->site_id(), std::move(copy));
+    dispatch_->publish_alerts(*resp);
     return Status::OK;
 }
 

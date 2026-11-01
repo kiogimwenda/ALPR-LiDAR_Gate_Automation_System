@@ -308,6 +308,18 @@ TEST_CASE("the guard defers permit and bolt drops", "[supervisor]") {
         CHECK_FALSE(r.locks.permit);
         CHECK_FALSE(r.locks.bolts);
     }
+    SECTION("deferred RestBolts is cancelled by a new lock sequence") {
+        Rig r;
+        closing(r);
+        r.step(Event::MotorTimeout);  // defers RestBolts and ClearPermit
+        REQUIRE(r.locks.bolts);
+        r.step(Event::CommandOpen);
+        r.sup.apply(r.machine.handle(Event::CommandOpen, sm::OpenOrigin::Rte), r.now);
+        REQUIRE(r.machine.state() == State::Unlocking);
+        r.status_phase = 0;
+        r.run(600);
+        CHECK(r.locks.bolts);  // the retract won; the old rest did not fire
+    }
     SECTION("key and human stop go at once") {
         const Event e = GENERATE(Event::KeyOverrideOn, Event::CommandStop);
         Rig r;

@@ -49,12 +49,13 @@ TEST_CASE("DashboardService::IssueCommand stamps id+ts and publishes both comman
     REQUIRE_FALSE(resp.completed());
 
     const auto evs = sub->drain_now();
-    REQUIRE(evs.size() == 2);
+    REQUIRE(evs.size() == 3);  // command, open audit, ack
     REQUIRE(evs[0].payload_case() == DashboardEvent::kCommand);
     REQUIRE(evs[0].command().gate_id() == "gate-north");
     REQUIRE(evs[0].command().command_id() == resp.command_id());
-    REQUIRE(evs[1].payload_case() == DashboardEvent::kAck);
-    REQUIRE(evs[1].ack().command_id() == resp.command_id());
+    REQUIRE(evs[1].payload_case() == DashboardEvent::kOpenRequest);
+    REQUIRE(evs[2].payload_case() == DashboardEvent::kAck);
+    REQUIRE(evs[2].ack().command_id() == resp.command_id());
 }
 
 TEST_CASE("DashboardService::IssueCommand rejects empty gate_id and unspecified kind",

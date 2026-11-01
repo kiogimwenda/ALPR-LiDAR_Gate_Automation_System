@@ -28,6 +28,7 @@
 #include "fusion/fusion_engine.hpp"
 #include "gate_service.grpc.pb.h"
 #include "rpc/access_control.hpp"
+#include "rpc/gate_dispatch.hpp"
 
 namespace gate::rpc {
 
@@ -50,6 +51,8 @@ public:
     grpc::Status SubmitDetection(grpc::ServerContext* ctx, const gate::v1::DetectionFrame* req,
                                  gate::v1::AuthDecision* resp) override;
 
+    void use_dispatch(GateDispatch* d) { dispatch_ = d; }
+
     // How long the writer thread blocks per next() call before re-checking
     // whether the gRPC context has been cancelled. Tests shorten this.
     void set_subscribe_poll_interval(std::chrono::milliseconds dt);
@@ -62,6 +65,8 @@ private:
     gate::dash::EventBroadcaster& bus_;
     gate::fusion::FusionEngine& fusion_;
     std::string default_site_id_;
+    GateDispatch own_dispatch_;
+    GateDispatch* dispatch_ = &own_dispatch_;
     std::chrono::milliseconds poll_{500};
 };
 

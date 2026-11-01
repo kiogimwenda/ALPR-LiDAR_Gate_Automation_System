@@ -28,6 +28,10 @@ public:
         gate::v1::GateSide side = gate::v1::GATE_SIDE_ENTRY;
         gate::v1::OpenSource source = gate::v1::OPEN_SOURCE_UNSPECIFIED;
         std::string vehicle_key;  // plate; dedupes repeat reads per side
+        std::string command_id;   // carried to the published command
+        std::string actor;
+        std::string decision_id;
+        std::string pass_id;
     };
     struct Audit {
         Request request;
@@ -48,6 +52,10 @@ public:
     void set_occupied(bool occupied, std::uint64_t now_ms);
     void vehicle_cleared(std::uint64_t now_ms);  // current grant finished
     // The controller opened on local authority: cancel any pending grant.
+    // Rule 6: LiDAR says this vehicle left the queue.
+    void withdraw(const std::string& vehicle_key, std::uint64_t now_ms);
+    // Rule 6: a live waiter or grant holds off auto-close.
+    [[nodiscard]] bool hold_auto_close() const noexcept { return granted() || waiting() > 0; }
     void mark_served_offline(const std::string& request_id, std::uint64_t now_ms);
 
     [[nodiscard]] std::size_t waiting() const noexcept { return entry_.size() + exit_.size(); }
@@ -56,7 +64,8 @@ public:
 private:
     struct Waiter {
         Request request;
-        std::uint64_t since = 0;
+        std::uint64_t since = 0;      // first seen: drives queued_ms and the TTL
+        std::uint64_t last_seen = 0;  // refreshed by repeat reads
         std::string preempted_by;
     };
     struct Current {
@@ -67,6 +76,7 @@ private:
     void pump(std::uint64_t now_ms);
     void grant(Waiter w, std::uint64_t now_ms);
     void finish(const Waiter& w, const char* outcome, std::uint64_t now_ms);
+    void remember(const std::string& id);
     bool remove(std::deque<Waiter>& q, const std::string& id, std::uint64_t now_ms);
 
     Config cfg_;

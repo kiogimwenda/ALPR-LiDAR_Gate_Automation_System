@@ -17,7 +17,51 @@ namespace {
 // Versioned via a 1-row schema_version table. New migrations append a new
 // `upgrade_to_N` block. We never write down-migrations — operators roll
 // forward with backups, not by executing speculative SQL.
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = 2;
+
+constexpr const char* kUpgradeTo2 = R"sql(
+ALTER TABLE blocklist ADD COLUMN added_by TEXT NOT NULL DEFAULT '';
+CREATE TABLE allowlist_gates (
+    site_id TEXT, plate_text TEXT, gate_id TEXT,
+    PRIMARY KEY (site_id, plate_text, gate_id),
+    FOREIGN KEY (site_id, plate_text)
+        REFERENCES allowlist(site_id, plate_text) ON DELETE CASCADE
+);
+CREATE TABLE guest_passes (
+    pass_id TEXT PRIMARY KEY, site_id TEXT NOT NULL, plate_text TEXT NOT NULL,
+    guest_name TEXT NOT NULL DEFAULT '', host TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL CHECK (kind IN ('single','until')),
+    valid_from INTEGER NOT NULL, valid_until INTEGER NOT NULL,
+    entries_used INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active','used','expired','revoked')),
+    expected_make TEXT, expected_model TEXT, expected_colour TEXT,
+    created_by TEXT NOT NULL, created_ts INTEGER NOT NULL
+);
+CREATE INDEX guest_passes_lookup ON guest_passes(site_id, plate_text, status);
+CREATE TABLE guest_pass_gates (
+    pass_id TEXT REFERENCES guest_passes ON DELETE CASCADE,
+    gate_id TEXT, PRIMARY KEY (pass_id, gate_id)
+);
+CREATE TABLE guest_pass_reservations (
+    command_id TEXT PRIMARY KEY,
+    pass_id TEXT NOT NULL REFERENCES guest_passes ON DELETE CASCADE,
+    ts INTEGER NOT NULL
+);
+CREATE TABLE controller_events (
+    gate_id TEXT NOT NULL, boot_id INTEGER NOT NULL, seq INTEGER NOT NULL,
+    uptime_ms INTEGER NOT NULL, unix_ms INTEGER NOT NULL, kind INTEGER NOT NULL,
+    source INTEGER NOT NULL, side INTEGER NOT NULL, result INTEGER NOT NULL,
+    state_after INTEGER NOT NULL, request_id BLOB,
+    PRIMARY KEY (gate_id, boot_id, seq)
+);
+CREATE TABLE open_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, gate_id TEXT NOT NULL, request_id TEXT NOT NULL,
+    side INTEGER NOT NULL, source INTEGER NOT NULL, actor TEXT NOT NULL DEFAULT '',
+    decision_id TEXT NOT NULL DEFAULT '', queued_ms INTEGER NOT NULL DEFAULT 0,
+    preempted_by TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, ts INTEGER NOT NULL
+);
+)sql";
 
 constexpr const char* kSchemaSql = R"sql(
 PRAGMA foreign_keys = ON;
@@ -135,7 +179,7 @@ void exec(sqlite3* db, const char* sql) {
     }
 }
 
-void run_migrations(sqlite3* db) {
+void run_migrations(sqlite3* db, const std::string& path) {
     exec(db, kSchemaSql);
 
     // Read the current version (zero rows on a fresh DB).
@@ -154,13 +198,32 @@ void run_migrations(sqlite3* db) {
                               std::to_string(kSchemaVersion) + ")");
     }
 
-    // Future: add per-version upgrade blocks here. v0 → v1 needs no DDL
-    // because IF NOT EXISTS already created the v1 schema.
-    exec(db, "DELETE FROM schema_version");
-    auto s = prepare(db, "INSERT INTO schema_version(version) VALUES (?)");
-    bind_int(s.get(), 1, kSchemaVersion);
-    if (sqlite3_step(s.get()) != SQLITE_DONE)
-        throw_db(db, "schema_version write failed");
+    // Automatic backup of an existing file DB, before any change. A
+    // backup left by an earlier failed attempt holds the same data.
+    if (current > 0 && path != ":memory:") {
+        const std::string backup = path + ".v" + std::to_string(current) + ".bak";
+        if (!std::filesystem::exists(backup)) {
+            auto v = prepare(db, "VACUUM INTO ?");
+            bind_text(v.get(), 1, backup);
+            if (sqlite3_step(v.get()) != SQLITE_DONE)
+                throw_db(db, "backup before migration failed");
+        }
+    }
+
+    // v0 -> v1 needs no DDL: IF NOT EXISTS already made the v1 schema.
+    exec(db, "BEGIN IMMEDIATE");
+    try {
+        exec(db, kUpgradeTo2);
+        exec(db, "DELETE FROM schema_version");
+        auto s = prepare(db, "INSERT INTO schema_version(version) VALUES (?)");
+        bind_int(s.get(), 1, kSchemaVersion);
+        if (sqlite3_step(s.get()) != SQLITE_DONE)
+            throw_db(db, "schema_version write failed");
+        exec(db, "COMMIT");
+    } catch (...) {
+        exec(db, "ROLLBACK");
+        throw;
+    }
 }
 
 }  // namespace
@@ -263,7 +326,7 @@ AllowlistStore AllowlistStore::open(const std::filesystem::path& path) {
         const std::string msg = impl->db ? sqlite3_errmsg(impl->db) : "unknown";
         throw AuthDbException("AllowlistStore::open(" + path_str + "): " + msg);
     }
-    run_migrations(impl->db);
+    run_migrations(impl->db, path_str);
     return AllowlistStore{std::move(impl)};
 }
 
@@ -461,8 +524,8 @@ bool AllowlistStore::is_blocklisted(const std::string& site_id, std::string_view
 }
 
 std::uint32_t AllowlistStore::blocklist_upsert(const std::string& site_id,
-                                               std::string_view plate_text,
-                                               std::string_view reason) {
+                                               std::string_view plate_text, std::string_view reason,
+                                               std::string_view added_by) {
     std::lock_guard lk{impl_->mu};
     auto* db = impl_->db;
     const std::string plate = normalize_plate(plate_text);
@@ -470,18 +533,297 @@ std::uint32_t AllowlistStore::blocklist_upsert(const std::string& site_id,
         throw AuthDbException("blocklist_upsert: plate_text is empty after normalization");
     }
     auto s = prepare(db, R"sql(
-        INSERT INTO blocklist (site_id, plate_text, reason, added_ts)
-        VALUES (?, ?, ?, strftime('%s','now'))
+        INSERT INTO blocklist (site_id, plate_text, reason, added_ts, added_by)
+        VALUES (?, ?, ?, strftime('%s','now'), ?)
         ON CONFLICT(site_id, plate_text) DO UPDATE SET
             reason = excluded.reason,
+            added_by = excluded.added_by,
             added_ts = excluded.added_ts
     )sql");
     bind_text(s.get(), 1, site_id);
     bind_text(s.get(), 2, plate);
     bind_text(s.get(), 3, reason);
+    bind_text(s.get(), 4, added_by);
     if (sqlite3_step(s.get()) != SQLITE_DONE)
         throw_db(db, "blocklist_upsert");
     return 1;
+}
+
+AllowlistStore::BlockPage AllowlistStore::blocklist_list(const std::string& site_id,
+                                                         std::uint32_t page_size,
+                                                         std::string_view page_token) const {
+    std::lock_guard lk{impl_->mu};
+    const int limit = static_cast<int>(std::clamp<std::uint32_t>(page_size, 1, 1000));
+    auto s = prepare(impl_->db, R"sql(
+        SELECT plate_text, reason, added_by, added_ts FROM blocklist
+        WHERE site_id=? AND plate_text>? ORDER BY plate_text LIMIT ?
+    )sql");
+    bind_text(s.get(), 1, site_id);
+    bind_text(s.get(), 2, page_token);
+    bind_int(s.get(), 3, limit + 1);
+    BlockPage page;
+    while (sqlite3_step(s.get()) == SQLITE_ROW) {
+        if (static_cast<int>(page.entries.size()) == limit) {
+            page.next_token = page.entries.back().plate_text();
+            break;
+        }
+        auto& e = page.entries.emplace_back();
+        e.set_plate_text(column_text(s.get(), 0));
+        e.set_reason(column_text(s.get(), 1));
+        e.set_added_by(column_text(s.get(), 2));
+        e.mutable_added_ts()->set_seconds(sqlite3_column_int64(s.get(), 3));
+    }
+    return page;
+}
+
+namespace {
+
+constexpr const char* kPassColumns =
+    "pass_id, site_id, plate_text, guest_name, host, kind, valid_from, valid_until, "
+    "entries_used, status, created_by";
+
+gate::v1::GuestPass read_pass(sqlite3* db, sqlite3_stmt* s) {
+    gate::v1::GuestPass p;
+    p.set_pass_id(column_text(s, 0));
+    p.set_site_id(column_text(s, 1));
+    p.set_plate_text(column_text(s, 2));
+    p.set_guest_name(column_text(s, 3));
+    p.set_host(column_text(s, 4));
+    p.set_kind(column_text(s, 5) == "single" ? gate::v1::GuestPass::SINGLE_VISIT
+                                             : gate::v1::GuestPass::UNTIL);
+    p.mutable_valid_from()->set_seconds(sqlite3_column_int64(s, 6));
+    p.mutable_valid_until()->set_seconds(sqlite3_column_int64(s, 7));
+    p.set_entries_used(static_cast<std::uint32_t>(sqlite3_column_int(s, 8)));
+    p.set_status(column_text(s, 9));
+    p.set_created_by(column_text(s, 10));
+    auto g = prepare(db, "SELECT gate_id FROM guest_pass_gates WHERE pass_id=?");
+    bind_text(g.get(), 1, p.pass_id());
+    while (sqlite3_step(g.get()) == SQLITE_ROW) {
+        p.add_gate_ids(column_text(g.get(), 0));
+    }
+    return p;
+}
+
+}  // namespace
+
+gate::v1::GuestPass AllowlistStore::guest_pass_create(gate::v1::GuestPass pass,
+                                                      std::time_t now_unix) {
+    pass.set_plate_text(normalize_plate(pass.plate_text()));
+    if (pass.plate_text().empty() || pass.pass_id().empty() || pass.site_id().empty()) {
+        throw AuthDbException("guest pass needs pass_id, site_id and plate_text");
+    }
+    if (pass.kind() == gate::v1::GuestPass::UNSPECIFIED) {
+        throw AuthDbException("guest pass needs a kind");
+    }
+    if (!pass.has_valid_from() || pass.valid_from().seconds() == 0) {
+        pass.mutable_valid_from()->set_seconds(now_unix);
+    }
+    if (!pass.has_valid_until() || pass.valid_until().seconds() == 0) {
+        if (pass.kind() == gate::v1::GuestPass::UNTIL) {
+            throw AuthDbException("an until pass needs valid_until");
+        }
+        pass.mutable_valid_until()->set_seconds(pass.valid_from().seconds() + 86'400);
+    }
+    pass.set_status("active");
+    std::lock_guard lk{impl_->mu};
+    auto* db = impl_->db;
+    exec(db, "BEGIN IMMEDIATE");
+    try {
+        auto s = prepare(db, R"sql(
+            INSERT INTO guest_passes (pass_id, site_id, plate_text, guest_name, host, kind,
+                valid_from, valid_until, expected_make, expected_model, expected_colour,
+                created_by, created_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        )sql");
+        bind_text(s.get(), 1, pass.pass_id());
+        bind_text(s.get(), 2, pass.site_id());
+        bind_text(s.get(), 3, pass.plate_text());
+        bind_text(s.get(), 4, pass.guest_name());
+        bind_text(s.get(), 5, pass.host());
+        bind_text(s.get(), 6,
+                  pass.kind() == gate::v1::GuestPass::SINGLE_VISIT ? "single" : "until");
+        bind_int64(s.get(), 7, pass.valid_from().seconds());
+        bind_int64(s.get(), 8, pass.valid_until().seconds());
+        bind_text(s.get(), 9, pass.expected_make());
+        bind_text(s.get(), 10, pass.expected_model());
+        bind_text(s.get(), 11, pass.expected_colour());
+        bind_text(s.get(), 12, pass.created_by());
+        bind_int64(s.get(), 13, now_unix);
+        if (sqlite3_step(s.get()) != SQLITE_DONE)
+            throw_db(db, "guest_pass_create");
+        auto g = prepare(db, "INSERT INTO guest_pass_gates (pass_id, gate_id) VALUES (?,?)");
+        for (const auto& id : pass.gate_ids()) {
+            sqlite3_reset(g.get());
+            bind_text(g.get(), 1, pass.pass_id());
+            bind_text(g.get(), 2, id);
+            if (sqlite3_step(g.get()) != SQLITE_DONE)
+                throw_db(db, "guest_pass_create gates");
+        }
+        exec(db, "COMMIT");
+    } catch (...) {
+        exec(db, "ROLLBACK");
+        throw;
+    }
+    return pass;
+}
+
+std::vector<gate::v1::GuestPass> AllowlistStore::guest_pass_list(const std::string& site_id) const {
+    std::lock_guard lk{impl_->mu};
+    auto s = prepare(impl_->db, std::string{"SELECT "} + kPassColumns +
+                                    " FROM guest_passes WHERE site_id=? ORDER BY created_ts DESC");
+    bind_text(s.get(), 1, site_id);
+    std::vector<gate::v1::GuestPass> out;
+    while (sqlite3_step(s.get()) == SQLITE_ROW) {
+        out.push_back(read_pass(impl_->db, s.get()));
+    }
+    return out;
+}
+
+std::optional<gate::v1::GuestPass> AllowlistStore::guest_pass_revoke(const std::string& pass_id) {
+    std::lock_guard lk{impl_->mu};
+    auto u = prepare(impl_->db, "UPDATE guest_passes SET status='revoked' WHERE pass_id=?");
+    bind_text(u.get(), 1, pass_id);
+    if (sqlite3_step(u.get()) != SQLITE_DONE)
+        throw_db(impl_->db, "guest_pass_revoke");
+    auto s = prepare(impl_->db,
+                     std::string{"SELECT "} + kPassColumns + " FROM guest_passes WHERE pass_id=?");
+    bind_text(s.get(), 1, pass_id);
+    if (sqlite3_step(s.get()) != SQLITE_ROW)
+        return std::nullopt;
+    return read_pass(impl_->db, s.get());
+}
+
+std::optional<gate::v1::GuestPass> AllowlistStore::guest_pass_find(const std::string& site_id,
+                                                                   std::string_view plate_text,
+                                                                   const std::string& gate_id,
+                                                                   gate::v1::GateSide side,
+                                                                   std::time_t now_unix) const {
+    std::lock_guard lk{impl_->mu};
+    auto s = prepare(impl_->db, std::string{"SELECT "} + kPassColumns +
+                                    " FROM guest_passes WHERE site_id=? AND plate_text=? "
+                                    "AND status IN ('active','used') AND valid_from<=?");
+    bind_text(s.get(), 1, site_id);
+    bind_text(s.get(), 2, normalize_plate(plate_text));
+    bind_int64(s.get(), 3, now_unix);
+    while (sqlite3_step(s.get()) == SQLITE_ROW) {
+        auto p = read_pass(impl_->db, s.get());
+        const bool used = p.status() == "used";
+        if (used && side != gate::v1::GATE_SIDE_EXIT) {
+            continue;
+        }
+        const auto until = p.valid_until().seconds();
+        if (now_unix >= until) {
+            continue;
+        }
+        bool gate_ok = p.gate_ids_size() == 0;
+        for (const auto& g : p.gate_ids()) {
+            gate_ok = gate_ok || g == gate_id;
+        }
+        if (gate_ok) {
+            return p;
+        }
+    }
+    return std::nullopt;
+}
+
+bool AllowlistStore::guest_pass_reserve(const std::string& pass_id, const std::string& command_id,
+                                        std::time_t now_unix) {
+    std::lock_guard lk{impl_->mu};
+    auto s = prepare(impl_->db, R"sql(
+        INSERT INTO guest_pass_reservations (command_id, pass_id, ts)
+        SELECT ?1, p.pass_id, ?3 FROM guest_passes p
+        WHERE p.pass_id = ?2 AND p.status = 'active'
+          AND p.valid_from <= ?3 AND p.valid_until > ?3
+          AND (p.kind = 'until' OR NOT EXISTS (
+                SELECT 1 FROM guest_pass_reservations r
+                WHERE r.pass_id = p.pass_id AND r.ts > ?3 - ?4))
+    )sql");
+    bind_text(s.get(), 1, command_id);
+    bind_text(s.get(), 2, pass_id);
+    bind_int64(s.get(), 3, now_unix);
+    bind_int64(s.get(), 4, kReservationTtlS);
+    if (sqlite3_step(s.get()) != SQLITE_DONE)
+        throw_db(impl_->db, "guest_pass_reserve");
+    return sqlite3_changes(impl_->db) == 1;
+}
+
+void AllowlistStore::guest_pass_settle(const std::string& command_id, bool opened) {
+    std::lock_guard lk{impl_->mu};
+    auto* db = impl_->db;
+    exec(db, "BEGIN IMMEDIATE");
+    try {
+        if (opened) {
+            auto u = prepare(db, R"sql(
+                UPDATE guest_passes SET entries_used = entries_used + 1,
+                    status = CASE WHEN kind = 'single' THEN 'used' ELSE status END
+                WHERE status = 'active' AND pass_id =
+                    (SELECT pass_id FROM guest_pass_reservations WHERE command_id = ?)
+            )sql");
+            bind_text(u.get(), 1, command_id);
+            if (sqlite3_step(u.get()) != SQLITE_DONE)
+                throw_db(db, "guest_pass_settle");
+        }
+        auto d = prepare(db, "DELETE FROM guest_pass_reservations WHERE command_id = ?");
+        bind_text(d.get(), 1, command_id);
+        if (sqlite3_step(d.get()) != SQLITE_DONE)
+            throw_db(db, "guest_pass_settle");
+        exec(db, "COMMIT");
+    } catch (...) {
+        exec(db, "ROLLBACK");
+        throw;
+    }
+}
+
+bool AllowlistStore::controller_event_insert(const std::string& gate_id,
+                                             const gate::v1::ControllerEvent& e) {
+    std::lock_guard lk{impl_->mu};
+    auto s = prepare(impl_->db, R"sql(
+        INSERT OR IGNORE INTO controller_events (gate_id, boot_id, seq, uptime_ms, unix_ms,
+            kind, source, side, result, state_after, request_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    )sql");
+    bind_text(s.get(), 1, gate_id);
+    bind_int64(s.get(), 2, e.boot_id());
+    bind_int64(s.get(), 3, static_cast<std::int64_t>(e.seq()));
+    bind_int64(s.get(), 4, static_cast<std::int64_t>(e.uptime_ms()));
+    bind_int64(s.get(), 5, e.unix_ms());
+    bind_int64(s.get(), 6, e.kind());
+    bind_int(s.get(), 7, e.source());
+    bind_int(s.get(), 8, e.side());
+    bind_int64(s.get(), 9, e.result());
+    bind_int(s.get(), 10, e.state_after());
+    sqlite3_bind_blob(s.get(), 11, e.request_id().data(), static_cast<int>(e.request_id().size()),
+                      SQLITE_TRANSIENT);
+    if (sqlite3_step(s.get()) != SQLITE_DONE)
+        throw_db(impl_->db, "controller_event_insert");
+    return sqlite3_changes(impl_->db) == 1;
+}
+
+void AllowlistStore::open_audit_insert(const gate::v1::OpenRequestRecord& r, std::time_t now_unix) {
+    std::lock_guard lk{impl_->mu};
+    auto s = prepare(impl_->db, R"sql(
+        INSERT INTO open_audit (gate_id, request_id, side, source, actor, decision_id,
+            queued_ms, preempted_by, outcome, ts) VALUES (?,?,?,?,?,?,?,?,?,?)
+    )sql");
+    bind_text(s.get(), 1, r.request().gate_id());
+    bind_text(s.get(), 2, r.request().request_id());
+    bind_int(s.get(), 3, r.request().side());
+    bind_int(s.get(), 4, r.request().source());
+    bind_text(s.get(), 5, r.actor());
+    bind_text(s.get(), 6, r.decision_id());
+    bind_int64(s.get(), 7, r.queued_ms());
+    bind_text(s.get(), 8, r.preempted_by());
+    bind_text(s.get(), 9, r.outcome());
+    bind_int64(s.get(), 10, now_unix);
+    if (sqlite3_step(s.get()) != SQLITE_DONE)
+        throw_db(impl_->db, "open_audit_insert");
+}
+
+std::size_t AllowlistStore::open_audit_count(const std::string& gate_id) const {
+    std::lock_guard lk{impl_->mu};
+    auto s = prepare(impl_->db, "SELECT COUNT(*) FROM open_audit WHERE gate_id=?");
+    bind_text(s.get(), 1, gate_id);
+    sqlite3_step(s.get());
+    return static_cast<std::size_t>(sqlite3_column_int64(s.get(), 0));
 }
 
 std::size_t AllowlistStore::blocklist_remove(const std::string& site_id,

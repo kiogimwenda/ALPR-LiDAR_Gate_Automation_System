@@ -73,6 +73,8 @@ public:
     std::uint64_t publish_ota(std::string site_id, std::string gate_id, gate::v1::OtaProgress p);
     std::uint64_t publish_command(std::string site_id, gate::v1::GateCommand c);
     std::uint64_t publish_ack(std::string site_id, std::string gate_id, gate::v1::CommandAck a);
+    std::uint64_t publish_open_request(std::string site_id, gate::v1::OpenRequestRecord r);
+    std::uint64_t publish_alert(std::string site_id, gate::v1::Alert a);
 
     class Subscription {
     public:

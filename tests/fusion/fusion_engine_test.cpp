@@ -277,9 +277,9 @@ TEST_CASE("FusionEngine: blocklist beats force-open override", "[fusion][overrid
     const auto req = make_request("KBZ-123A", 0.95f, 0.95f);
     const auto d = engine.decide_at(req, kMondayMidnightUtc, utc_local(kMondayMidnightUtc));
 
-    // Force-open precedes blocklist in the ladder by design — a guard's
-    // explicit latch takes priority over the data store.
-    REQUIRE(d.verdict() == AuthVerdict::AUTH_VERDICT_AUTHORIZED);
+    // Spec 17.5: a sticky force-open never passes the blocklist.
+    REQUIRE(d.verdict() == AuthVerdict::AUTH_VERDICT_DENIED);
+    REQUIRE(d.deny_reason() == DenyReason::DENY_REASON_BLOCKLISTED);
 }
 
 TEST_CASE("FusionEngine: override_allowlist=true bypasses allowlist but not blocklist",

@@ -65,7 +65,7 @@ TEST_CASE("FieldControllerService::SubmitDetection delegates to fusion + publish
     // stream will forward (Phase 5.3 — a valid detection opens the gate
     // with no human in the loop).
     const auto evs = sub->drain_now();
-    REQUIRE(evs.size() == 2);
+    REQUIRE(evs.size() == 3);  // plus the arbiter's open audit
     REQUIRE(evs[0].payload_case() == DashboardEvent::kDecision);
     REQUIRE(evs[0].decision().decision_id() == resp.decision_id());
     REQUIRE(evs[1].payload_case() == DashboardEvent::kCommand);

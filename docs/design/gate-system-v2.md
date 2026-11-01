@@ -403,6 +403,23 @@ Boot: if mid-travel, stay in the present `init_unknown` fault. Never self-drive 
 - `BeginVerify` and `BeginCalibrate` are refused by the controller until implemented. `RunVerifyPulse` and `RunCalibration` report failure and never move the gate.
 - Relock retries wait while key sense is active.
 
+- `controller_events` and `open_audit` live in the auth DB, not the history DB. Allowlist `gate_ids` has its table but is not enforced yet.
+- Rule 6 inputs exist (`GateArbiter::withdraw`, `hold_auto_close`), but no LiDAR feed or firmware signal uses them yet.
+- With no LiDAR feed, a grant completes on a beam trip-then-clear or on the gate reporting closed, else on `pass_timeout_s`.
+- `Authorize` refuses every `force_reason` until a backend endpoint supplies a role verified from the session. Fusion's force path exists but nothing reaches it.
+- `LATCH_OPEN` and `PULSE_RELAY` are refused on gates with the locks capability. The backend limits `LATCH_OPEN` to admins; a direct gRPC caller on a legacy gate with TLS off is not limited.
+- An OPEN with no side joins the entry queue, because a resident's app open should not jump waiting vehicles. Exit-side opens must say so; the app does not send a side yet.
+- Guest claims live in `guest_pass_reservations`, taken at dispatch rather than in fusion, and lapse after 300 s. A vehicle that loses the race gets an AUTHORIZED decision then a DENIED reply.
+
+**Blocking enablement of v2 features:**
+- Rule 6 has no LiDAR feed or firmware signal.
+- Backend force endpoint with a verified role.
+- Push notification for guest arrival (alert event only today).
+- `allowlist_gates` enforcement.
+- `kEventOfflineOpen` agreed with firmware event kinds.
+- `SetGateConfig`, `SetLaneConfig`, `VerifyGateType`, `CalibrateGate`.
+- History DB migration (§19.2).
+
 ## 9. Single open-request path
 
 ### 9.1 Model

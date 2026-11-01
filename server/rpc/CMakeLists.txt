@@ -13,6 +13,7 @@ add_library(gate_rpc STATIC
     src/dashboard_service.cpp
     src/field_controller_service.cpp
     src/gate_arbiter.cpp
+    src/gate_dispatch.cpp
     src/server.cpp
 )
 

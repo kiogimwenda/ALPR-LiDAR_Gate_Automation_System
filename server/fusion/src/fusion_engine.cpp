@@ -123,6 +123,7 @@ AuthDecision FusionEngine::decide_at(const AuthorizeRequest& req, std::time_t no
     out.set_gate_id(req.frame().gate_id());
     out.set_frame_id(req.frame().frame_id());
     out.set_actor(req.actor());
+    out.set_side(req.frame().side());
 
     // 1. Force-close override wins over everything — even a guard's manual
     //    approval cannot defeat a lockdown.
@@ -165,7 +166,27 @@ AuthDecision FusionEngine::decide_at(const AuthorizeRequest& req, std::time_t no
     const float combined = cfg_.alpr_weight * alpr_conf + cfg_.lidar_weight * lidar_conf;
     out.set_combined_conf(combined);
 
-    // 5. Force-open override still records the matched plate but skips
+    // 5. Blocklist comes before every override. A low-confidence hit
+    //    alerts without changing the verdict; a confident hit is denied
+    //    unless an admin forces it with a reason.
+    const bool blocked = store_.is_blocklisted(req.site_id(), normalized);
+    if (blocked && combined < cfg_.min_combined_threshold) {
+        out.add_alerts("BLOCKLIST_LOW_CONFIDENCE");
+    } else if (blocked) {
+        if (!req.force_reason().empty()) {
+            out.set_verdict(AuthVerdict::AUTH_VERDICT_AUTHORIZED);
+            out.set_force_reason(req.force_reason());
+            out.add_alerts("BLOCKLIST_FORCED");
+            out.set_reason_text("blocklisted plate forced open by admin");
+            return out;
+        }
+        out.set_verdict(AuthVerdict::AUTH_VERDICT_DENIED);
+        out.set_deny_reason(DenyReason::DENY_REASON_BLOCKLISTED);
+        out.set_reason_text("plate is blocklisted");
+        return out;
+    }
+
+    // 6. Force-open override still records the matched plate but skips
     //    every gate below — the guard already decided.
     if (override_state == OverrideState::kForceOpen) {
         out.set_verdict(AuthVerdict::AUTH_VERDICT_AUTHORIZED);
@@ -173,7 +194,7 @@ AuthDecision FusionEngine::decide_at(const AuthorizeRequest& req, std::time_t no
         return out;
     }
 
-    // 6. Confidence floor. Pick the more informative sub-reason: whichever
+    // 7. Confidence floor. Pick the more informative sub-reason: whichever
     //    side dragged the combined score down. Ties fall to ALPR (the more
     //    typical failure mode at gates).
     if (combined < cfg_.min_combined_threshold) {
@@ -191,15 +212,6 @@ AuthDecision FusionEngine::decide_at(const AuthorizeRequest& req, std::time_t no
         return out;
     }
 
-    // 7. Blocklist always wins over allowlist — even guard override cannot
-    //    let a blocklisted plate through. Lockdown semantics.
-    if (store_.is_blocklisted(req.site_id(), normalized)) {
-        out.set_verdict(AuthVerdict::AUTH_VERDICT_DENIED);
-        out.set_deny_reason(DenyReason::DENY_REASON_BLOCKLISTED);
-        out.set_reason_text("plate is blocklisted");
-        return out;
-    }
-
     // 8. Guard manual override — bypasses allowlist (but not blocklist).
     if (req.override_allowlist()) {
         out.set_verdict(AuthVerdict::AUTH_VERDICT_AUTHORIZED);
@@ -210,6 +222,15 @@ AuthDecision FusionEngine::decide_at(const AuthorizeRequest& req, std::time_t no
     // 9. Allowlist lookup. Site-scoped; no entry → DENIED.
     const auto entry = store_.lookup(req.site_id(), normalized);
     if (!entry) {
+        // Guest pass: same plate, this gate, inside its validity.
+        if (const auto pass = store_.guest_pass_find(
+                req.site_id(), normalized, req.frame().gate_id(), req.frame().side(), now_unix)) {
+            out.set_verdict(AuthVerdict::AUTH_VERDICT_AUTHORIZED);
+            out.set_pass_id(pass->pass_id());
+            out.add_alerts("GUEST_ARRIVED");
+            out.set_reason_text("guest pass");
+            return out;
+        }
         out.set_verdict(AuthVerdict::AUTH_VERDICT_DENIED);
         out.set_deny_reason(DenyReason::DENY_REASON_NOT_ON_ALLOWLIST);
         out.set_reason_text("plate not on allowlist");

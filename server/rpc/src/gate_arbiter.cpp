@@ -19,21 +19,36 @@ GateArbiter::GateArbiter(Config cfg, GrantFn grant, AuditFn audit, RevalidateFn 
 OpenReply GateArbiter::submit(const Request& r, std::uint64_t now_ms) {
     OpenReply reply;
     reply.set_request_id(r.request_id);
+    // A retried id never queues or grants twice.
+    if (current_ && current_->waiter.request.request_id == r.request_id) {
+        reply.set_status(OpenReply::GRANTED);
+        return reply;
+    }
     if (served_.count(r.request_id) != 0) {
         reply.set_status(OpenReply::ALREADY_SERVED);
         return reply;
+    }
+    for (const auto* q : {&exit_, &entry_}) {
+        const auto it = std::find_if(q->begin(), q->end(), [&](const Waiter& w) {
+            return w.request.request_id == r.request_id;
+        });
+        if (it != q->end()) {
+            reply.set_status(OpenReply::QUEUED);
+            reply.set_queue_position(static_cast<std::uint32_t>(it - q->begin()) + 1);
+            return reply;
+        }
     }
     auto& queue = r.side == GATE_SIDE_EXIT ? exit_ : entry_;
     const auto same = std::find_if(queue.begin(), queue.end(), [&](const Waiter& w) {
         return !r.vehicle_key.empty() && w.request.vehicle_key == r.vehicle_key;
     });
     if (same != queue.end()) {
-        same->since = std::max(same->since, now_ms);  // rule 9: refresh
+        same->last_seen = std::max(same->last_seen, now_ms);  // rule 9
         reply.set_status(OpenReply::QUEUED);
         reply.set_queue_position(static_cast<std::uint32_t>(same - queue.begin()) + 1);
         return reply;
     }
-    queue.push_back({r, now_ms, {}});
+    queue.push_back({r, now_ms, now_ms, {}});
     pump(now_ms);
     const bool waiting = std::any_of(queue.begin(), queue.end(), [&](const Waiter& w) {
         return w.request.request_id == r.request_id;
@@ -54,6 +69,7 @@ void GateArbiter::finish(const Waiter& w, const char* outcome, std::uint64_t now
 }
 
 void GateArbiter::grant(Waiter w, std::uint64_t now_ms) {
+    remember(w.request.request_id);
     if (grant_) {
         grant_(w.request);
     }
@@ -124,6 +140,31 @@ void GateArbiter::vehicle_cleared(std::uint64_t now_ms) {
     pump(now_ms);
 }
 
+void GateArbiter::remember(const std::string& id) {
+    if (served_.insert(id).second) {
+        served_order_.push_back(id);
+        if (served_order_.size() > kMaxServed) {
+            served_.erase(served_order_.front());
+            served_order_.pop_front();
+        }
+    }
+}
+
+void GateArbiter::withdraw(const std::string& vehicle_key, std::uint64_t now_ms) {
+    if (vehicle_key.empty()) {
+        return;
+    }
+    for (auto it = entry_.begin(); it != entry_.end();) {
+        if (it->request.vehicle_key == vehicle_key) {
+            finish(*it, "left", now_ms);
+            it = entry_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    pump(now_ms);
+}
+
 bool GateArbiter::remove(std::deque<Waiter>& q, const std::string& id, std::uint64_t now_ms) {
     const auto it = std::find_if(q.begin(), q.end(),
                                  [&](const Waiter& w) { return w.request.request_id == id; });
@@ -136,13 +177,7 @@ bool GateArbiter::remove(std::deque<Waiter>& q, const std::string& id, std::uint
 }
 
 void GateArbiter::mark_served_offline(const std::string& request_id, std::uint64_t now_ms) {
-    if (served_.insert(request_id).second) {
-        served_order_.push_back(request_id);
-        if (served_order_.size() > kMaxServed) {
-            served_.erase(served_order_.front());
-            served_order_.pop_front();
-        }
-    }
+    remember(request_id);
     if (!remove(exit_, request_id, now_ms) && !remove(entry_, request_id, now_ms) && current_ &&
         current_->waiter.request.request_id == request_id) {
         current_.reset();

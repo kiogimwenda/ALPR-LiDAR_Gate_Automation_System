@@ -24,10 +24,10 @@ struct Rig {
               [this](const GateArbiter::Audit& x) { audits.push_back(x); },
               [this](const GateArbiter::Request&) { return valid; }) {}
     OpenReply entry(const std::string& id, std::uint64_t t, const std::string& key = "") {
-        return a.submit({id, GATE_SIDE_ENTRY, gate::v1::OPEN_SOURCE_PLATE, key}, t);
+        return a.submit({id, GATE_SIDE_ENTRY, gate::v1::OPEN_SOURCE_PLATE, key, "", "", "", ""}, t);
     }
     OpenReply exit(const std::string& id, std::uint64_t t) {
-        return a.submit({id, GATE_SIDE_EXIT, gate::v1::OPEN_SOURCE_RTE, ""}, t);
+        return a.submit({id, GATE_SIDE_EXIT, gate::v1::OPEN_SOURCE_RTE, "", "", "", "", ""}, t);
     }
 };
 
@@ -58,6 +58,43 @@ TEST_CASE("served ids stay bounded, newest remembered", "[arbiter]") {
     CHECK(r.exit("s" + std::to_string(GateArbiter::kMaxServed), 1).status() ==
           OpenReply::ALREADY_SERVED);
     CHECK(r.exit("s0", 1).status() == OpenReply::GRANTED);
+}
+
+TEST_CASE("a retried request id is never granted twice", "[arbiter]") {
+    Rig r;
+    CHECK(r.exit("x", 0).status() == OpenReply::GRANTED);
+    CHECK(r.exit("x", 10).status() == OpenReply::GRANTED);  // still current
+    r.a.vehicle_cleared(20);
+    CHECK(r.exit("x", 30).status() == OpenReply::ALREADY_SERVED);
+    CHECK(r.grants.size() == 1);
+
+    r.exit("y", 40);
+    r.exit("z", 41);
+    CHECK(r.exit("z", 42).status() == OpenReply::QUEUED);
+    CHECK(r.a.waiting() == 1);
+}
+
+TEST_CASE("repeat reads do not stretch the wait or the TTL", "[arbiter]") {
+    Rig r;
+    r.a.set_occupied(true, 0);
+    r.entry("a", 1'000, "KDA");
+    r.entry("again", 100'000, "KDA");
+    r.a.tick(121'000);
+    CHECK(r.a.waiting() == 0);
+    CHECK(r.audits.back().outcome == "expired");
+    CHECK(r.audits.back().queued_ms == 120'000);
+}
+
+TEST_CASE("rule 6: a vehicle that left is dropped; live waiters hold auto-close", "[arbiter]") {
+    Rig r;
+    r.exit("x", 0);
+    r.entry("a", 10, "KDA");
+    CHECK(r.a.hold_auto_close());
+    r.a.withdraw("KDA", 20);
+    CHECK(r.a.waiting() == 0);
+    CHECK(r.audits.back().outcome == "left");
+    r.a.vehicle_cleared(30);
+    CHECK_FALSE(r.a.hold_auto_close());
 }
 
 TEST_CASE("occupied throat holds grants until clear", "[arbiter]") {

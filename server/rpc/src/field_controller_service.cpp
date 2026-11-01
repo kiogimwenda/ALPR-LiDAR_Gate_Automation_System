@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <ctime>
+#include <mutex>
 #include <thread>
 #include <utility>
 
@@ -28,7 +29,10 @@ using grpc::StatusCode;
 FieldControllerServiceImpl::FieldControllerServiceImpl(gate::dash::EventBroadcaster& bus,
                                                        gate::fusion::FusionEngine& fusion,
                                                        std::string default_site_id)
-    : bus_(bus), fusion_(fusion), default_site_id_(std::move(default_site_id)) {}
+    : bus_(bus),
+      fusion_(fusion),
+      default_site_id_(std::move(default_site_id)),
+      own_dispatch_(bus, nullptr, &fusion, default_site_id_) {}
 
 void FieldControllerServiceImpl::set_subscribe_poll_interval(std::chrono::milliseconds dt) {
     poll_ = dt;
@@ -61,6 +65,7 @@ Status FieldControllerServiceImpl::Control(
     if (auto denied = policy_.check_gate(peer, gate_id); !denied.ok())
         return denied;
     bus_.publish_telemetry(default_site_id_, first.telemetry());
+    dispatch_->on_telemetry(first.telemetry());
 
     // Server → firmware: subscribe to broadcaster for commands targeted
     // at this gate. The DashboardSubscription kind filter has no flag
@@ -88,6 +93,7 @@ Status FieldControllerServiceImpl::Control(
     // them to the stream. One thread per active firmware connection;
     // we expect a small number of gates per server.
     std::atomic<bool> shutting_down{false};
+    std::mutex write_mu;  // gRPC allows one writer at a time
     std::thread writer([&] {
         while (!ctx->IsCancelled() && !shutting_down.load()) {
             auto e = sub->next(poll_);
@@ -104,6 +110,7 @@ Status FieldControllerServiceImpl::Control(
                 continue;
             ControlEnvelope env;
             *env.mutable_command() = e->command();
+            const std::lock_guard<std::mutex> lk{write_mu};
             if (!stream->Write(env))
                 break;  // Client gone.
         }
@@ -120,16 +127,32 @@ Status FieldControllerServiceImpl::Control(
                     break;
                 }
                 bus_.publish_telemetry(default_site_id_, env.telemetry());
+                dispatch_->on_telemetry(env.telemetry());
                 break;
             case ControlEnvelope::kAck:
                 bus_.publish_ack(default_site_id_, gate_id, env.ack());
+                dispatch_->on_ack(env.ack());
                 break;
             case ControlEnvelope::kFault:
                 bus_.publish_fault(default_site_id_, env.fault());
                 break;
-            case ControlEnvelope::kOpenRequest:  // v2 payloads: handled from programme step 4's
-            case ControlEnvelope::kEvents:       // server phase, ignored until then so
-            case ControlEnvelope::kStats:        // firmware keeps its events unacked
+            case ControlEnvelope::kOpenRequest: {
+                // The stream's identity wins over any gate_id in the payload.
+                ControlEnvelope reply;
+                *reply.mutable_open_reply() =
+                    dispatch_->on_open_request(gate_id, env.open_request());
+                const std::lock_guard<std::mutex> lk{write_mu};
+                stream->Write(reply);
+                break;
+            }
+            case ControlEnvelope::kEvents: {
+                ControlEnvelope reply;
+                *reply.mutable_events_ack() = dispatch_->ingest(gate_id, env.events());
+                const std::lock_guard<std::mutex> lk{write_mu};
+                stream->Write(reply);
+                break;
+            }
+            case ControlEnvelope::kStats:  // later server phases
             case ControlEnvelope::kVerify:
             case ControlEnvelope::kCalibration:
                 break;
@@ -192,16 +215,11 @@ Status FieldControllerServiceImpl::SubmitDetection(ServerContext* ctx, const Det
     // command. Every other verdict (denied, low-confidence, manual
     // review) stays a dashboard event — a gate only ever moves on an
     // explicit command.
+    dispatch_->publish_alerts(*resp);
     if (resp->verdict() == gate::v1::AUTH_VERDICT_AUTHORIZED) {
-        gate::v1::GateCommand open;
-        open.set_command_id(gate::fusion::generate_uuidv4());
-        open.mutable_issued_ts()->set_seconds(std::time(nullptr));
-        open.set_gate_id(req->gate_id());
-        open.set_kind(gate::v1::COMMAND_KIND_OPEN_GATE);
-        // Audit trail links the command back to the decision that
-        // caused it, not just a generic "auto".
-        open.set_actor("auto:" + resp->decision_id());
-        bus_.publish_command(default_site_id_, std::move(open));
+        (void)dispatch_->submit_decision(*resp, resp->pass_id().empty()
+                                                    ? gate::v1::OPEN_SOURCE_PLATE
+                                                    : gate::v1::OPEN_SOURCE_GUEST);
     }
     return Status::OK;
 }

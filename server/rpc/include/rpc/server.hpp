@@ -79,6 +79,7 @@ public:
 
 private:
     ServerConfig cfg_;
+    GateDispatch dispatch_;
     AdminServiceImpl admin_;
     DashboardServiceImpl dashboard_;
     FieldControllerServiceImpl field_;

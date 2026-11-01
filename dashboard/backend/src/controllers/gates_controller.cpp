@@ -44,6 +44,12 @@ public:
             return;
         }
 
+        // A sticky force-open authorises every plate: admins only.
+        if (kind == gate::v1::COMMAND_KIND_LATCH_OPEN && request_role(req) != "admin") {
+            callback(json_error(drogon::k403Forbidden, "LATCH_OPEN requires the admin role"));
+            return;
+        }
+
         gate::v1::GateCommand cmd;
         cmd.set_gate_id(gate_id);
         cmd.set_kind(kind);
