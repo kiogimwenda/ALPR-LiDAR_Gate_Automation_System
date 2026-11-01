@@ -204,6 +204,7 @@ bool SimClient::run_session(const std::atomic<bool>& shutdown) {
             t->set_gate_id(cfg_.gate_id);
             stamp_now(t->mutable_sent_ts());
             t->set_gate_state(to_wire(gate_.state()));
+            t->set_capabilities(gate_.capabilities());
             t->set_limit_open(gate_.limit_open());
             t->set_limit_closed(gate_.limit_closed());
             t->set_safety_beam_clear(gate_.beam_clear());

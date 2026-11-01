@@ -51,6 +51,20 @@ void interactive_loop(gate::sim::VirtualGate& gate) {
             gate.clear_fault();
         } else if (line == "reboot") {
             gate.reboot();
+        } else if (line == "rte") {
+            gate.rte();
+        } else if (line == "lockdown") {
+            gate.latch_close();
+        } else if (line == "release") {
+            gate.release_latch();
+        } else if (line == "key-on") {
+            gate.set_key_override(true);
+        } else if (line == "key-off") {
+            gate.set_key_override(false);
+        } else if (line == "jam b1") {
+            gate.jam_bolt(0, true);
+        } else if (line == "unjam b1") {
+            gate.jam_bolt(0, false);
         } else if (line == "status") {
             std::printf("[sim] %s\n", gate.status_line().c_str());
             continue;
@@ -86,6 +100,9 @@ int main(int argc, char** argv) {
         ->capture_default_str();
     app.add_option("--auto-close-ms", gate_cfg.auto_close_ms, "auto-close dwell (0 = off)")
         ->capture_default_str();
+    std::string gate_type = "legacy";
+    app.add_option("--gate-type", gate_type, "legacy | sliding | single | dual")
+        ->capture_default_str();
     app.add_flag("!--no-reverse-on-beam", gate_cfg.reverse_on_beam,
                  "disable the reverse-on-beam policy");
     app.add_option("--telemetry-ms", client_cfg.telemetry_period_ms, "telemetry period")
@@ -105,6 +122,15 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
 
+    namespace sm = gate::state_machine;
+    if (gate_type != "legacy") {
+        const bool dual = gate_type == "dual";
+        gate_cfg.gate_type = dual                    ? sm::GateType::DualLeaf
+                             : gate_type == "single" ? sm::GateType::SingleLeaf
+                                                     : sm::GateType::Sliding;
+        gate_cfg.lock_layout = dual ? sm::LockLayout::Five : sm::LockLayout::Four;
+        gate_cfg.profile = sm::ActuatorProfile::Operator;
+    }
     gate::sim::VirtualGate gate(gate_cfg);
     gate.boot_closed();
     std::printf("[sim] %s\n", gate.status_line().c_str());

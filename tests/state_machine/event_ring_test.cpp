@@ -7,6 +7,7 @@
 #include <limits>
 #include <vector>
 
+#include "gate_state_machine/rte_authority.hpp"
 #include "gate_state_machine/served_guard.hpp"
 
 namespace sm = gate::state_machine;
@@ -122,4 +123,77 @@ TEST_CASE("a ghost late grant is refused, across a reboot", "[served_guard]") {
     CHECK(rebooted.check(other, 100, 200, true) == V::Expired);
     CHECK(rebooted.check(other, 100, 200, false) == V::Accept);
     CHECK(rebooted.check(sm::ServedGuard::Id{}, 0, 0, true) == V::Accept);
+}
+
+namespace {
+
+struct RteRig {
+    FakeFlash flash;
+    EventRing ring{flash};
+    sm::ServedGuard guard;
+    sm::RteAuthority rte{{}, ring, guard};
+    std::uint64_t now = 1;
+    const sm::ServedGuard::Id id{7, 7};
+    RteRig() { ring.mount(); }
+    sm::RteAuthority::Output step(bool pressed, bool link, std::uint32_t ms = 20) {
+        sm::RteAuthority::Output last = sm::RteAuthority::Output::None;
+        for (std::uint32_t t = 0; t < ms; t += 20) {
+            now += 20;
+            const auto o = rte.tick(now, pressed, link, id, {});
+            if (o != sm::RteAuthority::Output::None) {
+                last = o;
+            }
+        }
+        return last;
+    }
+};
+
+}  // namespace
+
+using Out = sm::RteAuthority::Output;
+
+TEST_CASE("RTE offline opens locally, logged, and refuses the ghost grant", "[rte]") {
+    RteRig r;
+    CHECK(r.step(true, false, 100) == Out::OpenLocal);
+    const auto log = r.ring.pending(16);
+    REQUIRE(log.size() == 1);
+    CHECK(log[0].kind == sm::kEventOfflineOpen);
+    CHECK(log[0].request_id == r.id);
+    CHECK(r.guard.check(r.id, 0, 0, false) == sm::ServedGuard::Verdict::AlreadyServed);
+}
+
+TEST_CASE("RTE online waits for the server, then falls back", "[rte]") {
+    RteRig r;
+    CHECK(r.step(true, true, 100) == Out::SendRequest);
+    r.step(false, true, 40);
+    SECTION("granted: no local open") {
+        r.rte.on_reply(sm::RteAuthority::Reply::Granted, r.now);
+        CHECK(r.step(false, true, 3'000) == Out::None);
+        CHECK(r.ring.pending(16).empty());
+    }
+    SECTION("silence: local after the grant timeout") {
+        CHECK(r.step(false, true, 1'600) == Out::OpenLocal);
+    }
+    SECTION("queued extends the wait") {
+        r.rte.on_reply(sm::RteAuthority::Reply::Queued, r.now);
+        CHECK(r.step(false, true, 5'000) == Out::None);
+        CHECK(r.step(false, true, 16'000) == Out::OpenLocal);
+    }
+    SECTION("the link dropping goes local at once") {
+        CHECK(r.step(false, false, 20) == Out::OpenLocal);
+    }
+}
+
+TEST_CASE("RTE hold, stuck and rate limit", "[rte]") {
+    RteRig r;
+    CHECK(r.step(true, false, 100) == Out::OpenLocal);
+    CHECK(r.step(true, false, 5'000) == Out::LocalReset);
+    CHECK(r.step(true, false, 5'000) == Out::Stuck);
+    r.step(false, false, 40);
+    RteRig q;
+    q.step(true, false, 100);
+    q.step(false, false, 100);
+    CHECK(q.step(true, false, 100) == Out::None);  // inside 3 s
+    q.step(false, false, 3'000);
+    CHECK(q.step(true, false, 100) == Out::OpenLocal);
 }

@@ -162,6 +162,9 @@ extern "C" void app_main(void) {
                     gate_ctrl.show_led_pattern(
                         static_cast<gate::drivers::StatusLed::Pattern>(cmd.led_pattern));
                     return {.accepted = true, .completed_now = true};
+                case gate_v1_CommandKind_COMMAND_KIND_CLEAR_FAULT:
+                    gate_ctrl.clear_fault();
+                    return {.accepted = true, .completed_now = true};
                 case gate_v1_CommandKind_COMMAND_KIND_REBOOT:
                     ESP_LOGW(kTag, "reboot commanded by %s", cmd.actor);
                     ESP_ERROR_CHECK(esp_timer_start_once(reboot_timer, 1'500'000));

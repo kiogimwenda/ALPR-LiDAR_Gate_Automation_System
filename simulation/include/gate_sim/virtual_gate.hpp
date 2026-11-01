@@ -117,6 +117,9 @@ public:
     [[nodiscard]] bool maglocks_bonded() const;
     [[nodiscard]] bool permit() const;
     [[nodiscard]] bool lockdown_latched() const;
+    [[nodiscard]] std::uint32_t capabilities() const {
+        return cfg_.lock_layout == state_machine::LockLayout::None ? 0U : 1U;
+    }
     [[nodiscard]] state_machine::Reason reason() const;
 
     // Completed-command verdicts accumulated since the last drain.

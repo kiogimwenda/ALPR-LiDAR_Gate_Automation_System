@@ -419,6 +419,7 @@ Boot: if mid-travel, stay in the present `init_unknown` fault. Never self-drive 
 - `kEventOfflineOpen` agreed with firmware event kinds.
 - `SetGateConfig`, `SetLaneConfig`, `VerifyGateType`, `CalibrateGate`.
 - History DB migration (§19.2).
+- `RteAuthority` is not wired to an input or the Control stream. Telemetry, persisted config and lockdown, verify and calibration are not implemented in firmware.
 
 ## 9. Single open-request path
 

@@ -13,6 +13,9 @@
 
 namespace gate::state_machine {
 
+// EventRecord::kind values; the server matches them (GateDispatch).
+inline constexpr std::uint8_t kEventOfflineOpen = 1;
+
 class FlashIo {
 public:
     virtual ~FlashIo() = default;
